@@ -1,0 +1,6 @@
+# .gitignore 파일 내용
+.env
+.venv/
+__pycache__/
+hrd_analysis.db
+*.db-journal
