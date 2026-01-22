@@ -94,3 +94,12 @@ streamlit run home.py
 ```
 
 </details>
+
+## ⏰ 자동화 설정 (Automation)
+
+이 시스템은 **Windows 작업 스케줄러**를 통해 매일 데이터를 자동 업데이트하도록 설계되었습니다.
+
+1. **실행 주기**: 매일 09:10 ~ 18:10 (1시간 간격 권장)
+2. **실행 파일**: `.venv/Scripts/python.exe`
+3. **인수(Arguments)**: `hrd_etl.py`
+4. **시작 위치(Start in)**: 프로젝트 폴더 경로 (필수)
