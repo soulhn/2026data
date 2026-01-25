@@ -103,3 +103,36 @@ streamlit run home.py
 2. **실행 파일**: `.venv/Scripts/python.exe`
 3. **인수(Arguments)**: `hrd_etl.py`
 4. **시작 위치(Start in)**: 프로젝트 폴더 경로 (필수)
+
+## 📈 시장 동향 분석 (Market Trend Analysis)
+
+HRD-Net 공공데이터포털 API를 활용하여 대한민국 전체 정보통신(IT) 훈련 시장 데이터를 수집하고 분석합니다.
+(2023.01 ~ 2026.01 기간의 약 317,000건 데이터 전수 분석)
+
+### 📂 주요 파일 구성
+
+- **`market_etl.py`**: 대용량 XML 데이터 수집기 (ETL)
+  - 자동 재시도(Retry), 병렬 처리(Threading), 세션 관리 탑재
+  - JSON API 오류를 우회하기 위한 XML 파싱 및 지역코드 파라미터 최적화 적용
+- **`init_market_db.py`**: 데이터베이스 스키마 초기화 스크립트
+- **`TB_MARKET_TREND` (DB Table)**: 시장 분석 전용 테이블 (컬럼 30개+)
+
+### ⚙️ 설치 및 실행 방법 (Setup & Usage)
+
+**1. 필수 라이브러리 설치**
+
+```bash
+pip install -r requirements.txt
+```
+
+**2. DB 테이블 생성 (최초 1회) 시장 분석을 위한 TB_MARKET_TREND 테이블을 생성**
+
+```bash
+python init_market_db.py
+```
+
+**3. 데이터 수집 시작 (ETL) 2023년부터 현재까지의 시장 데이터를 수집하여 DB에 적재합니다. (약 30만 건, 소요시간 5~10분)**
+
+```bash
+python market_etl.py
+```
