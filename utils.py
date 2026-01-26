@@ -5,10 +5,10 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 
-# .env 파일 로드 (API 키 등 환경변수 불러오기)
+# .env 파일 로드
 load_dotenv()
 
-# 상수 설정
+# ✅ [핵심] DB 설정 중앙화: 모든 파일이 이 변수를 가져다 씁니다.
 DB_FILE = "hrd_analysis.db"
 
 def get_connection():
@@ -27,20 +27,16 @@ def load_data(query):
 def calculate_age_at_training(birth_date_str, training_start_date_str):
     """
     생년월일과 훈련 시작일을 기준으로 '훈련 당시 나이'를 계산합니다.
-    (연도 기준 계산: 훈련시작연도 - 출생연도 + 1)
     """
     if not birth_date_str or len(str(birth_date_str)) < 4:
         return None
     
     try:
         birth_year = int(str(birth_date_str)[:4])
-        
-        # 훈련 시작일이 없으면 현재 연도 기준
         if not training_start_date_str:
             target_year = datetime.now().year
         else:
             target_year = int(str(training_start_date_str)[:4])
-            
         return target_year - birth_year + 1
     except:
         return None

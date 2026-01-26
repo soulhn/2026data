@@ -2,29 +2,24 @@ import sqlite3
 import requests
 import json
 import os
-from datetime import datetime, timedelta  # 👈 timedelta 추가됨!
+from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 
-# .env 파일 로드
+# 🚀 리팩토링: DB 파일 경로 가져오기
+from utils import DB_FILE
+
 load_dotenv()
 
-# ==========================================
-# 1. 설정 정보 (환경변수 사용)
-# ==========================================
 API_KEY = os.getenv("HRD_API_KEY")
 COURSE_ID = os.getenv("HANWHA_COURSE_ID")
-DB_FILE = "hrd_analysis.db"
 
-# (안전장치: 키가 없으면 멈춤)
 if not API_KEY or not COURSE_ID:
-    print("❌ 오류: .env 파일에서 API_KEY 또는 COURSE_ID를 찾을 수 없습니다.")
+    print("❌ 오류: .env 파일 설정을 확인하세요.")
     exit()
 
-# ==========================================
-# 2. 공통 함수
-# ==========================================
 def get_db_connection():
+    # utils의 DB_FILE 사용
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
@@ -48,11 +43,10 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # 내부 운영 데이터 테이블들
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS TB_COURSE_MASTER (
-            TRPR_ID TEXT, 
-            TRPR_DEGR INTEGER, 
-            TRPR_NM TEXT, 
+            TRPR_ID TEXT, TRPR_DEGR INTEGER, TRPR_NM TEXT, 
             TR_STA_DT TEXT, TR_END_DT TEXT, 
             TOT_TRCO INTEGER, FINI_CNT INTEGER, 
             TOT_FXNUM INTEGER, TOT_PAR_MKS INTEGER, TOT_TRP_CNT INTEGER, INST_INO TEXT,
@@ -62,24 +56,18 @@ def init_db():
             PRIMARY KEY (TRPR_ID, TRPR_DEGR)
         )
     ''')
-    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS TB_TRAINEE_INFO (
-            TRPR_ID TEXT, 
-            TRPR_DEGR INTEGER, 
-            TRNEE_ID TEXT, TRNEE_NM TEXT,
+            TRPR_ID TEXT, TRPR_DEGR INTEGER, TRNEE_ID TEXT, TRNEE_NM TEXT,
             TRNEE_STATUS TEXT, TRNEE_TYPE TEXT, BIRTH_DATE TEXT,
             TOTAL_DAYS INTEGER, OFLHD_CNT INTEGER, VCATN_CNT INTEGER,
             COLLECTED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (TRPR_ID, TRPR_DEGR, TRNEE_ID)
         )
     ''')
-    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS TB_ATTENDANCE_LOG (
-            TRPR_ID TEXT, 
-            TRPR_DEGR INTEGER, 
-            TRNEE_ID TEXT, 
+            TRPR_ID TEXT, TRPR_DEGR INTEGER, TRNEE_ID TEXT, 
             ATEND_DT TEXT, DAY_NM TEXT, IN_TIME TEXT, OUT_TIME TEXT, 
             ATEND_STATUS TEXT, ATEND_STATUS_CD TEXT,
             COLLECTED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -89,14 +77,10 @@ def init_db():
     conn.commit()
     conn.close()
 
-# ==========================================
-# 3. 메인 ETL 로직
-# ==========================================
 def run_etl():
     init_db()
     conn = get_db_connection()
     cursor = conn.cursor()
-    
     print(f"🚀 [ETL Start] 과정ID({COURSE_ID}) 데이터 수집 시작...")
 
     try:
@@ -108,21 +92,13 @@ def run_etl():
         print(f"❌ 과정 목록 조회 실패: {e}")
         return
 
-    # 🚀 기준일 설정: 오늘로부터 7일 전
-    # (종료된 지 7일이 지났고 + DB에 데이터가 있으면 -> 건너뜀)
     update_cutoff_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
 
     for course in course_list:
-        try:
-            trpr_degr = int(course.get('trprDegr', 0))
-        except:
-            continue
-            
+        try: trpr_degr = int(course.get('trprDegr', 0))
+        except: continue
         if trpr_degr == 0: continue 
 
-        # ---------------------------------------------------------
-        # [1] 과정 마스터 정보 저장 (가벼우므로 항상 최신화)
-        # ---------------------------------------------------------
         ei_rate = course.get('eiEmplRate3')
         real_rate = None
         try: 
@@ -148,38 +124,23 @@ def run_etl():
             course.get('hrdEmplRate6'), course.get('hrdEmplCnt6'), real_rate
         ))
 
-        # ---------------------------------------------------------
-        # 🚀 [2] 스마트 건너뛰기 (Smart Skip) 로직 적용
-        # ---------------------------------------------------------
         trpr_id = course.get('trprId')
         end_date = course.get('trEndDt', '9999-12-31')
-
-        # DB에 해당 회차 데이터가 이미 존재하는지 확인 (출석 로그 기준)
-        cursor.execute(
-            "SELECT 1 FROM TB_ATTENDANCE_LOG WHERE TRPR_ID=? AND TRPR_DEGR=? LIMIT 1", 
-            (trpr_id, trpr_degr)
-        )
+        cursor.execute("SELECT 1 FROM TB_ATTENDANCE_LOG WHERE TRPR_ID=? AND TRPR_DEGR=? LIMIT 1", (trpr_id, trpr_degr))
         is_data_exists = cursor.fetchone() is not None
 
-        # 조건: (이미 끝난 과정) AND (DB에 데이터가 있음) -> 상세 수집 생략
         if (end_date < update_cutoff_date) and is_data_exists:
-            print(f"   ⏭️ {trpr_degr}회차: 종료된 과정({end_date})이며 DB에 데이터 존재함. 상세 수집 생략.")
+            print(f"   ⏭️ {trpr_degr}회차: 종료된 과정({end_date})이며 DB 데이터 존재함. Skip.")
             continue  
             
-        # ---------------------------------------------------------
-        # [3] 명부 수집 (상세 데이터가 없거나 진행 중인 경우 실행)
-        # ---------------------------------------------------------
         url_roster = f"https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_4.jsp?returnType=JSON&authKey={API_KEY}&outType=2&srchTrprId={COURSE_ID}&srchTrprDegr={trpr_degr}"
-        
         try:
             res_roster = requests.get(url_roster)
             raw_json = res_roster.json().get('returnJSON')
-            
             if raw_json:
                 roster_data = json.loads(raw_json)
-                if isinstance(roster_data, list): trne_list = roster_data
-                elif isinstance(roster_data, dict): trne_list = roster_data.get('trneList', [])
-                else: trne_list = []
+                trne_list = roster_data if isinstance(roster_data, list) else roster_data.get('trneList', [])
+                if not isinstance(trne_list, list): trne_list = []
 
                 valid_cnt = 0
                 for trnee in trne_list:
@@ -208,9 +169,6 @@ def run_etl():
                 print(f"   >> {trpr_degr}회차 명부: {valid_cnt}건 수집 완료")
         except: pass
 
-        # ---------------------------------------------------------
-        # [4] 출석부 수집
-        # ---------------------------------------------------------
         target_months = get_month_list(course.get('trStaDt'), course.get('trEndDt'))
         for yyyymm in target_months:
             url_attend = f"https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_4.jsp?returnType=JSON&authKey={API_KEY}&outType=2&srchTrprId={COURSE_ID}&srchTrprDegr={trpr_degr}&srchTorgId=student_detail&atendMo={yyyymm}"
@@ -226,10 +184,8 @@ def run_etl():
                 for log in atab_list:
                     if not isinstance(log, dict): continue
                     trnee_id = str(log.get('trneeCstmrId'))
-                    
                     cursor.execute('INSERT OR IGNORE INTO TB_TRAINEE_INFO (TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM) VALUES (?, ?, ?, ?)', 
                                    (COURSE_ID, trpr_degr, trnee_id, log.get('cstmrNm')))
-
                     cursor.execute('''
                         INSERT INTO TB_ATTENDANCE_LOG (
                             TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT, DAY_NM, IN_TIME, OUT_TIME, ATEND_STATUS, ATEND_STATUS_CD
