@@ -7,7 +7,7 @@ import os
 
 # utils.py 경로 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_data, calculate_age_at_training
+from utils import load_data
 
 # ==========================================
 # 1. 페이지 설정
@@ -135,10 +135,8 @@ late_cnt = len(today_logs[today_logs['ATEND_STATUS'] == '지각'])
 early_cnt = len(today_logs[today_logs['ATEND_STATUS'] == '조퇴'])
 out_cnt = len(today_logs[today_logs['ATEND_STATUS'] == '외출'])
 
-# 4. 결석 (로그 없음 or 상태 '결석')
-absent_students = df_monitor[
-    (df_monitor['IN_TIME'].isna()) | (df_monitor['ATEND_STATUS'] == '결석')
-]
+# 4. 결석 (입실 기록이 아예 없는 사람)
+absent_students = df_monitor[df_monitor['IN_TIME'].isna()]
 real_absent_cnt = len(absent_students)
 
 # ==========================================
@@ -174,42 +172,43 @@ st.divider()
 with st.expander("📝 보고용 텍스트 복사 (클릭하여 펼치기)", expanded=True):
     st.caption("아래 텍스트를 복사해서 메신저나 보고서에 바로 붙여넣으세요.")
     
-    # 명단 추출 함수
-    def get_names_str(df, status_col, status_val=None, is_absent=False):
-        if is_absent:
-            names = df[(df['IN_TIME'].isna()) | (df['ATEND_STATUS'] == '결석')]['TRNEE_NM'].tolist()
-        else:
-            names = df[df[status_col] == status_val]['TRNEE_NM'].tolist()
-        
+    def get_names_str(df, type_):
+        names = []
+        if type_ == 'absent':
+            names = df[df['IN_TIME'].isna()]['TRNEE_NM'].tolist()
+        elif type_ == 'not_left':
+            names = df[(df['IN_TIME'].notna()) & (df['OUT_TIME'].isna())]['TRNEE_NM'].tolist()
+        elif type_ == 'late':
+            names = df[df['ATEND_STATUS'] == '지각']['TRNEE_NM'].tolist()
+        elif type_ == 'early':
+            names = df[df['ATEND_STATUS'] == '조퇴']['TRNEE_NM'].tolist()
+        elif type_ == 'out':
+            names = df[df['ATEND_STATUS'] == '외출']['TRNEE_NM'].tolist()
+            
         return ", ".join(names) if names else "없음"
 
-    # 🚀 [수정 완료] UTC 시간을 한국 시간(KST)으로 변환 (+9시간)
     if not this_logs.empty and 'COLLECTED_AT' in this_logs.columns:
-        # 1. DB에 저장된 시간(UTC) 가져오기
-        last_collect_dt_utc = pd.to_datetime(this_logs['COLLECTED_AT']).max()
-        
-        # 2. 한국 시간으로 변환 (9시간 더하기)
-        last_collect_dt_kst = last_collect_dt_utc + timedelta(hours=9)
-        
+        last_collect_dt_kst = pd.to_datetime(this_logs['COLLECTED_AT']).max() + timedelta(hours=9)
         ref_time_str = last_collect_dt_kst.strftime('%H시 %M분')
     else:
         ref_time_str = datetime.now().strftime('%H시 %M분')
     
+    # 🚀 [수정] 보고 양식 순서 변경 (미퇴실을 맨 아래로)
     report_text = f"""[{ref_time_str} 기준]
 
 - 총인원: {total_cnt}명
- ㄴ 현 인원 (강의실에 현재 있는 인원): {not_left_cnt}명
- ㄴ 현재 강의장에 없는 인원: {total_cnt - not_left_cnt}명
+ ㄴ 현 인원 (강의실): {not_left_cnt}명
+ ㄴ 미출석/퇴실완료: {total_cnt - not_left_cnt}명
 
 <특이사항>
-지각: {late_cnt}명, 조퇴: {early_cnt}명, 결석: {real_absent_cnt}명, 외출: {out_cnt}명
-[지각] {get_names_str(df_monitor, 'ATEND_STATUS', '지각')}
-[조퇴] {get_names_str(df_monitor, 'ATEND_STATUS', '조퇴')}
-[외출] {get_names_str(df_monitor, 'ATEND_STATUS', '외출')}
-[결석] {get_names_str(df_monitor, '', is_absent=True)}
+지각: {late_cnt}명, 조퇴: {early_cnt}명, 외출: {out_cnt}명
+[지각] {get_names_str(df_monitor, 'late')}
+[조퇴] {get_names_str(df_monitor, 'early')}
+[외출] {get_names_str(df_monitor, 'out')}
+[결석] {get_names_str(df_monitor, 'absent')}
+[미퇴실] {get_names_str(df_monitor, 'not_left')}
 """
-    # 텍스트 영역 표시
-    st.text_area("보고 양식", report_text, height=250)
+    st.text_area("보고 양식", report_text, height=300)
 
 st.divider()
 
