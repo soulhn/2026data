@@ -11,99 +11,86 @@ st.set_page_config(page_title="시장 동향 분석", page_icon="📈", layout="
 
 DB_FILE = "hrd_analysis.db"
 
-# ✅ 30개 전 컬럼 한글 매핑 (숨겨진 데이터 해제!)
+# ✅ 컬럼명 한글 매핑
 COLUMN_MAP = {
-    # 식별자
-    'TRPR_ID': '과정ID',
-    'TRPR_DEGR': '회차',
-    'INST_INO': '기관ID',
-    
-    # 기본 정보
-    'TRPR_NM': '과정명',
-    'TRAINST_NM': '훈련기관명',
-    'TR_STA_DT': '개설일',
-    'TR_END_DT': '종료일',
-    'NCS_CD': 'NCS코드',
-    'TRNG_AREA_CD': '지역코드',
-    
-    # 인원 및 비용
-    'TOT_FXNUM': '정원(명)',
-    'TOT_TRCO': '훈련비(원)',
-    'COURSE_MAN': '수강비(원)',
-    'REAL_MAN': '실비(원)',
+    'TRPR_ID': '과정ID', 'TRPR_DEGR': '회차', 'INST_INO': '기관ID',
+    'TRPR_NM': '과정명', 'TRAINST_NM': '훈련기관명',
+    'TR_STA_DT': '개설일', 'TR_END_DT': '종료일',
+    'NCS_CD': 'NCS코드', 'TRNG_AREA_CD': '지역코드',
+    'TOT_FXNUM': '정원(명)', 'TOT_TRCO': '훈련비(원)',
+    'COURSE_MAN': '수강비(원)', 'REAL_MAN': '실비(원)',
     'REG_COURSE_MAN': '등록인원',
-    
-    # 성과 지표
-    'EI_EMPL_RATE_3': '취업률(3개월)',
-    'EI_EMPL_RATE_6': '취업률(6개월)',
-    'EI_EMPL_CNT_3': '취업인원(3개월)',
-    'STDG_SCOR': '만족도(점)',
-    'GRADE': '등급',
-    
-    # 상세 정보
-    'CERTIFICATE': '관련자격증',
-    'CONTENTS': '콘텐츠',
-    'ADDRESS': '주소',
-    'TEL_NO': '전화번호',
-    'TRAIN_TARGET': '훈련유형',
-    'TRAIN_TARGET_CD': '유형코드',
-    'WKEND_SE': '주말구분', # 1:주중, 2:주말, 3:혼합
-    
-    # 파생 변수 (내부용)
-    'REGION': '지역',
-    'YEAR_MONTH': '개설연월'
+    'EI_EMPL_RATE_3': '취업률(3개월)', 'EI_EMPL_RATE_6': '취업률(6개월)',
+    'STDG_SCOR': '만족도(점)', 'GRADE': '등급',
+    'CERTIFICATE': '관련자격증', 'CONTENTS': '콘텐츠',
+    'ADDRESS': '주소', 'TEL_NO': '전화번호',
+    'TRAIN_TARGET': '훈련유형', 'WKEND_SE': '주말구분',
+    'REGION': '지역', 'YEAR_MONTH': '개설연월'
 }
 
 @st.cache_data(ttl=3600)
 def load_market_data():
     conn = sqlite3.connect(DB_FILE)
-    
-    # 🚀 [변경] 특정 컬럼만 뽑지 않고 '*'로 전체 다 가져옵니다!
     query = "SELECT * FROM TB_MARKET_TREND"
-    
     df = pd.read_sql(query, conn)
     conn.close()
     
-    # 1. 날짜 변환
+    # 1. 날짜/파생변수
     df['TR_STA_DT'] = pd.to_datetime(df['TR_STA_DT'])
-    df['TR_END_DT'] = pd.to_datetime(df['TR_END_DT'], errors='coerce') # 종료일 추가
+    df['TR_END_DT'] = pd.to_datetime(df['TR_END_DT'], errors='coerce')
     df['YEAR_MONTH'] = df['TR_STA_DT'].dt.strftime('%Y-%m')
-    
-    # 2. 수치형 변환 (계산 필요한 것들 안전하게 처리)
-    numeric_cols = ['TOT_TRCO', 'EI_EMPL_RATE_3', 'STDG_SCOR', 'TOT_FXNUM', 'EI_EMPL_RATE_6']
-    for c in numeric_cols:
-        df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-    
-    # 3. 지역 정보 추출
     df['REGION'] = df['ADDRESS'].str.split(' ').str[0]
+    
+    # 2. 수치형 변환
+    cols = ['TOT_TRCO', 'EI_EMPL_RATE_3', 'STDG_SCOR', 'TOT_FXNUM']
+    for c in cols:
+        df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+        
+    # 3. 코드값 매핑 (주말구분)
+    # WKEND_SE: 1(주중), 2(주말), 3(주중주말) - API 데이터에 따라 다를 수 있음
+    wk_map = {'1': '주중', '2': '주말', '3': '주중+주말'}
+    df['주말구분_명'] = df['WKEND_SE'].astype(str).map(wk_map).fillna('기타')
+    
+    # 4. 훈련유형 결측치 처리
+    df['TRAIN_TARGET'] = df['TRAIN_TARGET'].fillna('기타')
     
     return df
 
-with st.spinner('30만 건의 전체 데이터를 로딩 중입니다... (메모리 최적화 중) 🚀'):
+with st.spinner('30만 건의 데이터에서 인사이트를 추출 중입니다... 🚀'):
     raw_df = load_market_data()
 
 # ==========================================
-# 2. 사이드바 (필터링)
+# 2. 사이드바 (필터링 강화)
 # ==========================================
-st.sidebar.header("🔍 분석 필터")
+st.sidebar.header("🔍 상세 분석 필터")
 
-# 기간 필터
+# 2.1 기본 필터
 min_date = raw_df['TR_STA_DT'].min().date()
 max_date = raw_df['TR_STA_DT'].max().date()
 start_date, end_date = st.sidebar.date_input(
     "조회 기간", [min_date, max_date], min_value=min_date, max_value=max_date
 )
 
-# 지역 필터
-region_list = ['전체'] + sorted(raw_df['REGION'].dropna().unique().tolist())
-selected_region = st.sidebar.selectbox("지역 선택", region_list)
+# 2.2 다중 선택 필터 (개선됨)
+region_opts = ['전체'] + sorted(raw_df['REGION'].dropna().unique().tolist())
+sel_region = st.sidebar.selectbox("📍 지역", region_opts)
 
-# NCS 필터
-ncs_list = ['전체'] + sorted(raw_df['NCS_CD'].unique().tolist())
-selected_ncs = st.sidebar.selectbox("NCS 코드", ncs_list)
+# ✨ [New] 훈련 유형 필터 (K-Digital, 일반 등)
+type_opts = sorted(raw_df['TRAIN_TARGET'].unique().tolist())
+sel_types = st.sidebar.multiselect("🎓 훈련 유형 (다중선택)", type_opts, default=[])
 
-# 검색 필터
-search_keyword = st.sidebar.text_input("과정명/기관명 검색")
+# ✨ [New] 주말/주중 필터
+wk_opts = sorted(raw_df['주말구분_명'].unique().tolist())
+sel_wkend = st.sidebar.multiselect("📅 주말/주중 (다중선택)", wk_opts, default=[])
+
+# ✨ [New] 등급 필터
+grade_opts = sorted(raw_df['GRADE'].dropna().unique().tolist())
+sel_grade = st.sidebar.multiselect("🏅 기관 등급 (다중선택)", grade_opts, default=[])
+
+# NCS 및 검색
+ncs_opts = ['전체'] + sorted(raw_df['NCS_CD'].unique().tolist())
+sel_ncs = st.sidebar.selectbox("NCS 코드", ncs_opts)
+search_kwd = st.sidebar.text_input("🔍 과정명 검색")
 
 # --- 필터링 로직 ---
 df = raw_df[
@@ -111,95 +98,157 @@ df = raw_df[
     (raw_df['TR_STA_DT'].dt.date <= end_date)
 ]
 
-if selected_region != '전체':
-    df = df[df['REGION'] == selected_region]
-
-if selected_ncs != '전체':
-    df = df[df['NCS_CD'] == selected_ncs]
-
-if search_keyword:
-    # 과정명 또는 기관명에서 검색
-    df = df[
-        df['TRPR_NM'].str.contains(search_keyword, case=False) | 
-        df['TRAINST_NM'].str.contains(search_keyword, case=False)
-    ]
+if sel_region != '전체':
+    df = df[df['REGION'] == sel_region]
+if sel_ncs != '전체':
+    df = df[df['NCS_CD'] == sel_ncs]
+if sel_types:
+    df = df[df['TRAIN_TARGET'].isin(sel_types)]
+if sel_wkend:
+    df = df[df['주말구분_명'].isin(sel_wkend)]
+if sel_grade:
+    df = df[df['GRADE'].isin(sel_grade)]
+if search_kwd:
+    df = df[df['TRPR_NM'].str.contains(search_kwd, case=False)]
 
 # ==========================================
 # 3. 메인 대시보드
 # ==========================================
 st.title(f"📈 IT 훈련 시장 상세 분석 ({len(df):,}건)")
+st.caption("기간, 유형, 지역 등 다양한 필터를 조합하여 시장의 빈틈을 찾아보세요.")
 st.markdown("---")
 
-# 3.1 KPI (핵심 지표)
-c1, c2, c3, c4, c5 = st.columns(5) # 컬럼 하나 더 추가!
+# ==========================================
+# 3.1 KPI (핵심 지표) - 만족도 가시성 개선
+# ==========================================
+c1, c2, c3, c4, c5 = st.columns(5)
+
+# 1. 총 개설 수
 c1.metric("총 과정 수", f"{len(df):,}개")
+
+# 2. 평균 훈련비
 c2.metric("평균 훈련비", f"{int(df['TOT_TRCO'].mean()):,}원")
+
+# 3. 평균 정원
 c3.metric("평균 정원", f"{int(df['TOT_FXNUM'].mean())}명")
-c4.metric("평균 취업률", f"{df[df['EI_EMPL_RATE_3']>0]['EI_EMPL_RATE_3'].mean():.1f}%")
-c5.metric("평균 만족도", f"{df[df['STDG_SCOR']>0]['STDG_SCOR'].mean():.1f}점")
 
-st.markdown("###")
+# 4. 평균 취업률
+avg_empl = df[df['EI_EMPL_RATE_3'] > 0]['EI_EMPL_RATE_3'].mean()
+c4.metric("평균 취업률", f"{avg_empl:.1f}%")
 
-# 3.2 탭 구성
-t1, t2, t3, t4 = st.tabs(["📊 트렌드 분석", "🏢 경쟁사 분석", "☁️ 키워드 분석", "📑 전체 데이터 조회"])
+# 5. [수정됨] 평균 만족도 (100점 환산 + 원본 병기)
+# 만족도 점수가 있는 데이터만 추출
+valid_score_df = df[df['STDG_SCOR'] > 0]
 
-with t1:
+if not valid_score_df.empty:
+    raw_score = valid_score_df['STDG_SCOR'].mean()
+    converted_score = raw_score / 100  # 100점 만점으로 환산
+    
+    c5.metric(
+        "평균 만족도 (100점 환산)", 
+        f"{converted_score:.1f}점", 
+        delta=f"원본: {int(raw_score):,} / 10,000", # 원본 점수와 만점 기준 표시
+        delta_color="off" # 회색으로 표시 (증감 아님)
+    )
+else:
+    c5.metric("평균 만족도", "데이터 없음")
+
+# 3.2 탭 구성 (인사이트별 분류)
+tabs = st.tabs(["📊 시장 개요", "🎨 유형/일정 분석", "💰 비용/성과 분석", "🏢 경쟁 현황", "☁️ 키워드", "📑 데이터 조회"])
+
+# [Tab 1] 시장 개요
+with tabs[0]:
     col1, col2 = st.columns([2, 1])
     with col1:
         st.subheader("월별 개설 추이")
         trend = df.groupby('YEAR_MONTH').size().reset_index(name='COUNT')
         st.plotly_chart(px.line(trend, x='YEAR_MONTH', y='COUNT', markers=True), use_container_width=True)
     with col2:
-        st.subheader("지역별 비중")
+        st.subheader("지역별 점유율")
         reg_cnt = df['REGION'].value_counts().reset_index()
         reg_cnt.columns = ['지역', '개수']
         st.plotly_chart(px.pie(reg_cnt, values='개수', names='지역', hole=0.4), use_container_width=True)
 
-with t2:
-    st.subheader("훈련기관 순위 (개설 수 기준)")
+# [Tab 2] 유형/일정 분석 (New!)
+with tabs[1]:
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("🎓 훈련 유형별 비중")
+        type_cnt = df['TRAIN_TARGET'].value_counts().reset_index()
+        type_cnt.columns = ['유형', '개수']
+        st.plotly_chart(px.pie(type_cnt, values='개수', names='유형', title="K-Digital vs 일반 과정 비율"), use_container_width=True)
+    
+    with c2:
+        st.subheader("📅 주말 vs 주중 개설 현황")
+        wk_cnt = df['주말구분_명'].value_counts().reset_index()
+        wk_cnt.columns = ['구분', '개수']
+        st.plotly_chart(px.bar(wk_cnt, x='구분', y='개수', color='구분', text='개수', title="직장인 타겟(주말) 과정 수"), use_container_width=True)
+
+# [Tab 3] 비용/성과 분석 (New!)
+with tabs[2]:
+    st.subheader("💸 훈련비 vs 취업률 상관관계 분석")
+    st.caption("원이 크면 정원이 많은 과정, 색상은 훈련 유형을 나타냅니다. (상위 2000건 샘플링)")
+    
+    # 1. 먼저 0값 제외 등 유효한 데이터만 걸러냅니다.
+    valid_df = df[(df['EI_EMPL_RATE_3'] > 0) & (df['TOT_TRCO'] > 0)]
+    
+    # 2. 데이터가 있는지 확인 후 그 개수에 맞춰 샘플링합니다.
+    if not valid_df.empty:
+        # 여기서 len(df)가 아니라 len(valid_df)를 써야 안전합니다!
+        scatter_df = valid_df.sample(n=min(2000, len(valid_df)), random_state=42)
+        
+        fig_scatter = px.scatter(
+            scatter_df, 
+            x='TOT_TRCO', 
+            y='EI_EMPL_RATE_3', 
+            color='TRAIN_TARGET',
+            size='TOT_FXNUM',
+            hover_data=['TRPR_NM', 'TRAINST_NM'],
+            labels={'TOT_TRCO': '훈련비(원)', 'EI_EMPL_RATE_3': '취업률(%)', 'TRAIN_TARGET': '유형'},
+            opacity=0.7
+        )
+        st.plotly_chart(fig_scatter, use_container_width=True)
+    else:
+        st.info("분석할 유효 데이터(훈련비 > 0 및 취업률 > 0)가 없습니다.") # 데이터 없을 때 안내 메시지
+    
+    st.divider()
+    
+    st.subheader("🏅 등급별 평균 성과 비교")
+    # 등급 데이터가 있는 경우에만 차트 그리기
+    if not df['GRADE'].dropna().empty:
+        grade_grp = df.groupby('GRADE')[['EI_EMPL_RATE_3', 'STDG_SCOR']].mean().reset_index()
+        fig_bar = px.bar(grade_grp, x='GRADE', y=['EI_EMPL_RATE_3', 'STDG_SCOR'], barmode='group', title="등급에 따른 취업률/만족도 차이")
+        st.plotly_chart(fig_bar, use_container_width=True)
+    else:
+        st.info("등급 정보가 있는 데이터가 없습니다.")
+
+# [Tab 4] 경쟁 현황
+with tabs[3]:
+    st.subheader("🏆 TOP 15 훈련기관 (개설 수 기준)")
     top_inst = df['TRAINST_NM'].value_counts().head(15).reset_index()
     top_inst.columns = ['기관명', '개설수']
     st.plotly_chart(px.bar(top_inst, y='기관명', x='개설수', orientation='h', text='개설수', color='개설수'), use_container_width=True)
 
-with t3:
-    st.subheader("과정명 키워드 워드클라우드")
+# [Tab 5] 키워드
+with tabs[4]:
+    st.subheader("🔥 과정명 트렌드 키워드")
     text = " ".join(df['TRPR_NM'].dropna().astype(str))
-    stops = ['과정', '양성', '취업', '실무', '및', '위한', '기반', '활용', '개발자', 'A', 'B', '수료', '반', '취득']
+    stops = ['과정', '양성', '취업', '실무', '및', '위한', '기반', '활용', '개발자', 'A', 'B', '수료', '반', '취득', '능력', '향상']
     words = [w for w in text.split() if len(w) > 1 and w not in stops]
-    kwd = pd.DataFrame(Counter(words).most_common(20), columns=['키워드', '빈도'])
+    kwd = pd.DataFrame(Counter(words).most_common(25), columns=['키워드', '빈도'])
     st.plotly_chart(px.bar(kwd, x='키워드', y='빈도', color='빈도'), use_container_width=True)
 
-# ✅ [업그레이드] 모든 컬럼 다 보여주기
-with t4:
-    st.subheader(f"상세 데이터 리스트 (총 {len(df):,}건)")
+# [Tab 6] 데이터 조회
+with tabs[5]:
+    st.subheader(f"📄 상세 데이터 ({len(df):,}건)")
     
-    # 1. 보기 좋게 컬럼 이름 변경 (30개 컬럼 전체 적용)
-    # DB에 있지만 MAP에 없는 컬럼은 그대로 영어로 나옵니다.
+    # 컬럼 매핑 및 정렬
     display_df = df.rename(columns=COLUMN_MAP)
+    priority = ['과정명', '훈련기관명', '훈련유형', '지역', '주말구분', '훈련비(원)', '정원(명)', '취업률(3개월)', '개설일']
+    cols = [c for c in priority if c in display_df.columns] + [c for c in display_df.columns if c not in priority]
     
-    # 2. 필요한 컬럼 순서 정렬 (보고 싶은 순서대로)
-    # 이 리스트에 없는 컬럼은 뒤에 붙습니다.
-    priority_cols = [
-        '과정명', '훈련기관명', '개설일', '종료일', '지역', 
-        '훈련비(원)', '정원(명)', '취업률(3개월)', '만족도(점)', 
-        '주말구분', '전화번호', '주소'
-    ]
-    # 실제 존재하는 컬럼만 필터링
-    final_cols = [c for c in priority_cols if c in display_df.columns]
-    # 나머지 컬럼들 붙이기
-    remaining_cols = [c for c in display_df.columns if c not in final_cols]
-    final_display = display_df[final_cols + remaining_cols]
-
-    # 3. 엑셀 다운로드 기능
-    st.warning("⚠️ 브라우저 성능을 위해 상위 1,000개만 미리보기로 표시합니다. 전체 데이터는 아래 버튼으로 다운로드하세요.")
-    st.dataframe(final_display.head(1000), use_container_width=True)
+    st.warning("⚠️ 상위 1,000건만 표시됩니다. 전체 데이터는 CSV로 다운로드하세요.")
+    st.dataframe(display_df[cols].head(1000), use_container_width=True)
     
-    # 4. CSV 다운로드 버튼 (전체 데이터)
-    csv = final_display.to_csv(index=False).encode('utf-8-sig') # 엑셀 깨짐 방지(utf-8-sig)
-    st.download_button(
-        "📥 전체 데이터 다운로드 (CSV)",
-        csv,
-        f"market_data_{start_date}_{end_date}.csv",
-        "text/csv",
-        key='download-csv'
-    )
+    csv = display_df[cols].to_csv(index=False).encode('utf-8-sig')
+    st.download_button("📥 전체 데이터 다운로드 (CSV)", csv, "market_analysis.csv", "text/csv")
