@@ -77,21 +77,17 @@ st.sidebar.header("🔍 상세 분석 필터")
 min_date = raw_df['TR_STA_DT'].min().date()
 max_date = raw_df['TR_STA_DT'].max().date()
 
+# 🛠️ [Fix 1] 날짜 선택 에러 수정 (Unpacking Error 해결)
 date_range = st.sidebar.date_input(
     "조회 기간", 
     value=[min_date, max_date], 
     min_value=min_date, 
     max_value=max_date
 )
-
-# 사용자가 날짜를 하나만 선택했을 때(선택 중) 에러 방지
 if len(date_range) == 2:
     start_date, end_date = date_range
 else:
-    # 날짜를 하나만 찍은 상태면 시작일=종료일로 임시 설정
-    start_date = date_range[0]
-    end_date = date_range[0]
-
+    start_date, end_date = date_range[0], date_range[0]
 
 region_opts = ['전체'] + sorted(raw_df['REGION'].dropna().unique().tolist())
 sel_region = st.sidebar.selectbox("📍 지역", region_opts)
@@ -130,10 +126,22 @@ st.markdown("---")
 # 3.1 KPI Row
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("검색된 과정 수", f"{len(df):,}개")
-c2.metric("평균 훈련비", f"{int(df['TOT_TRCO'].mean()):,}원")
-c3.metric("평균 정원", f"{int(df['TOT_FXNUM'].mean())}명")
+
+# 🛠️ [Fix 2] NaN to Integer 에러 수정 (데이터가 없을 때 처리)
+mean_trco = df['TOT_TRCO'].mean()
+if pd.isna(mean_trco): mean_trco = 0
+c2.metric("평균 훈련비", f"{int(mean_trco):,}원")
+
+mean_fxnum = df['TOT_FXNUM'].mean()
+if pd.isna(mean_fxnum): mean_fxnum = 0
+c3.metric("평균 정원", f"{int(mean_fxnum)}명")
+
 avg_empl = df[df['EI_EMPL_RATE_3'] > 0]['EI_EMPL_RATE_3'].mean()
-c4.metric("평균 취업률", f"{avg_empl:.1f}%")
+if pd.isna(avg_empl):
+    c4.metric("평균 취업률", "-")
+else:
+    c4.metric("평균 취업률", f"{avg_empl:.1f}%")
+
 valid_score_df = df[df['STDG_SCOR'] > 0]
 if not valid_score_df.empty:
     raw_score = valid_score_df['STDG_SCOR'].mean()
