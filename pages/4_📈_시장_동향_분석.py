@@ -76,9 +76,22 @@ st.sidebar.header("🔍 상세 분석 필터")
 
 min_date = raw_df['TR_STA_DT'].min().date()
 max_date = raw_df['TR_STA_DT'].max().date()
-start_date, end_date = st.sidebar.date_input(
-    "조회 기간", [min_date, max_date], min_value=min_date, max_value=max_date
+
+date_range = st.sidebar.date_input(
+    "조회 기간", 
+    value=[min_date, max_date], 
+    min_value=min_date, 
+    max_value=max_date
 )
+
+# 사용자가 날짜를 하나만 선택했을 때(선택 중) 에러 방지
+if len(date_range) == 2:
+    start_date, end_date = date_range
+else:
+    # 날짜를 하나만 찍은 상태면 시작일=종료일로 임시 설정
+    start_date = date_range[0]
+    end_date = date_range[0]
+
 
 region_opts = ['전체'] + sorted(raw_df['REGION'].dropna().unique().tolist())
 sel_region = st.sidebar.selectbox("📍 지역", region_opts)
