@@ -77,13 +77,14 @@ st.sidebar.header("🔍 상세 분석 필터")
 min_date = raw_df['TR_STA_DT'].min().date()
 max_date = raw_df['TR_STA_DT'].max().date()
 
-# 🛠️ [Fix 1] 날짜 선택 에러 수정 (Unpacking Error 해결)
+# 🛠️ 날짜 선택 에러 수정
 date_range = st.sidebar.date_input(
     "조회 기간", 
     value=[min_date, max_date], 
     min_value=min_date, 
     max_value=max_date
 )
+
 if len(date_range) == 2:
     start_date, end_date = date_range
 else:
@@ -124,10 +125,9 @@ st.title(f"📈 IT 훈련 시장 상세 분석 ({len(df):,}건)")
 st.markdown("---")
 
 # 3.1 KPI Row
-c1, c2, c3, c4, c5 = st.columns(5)
+c1, c2, c3, c4, c5, c6 = st.columns(6)
 c1.metric("검색된 과정 수", f"{len(df):,}개")
 
-# 🛠️ [Fix 2] NaN to Integer 에러 수정 (데이터가 없을 때 처리)
 mean_trco = df['TOT_TRCO'].mean()
 if pd.isna(mean_trco): mean_trco = 0
 c2.metric("평균 훈련비", f"{int(mean_trco):,}원")
@@ -143,11 +143,21 @@ else:
     c4.metric("평균 취업률", f"{avg_empl:.1f}%")
 
 valid_score_df = df[df['STDG_SCOR'] > 0]
+
+# 1. 가중 평균 만족도 (시장 공급 기준)
 if not valid_score_df.empty:
-    raw_score = valid_score_df['STDG_SCOR'].mean()
-    c5.metric("평균 만족도 (100점 환산)", f"{raw_score/100:.1f}점", delta=f"원본: {int(raw_score):,} / 10,000", delta_color="off")
+    weighted_score = valid_score_df['STDG_SCOR'].mean()
+    c5.metric("가중 평균 만족도 (100점 환산)", f"{weighted_score/100:.1f}점", delta=f"원본: {int(weighted_score):,} / 10,000", delta_color="off")
 else:
-    c5.metric("평균 만족도", "데이터 없음")
+    c5.metric("가중 평균 만족도", "데이터 없음")
+
+# 2. 과정 평균 만족도 (순수 과정 기준)
+if not valid_score_df.empty:
+    course_means = valid_score_df.groupby(['TRPR_NM', 'TRAINST_NM'])['STDG_SCOR'].mean()
+    simple_score = course_means.mean()
+    c6.metric("과정 평균 만족도 (100점 환산)", f"{simple_score/100:.1f}점", help="개별 과정들의 만족도 단순 평균")
+else:
+    c6.metric("과정 평균 만족도", "데이터 없음")
 
 st.markdown("###")
 
@@ -167,7 +177,7 @@ with tabs[0]:
         reg_cnt.columns = ['지역', '개수']
         st.plotly_chart(px.pie(reg_cnt, values='개수', names='지역', hole=0.4), use_container_width=True)
 
-# [Tab 2] 🏆 순위 & 모집 분석 (통합 과정 분석 적용)
+# [Tab 2] 🏆 순위 & 모집 분석 (만족도 추가됨 ✨)
 with tabs[1]:
     st.subheader("🔎 내 기관/과정의 시장 위치 찾기")
     
@@ -178,10 +188,13 @@ with tabs[1]:
         'TRPR_ID': 'count',
         'TOT_FXNUM': 'sum',      # 총 모집정원
         'REG_COURSE_MAN': 'sum', # 총 신청인원
-        'EI_EMPL_RATE_3': 'mean'
+        'EI_EMPL_RATE_3': 'mean', # 평균 취업률
+        'STDG_SCOR': 'mean'       # 평균 만족도 (New!)
     }).reset_index()
     
     inst_stats['평균모집률'] = (inst_stats['REG_COURSE_MAN'] / inst_stats['TOT_FXNUM'] * 100).fillna(0).clip(upper=100)
+    inst_stats['만족도(점)'] = (inst_stats['STDG_SCOR'] / 100).round(1) # 100점 만점으로 변환
+    
     inst_stats = inst_stats.sort_values(by='REG_COURSE_MAN', ascending=False).reset_index(drop=True)
     inst_stats['순위'] = inst_stats.index + 1
     
@@ -191,24 +204,22 @@ with tabs[1]:
     })
     
     # ----------------------------------------------------
-    # 2. 과정별 통합 집계 (Aggregation) - 핵심 변경 사항
+    # 2. 과정별 통합 집계 (Aggregation)
     # ----------------------------------------------------
-    # 같은 과정명(TRPR_NM)과 기관명(TRAINST_NM)으로 그룹화하여 통계 산출
     course_agg = df.groupby(['TRPR_NM', 'TRAINST_NM']).agg({
         'TRPR_ID': 'count',       # 개설 회차 수
         'TOT_FXNUM': 'sum',       # 조회 기간 총 정원
         'REG_COURSE_MAN': 'sum',  # 조회 기간 총 신청인원
-        'EI_EMPL_RATE_3': 'mean'  # 평균 취업률
+        'EI_EMPL_RATE_3': 'mean', # 평균 취업률
+        'STDG_SCOR': 'mean'       # 평균 만족도 (New!)
     }).reset_index()
     
-    # 통합 모집률 계산
     course_agg['통합모집률'] = (course_agg['REG_COURSE_MAN'] / course_agg['TOT_FXNUM'] * 100).fillna(0).clip(upper=100)
+    course_agg['만족도(점)'] = (course_agg['STDG_SCOR'] / 100).round(1) # 100점 만점으로 변환
     
-    # 신청인원 기준으로 내림차순 정렬
     course_agg = course_agg.sort_values(by='REG_COURSE_MAN', ascending=False).reset_index(drop=True)
     course_agg['순위'] = course_agg.index + 1
     
-    # 컬럼명 정리
     course_agg = course_agg.rename(columns={
         'TRPR_NM': '과정명', 'TRAINST_NM': '기관명', 'TRPR_ID': '개설회차',
         'TOT_FXNUM': '총정원', 'REG_COURSE_MAN': '총신청인원', 'EI_EMPL_RATE_3': '평균취업률'
@@ -224,7 +235,8 @@ with tabs[1]:
         st.markdown("##### 🏫 훈련기관 순위 (총 신청인원 기준)")
         target_inst = st.text_input("기관명 검색", placeholder="기관명 입력", key="rank_inst")
         
-        display_inst_cols = ['순위', '기관명', '총모집정원', '총신청인원', '평균모집률']
+        # 만족도(점) 추가됨
+        display_inst_cols = ['순위', '기관명', '총모집정원', '총신청인원', '평균모집률', '만족도(점)']
         
         if target_inst:
             found = inst_stats[inst_stats['기관명'].str.contains(target_inst)]
@@ -242,7 +254,7 @@ with tabs[1]:
                 
                 st.dataframe(
                     neighbor.style.apply(style_me, axis=1).format({
-                        "총모집정원": "{:,}명", "총신청인원": "{:,}명", "평균모집률": "{:.1f}%"
+                        "총모집정원": "{:,}명", "총신청인원": "{:,}명", "평균모집률": "{:.1f}%", "만족도(점)": "{:.1f}점"
                     }), 
                     use_container_width=True, hide_index=True
                 )
@@ -253,32 +265,30 @@ with tabs[1]:
             st.markdown("🏆 **신청인원 Top 5 기관**")
             st.dataframe(
                 inst_stats.head(5)[display_inst_cols].style.format({
-                    "총모집정원": "{:,}명", "총신청인원": "{:,}명", "평균모집률": "{:.1f}%"
+                    "총모집정원": "{:,}명", "총신청인원": "{:,}명", "평균모집률": "{:.1f}%", "만족도(점)": "{:.1f}점"
                 }),
                 use_container_width=True, hide_index=True
             )
             
-        # [추가] 전체 보기 기능
         with st.expander("📋 전체 훈련기관 순위표 펼치기"):
             st.dataframe(
                 inst_stats[display_inst_cols].style.format({
-                    "총모집정원": "{:,}명", "총신청인원": "{:,}명", "평균모집률": "{:.1f}%"
+                    "총모집정원": "{:,}명", "총신청인원": "{:,}명", "평균모집률": "{:.1f}%", "만족도(점)": "{:.1f}점"
                 }),
                 use_container_width=True, hide_index=True
             )
 
-    # [오른쪽] 과정 순위 섹션 (통합된 과정 데이터 사용)
+    # [오른쪽] 과정 순위 섹션
     with col_rank2:
         st.markdown("##### 📚 인기 훈련과정 (과정 통합/신청인원 기준)")
         target_course = st.text_input("과정명 검색", placeholder="과정명 입력 (예: 한화시스템)", key="rank_course")
         
-        # 기관명 포함된 컬럼 구성
-        display_course_cols = ['순위', '과정명', '기관명', '개설회차', '총정원', '총신청인원', '통합모집률']
+        # 만족도(점) 추가됨
+        display_course_cols = ['순위', '과정명', '기관명', '개설회차', '총정원', '총신청인원', '통합모집률', '만족도(점)']
         
         if target_course:
             found_c = course_agg[course_agg['과정명'].str.contains(target_course)]
             if not found_c.empty:
-                # 검색 결과 중 가장 상위(인기 많은) 과정 선택
                 my_c = found_c.iloc[0]
                 st.info(f"**'{my_c['과정명']}'** ({my_c['기관명']}) - 통합 순위 **{my_c['순위']}위**")
                 
@@ -289,7 +299,7 @@ with tabs[1]:
                 
                 st.dataframe(
                     neighbor_c.style.format({
-                        "총정원": "{:,}명", "총신청인원": "{:,}명", "통합모집률": "{:.1f}%", "개설회차": "{:,}회"
+                        "총정원": "{:,}명", "총신청인원": "{:,}명", "통합모집률": "{:.1f}%", "개설회차": "{:,}회", "만족도(점)": "{:.1f}점"
                     }), 
                     use_container_width=True, hide_index=True
                 )
@@ -300,16 +310,15 @@ with tabs[1]:
             st.markdown("🏆 **신청인원 Top 5 과정 (통합)**")
             st.dataframe(
                 course_agg.head(5)[display_course_cols].style.format({
-                    "총정원": "{:,}명", "총신청인원": "{:,}명", "통합모집률": "{:.1f}%", "개설회차": "{:,}회"
+                    "총정원": "{:,}명", "총신청인원": "{:,}명", "통합모집률": "{:.1f}%", "개설회차": "{:,}회", "만족도(점)": "{:.1f}점"
                 }),
                 use_container_width=True, hide_index=True
             )
             
-        # [추가] 전체 보기 기능
         with st.expander("📋 전체 과정 순위표 펼치기"):
             st.dataframe(
                 course_agg[display_course_cols].style.format({
-                    "총정원": "{:,}명", "총신청인원": "{:,}명", "통합모집률": "{:.1f}%", "개설회차": "{:,}회"
+                    "총정원": "{:,}명", "총신청인원": "{:,}명", "통합모집률": "{:.1f}%", "개설회차": "{:,}회", "만족도(점)": "{:.1f}점"
                 }),
                 use_container_width=True, hide_index=True
             )
