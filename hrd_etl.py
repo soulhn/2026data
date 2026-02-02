@@ -183,6 +183,7 @@ def run_etl():
 
                 for log in atab_list:
                     if not isinstance(log, dict): continue
+                    # print(log)
                     trnee_id = str(log.get('trneeCstmrId'))
                     cursor.execute('INSERT OR IGNORE INTO TB_TRAINEE_INFO (TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM) VALUES (?, ?, ?, ?)', 
                                    (COURSE_ID, trpr_degr, trnee_id, log.get('cstmrNm')))
