@@ -75,7 +75,6 @@ if courses_df is None:
 with st.sidebar:
     st.header("🎯 관리 대상 선택")
     
-    # 과정 선택 (진행 중인 것만)
     selected_degr = st.selectbox(
         "관리할 회차(기수) 선택",
         courses_df['TRPR_DEGR'].unique(),
@@ -92,26 +91,20 @@ with st.sidebar:
 # 데이터 필터링
 this_course = courses_df[courses_df['TRPR_DEGR'] == selected_degr].iloc[0]
 this_students_all = trainees_df[trainees_df['TRPR_DEGR'] == selected_degr].copy()
-
-# 재원생(수강중)만 필터링하여 기준 인원으로 설정
 active_students = this_students_all[~this_students_all['TRNEE_STATUS'].isin(['중도탈락', '제적'])].copy()
-
 this_logs = logs_df[logs_df['TRPR_DEGR'] == selected_degr].copy()
 
 # ==========================================
 # 4. 실시간 출결 집계 로직
 # ==========================================
 
-# 기준 날짜: DB에 있는 가장 최신 날짜 (보통 오늘)
 if not this_logs.empty:
     target_date = this_logs['ATEND_DT'].max()
 else:
     target_date = datetime.now().strftime('%Y-%m-%d')
 
-# 오늘자 로그만 필터링
 today_logs = this_logs[this_logs['ATEND_DT'] == target_date].copy()
 
-# [데이터 병합] 재원생 명부 + 오늘 로그 (Left Join)
 df_monitor = pd.merge(
     active_students[['TRNEE_ID', 'TRNEE_NM', 'TRNEE_STATUS']], 
     today_logs[['TRNEE_ID', 'IN_TIME', 'OUT_TIME', 'ATEND_STATUS']], 
@@ -119,23 +112,44 @@ df_monitor = pd.merge(
     how='left'
 )
 
+# ----------------------------------------------------
+# 🚀 [로직] 지각 판정 (09:10 기준)
+# ----------------------------------------------------
+def apply_late_rule(row):
+    current_status = row['ATEND_STATUS']
+    in_time = row['IN_TIME']
+    
+    # 1. 특이사항 보호 (조퇴/외출) - 결석은 제외(입실시간 있으면 무시)
+    if str(current_status).strip() in ['조퇴', '외출']:
+        return current_status
+    
+    # 2. 이미 지각이면 유지
+    if str(current_status).strip() == '지각':
+        return '지각'
+    
+    # 3. 시간 비교
+    if pd.notna(in_time):
+        time_digits = ''.join(filter(str.isdigit, str(in_time)))
+        if len(time_digits) >= 3:
+            try:
+                # 앞에서부터 4자리만 끊어서 비교 (예: 092300 -> 923)
+                time_val = int(time_digits[:4])
+                if time_val > 910:
+                    return '지각'
+            except:
+                pass 
+
+    return current_status
+
+df_monitor['ATEND_STATUS'] = df_monitor.apply(apply_late_rule, axis=1)
+
 # --- 지표 계산 ---
-total_cnt = len(active_students) # 총 재원
-
-# 1. 입실 (IN_TIME이 있는 사람)
-present_list = df_monitor[df_monitor['IN_TIME'].notna()]
-present_cnt = len(present_list)
-
-# 2. 미퇴실 (입실O, 퇴실X) - 현재 교실에 있는 인원
-not_left_list = present_list[present_list['OUT_TIME'].isna()]
-not_left_cnt = len(not_left_list)
-
-# 3. 특이사항 카운트
-late_cnt = len(today_logs[today_logs['ATEND_STATUS'] == '지각'])
-early_cnt = len(today_logs[today_logs['ATEND_STATUS'] == '조퇴'])
-out_cnt = len(today_logs[today_logs['ATEND_STATUS'] == '외출'])
-
-# 4. 결석 (입실 기록이 아예 없는 사람)
+total_cnt = len(active_students)
+present_cnt = len(df_monitor[df_monitor['IN_TIME'].notna()])
+not_left_cnt = len(df_monitor[(df_monitor['IN_TIME'].notna()) & (df_monitor['OUT_TIME'].isna())])
+late_cnt = len(df_monitor[df_monitor['ATEND_STATUS'] == '지각'])
+early_cnt = len(df_monitor[df_monitor['ATEND_STATUS'] == '조퇴'])
+out_cnt = len(df_monitor[df_monitor['ATEND_STATUS'] == '외출'])
 absent_students = df_monitor[df_monitor['IN_TIME'].isna()]
 real_absent_cnt = len(absent_students)
 
@@ -143,21 +157,18 @@ real_absent_cnt = len(absent_students)
 # 5. 대시보드 화면 구성
 # ==========================================
 
-# [헤더]
 st.subheader(f"📌 {selected_degr}회차 실시간 현황 ({target_date} 기준)")
 d_day = (pd.to_datetime(this_course['TR_END_DT']) - pd.to_datetime(datetime.now().date())).days
 st.info(f"**과정명:** {this_course['TRPR_NM']} (D-{d_day})")
 
 st.divider()
 
-# [Row 1] 메인 현황판
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("총 재원", f"{total_cnt}명")
-c2.metric("금일 입실", f"{present_cnt}명", delta=f"{present_cnt/total_cnt*100:.1f}%")
-c3.metric("현재 미퇴실(교실)", f"{not_left_cnt}명", delta_color="off", help="입실O, 퇴실X")
+c2.metric("금일 입실", f"{present_cnt}명")
+c3.metric("현재 미퇴실", f"{not_left_cnt}명", delta_color="off")
 c4.metric("결석/미출석", f"{real_absent_cnt}명", delta_color="inverse")
 
-# [Row 2] 상세 특이사항
 c5, c6, c7, c8 = st.columns(4)
 c5.metric("지각", f"{late_cnt}명", delta_color="inverse")
 c6.metric("조퇴", f"{early_cnt}명", delta_color="inverse")
@@ -166,38 +177,25 @@ c8.metric("퇴실 완료", f"{present_cnt - not_left_cnt}명")
 
 st.divider()
 
-# ----------------------------------------------------
-# 📝 [New!] 보고용 텍스트 생성기
-# ----------------------------------------------------
-with st.expander("📝 보고용 텍스트 복사 (클릭하여 펼치기)", expanded=True):
-    st.caption("아래 텍스트를 복사해서 메신저나 보고서에 바로 붙여넣으세요.")
-    
+with st.expander("📝 보고용 텍스트 복사", expanded=True):
     def get_names_str(df, type_):
         names = []
-        if type_ == 'absent':
-            names = df[df['IN_TIME'].isna()]['TRNEE_NM'].tolist()
-        elif type_ == 'not_left':
-            names = df[(df['IN_TIME'].notna()) & (df['OUT_TIME'].isna())]['TRNEE_NM'].tolist()
+        if type_ == 'absent': names = df[df['IN_TIME'].isna()]['TRNEE_NM'].tolist()
+        elif type_ == 'not_left': names = df[(df['IN_TIME'].notna()) & (df['OUT_TIME'].isna())]['TRNEE_NM'].tolist()
         elif type_ == 'late':
-            names = df[df['ATEND_STATUS'] == '지각']['TRNEE_NM'].tolist()
-        elif type_ == 'early':
-            names = df[df['ATEND_STATUS'] == '조퇴']['TRNEE_NM'].tolist()
-        elif type_ == 'out':
-            names = df[df['ATEND_STATUS'] == '외출']['TRNEE_NM'].tolist()
-            
+            target = df[df['ATEND_STATUS'] == '지각']
+            for _, row in target.iterrows():
+                clean_time = str(row['IN_TIME']).strip()
+                names.append(f"{row['TRNEE_NM']}({clean_time})")
+        elif type_ == 'early': names = df[df['ATEND_STATUS'] == '조퇴']['TRNEE_NM'].tolist()
+        elif type_ == 'out': names = df[df['ATEND_STATUS'] == '외출']['TRNEE_NM'].tolist()
         return ", ".join(names) if names else "없음"
 
-    if not this_logs.empty and 'COLLECTED_AT' in this_logs.columns:
-        last_collect_dt_kst = pd.to_datetime(this_logs['COLLECTED_AT']).max() + timedelta(hours=9)
-        ref_time_str = last_collect_dt_kst.strftime('%H시 %M분')
-    else:
-        ref_time_str = datetime.now().strftime('%H시 %M분')
-    
-    # 🚀 [수정] 보고 양식 순서 변경 (미퇴실을 맨 아래로)
-    report_text = f"""[{ref_time_str} 기준]
+    last_collect = pd.to_datetime(this_logs['COLLECTED_AT']).max() + timedelta(hours=9) if 'COLLECTED_AT' in this_logs.columns else datetime.now()
+    report_text = f"""[{last_collect.strftime('%H시 %M분')} 기준]
 
 - 총인원: {total_cnt}명
- ㄴ 현 인원 (강의실): {not_left_cnt}명
+ ㄴ 현 인원: {not_left_cnt}명
  ㄴ 미출석/퇴실완료: {total_cnt - not_left_cnt}명
 
 <특이사항>
@@ -212,31 +210,18 @@ with st.expander("📝 보고용 텍스트 복사 (클릭하여 펼치기)", exp
 
 st.divider()
 
-# [Row 3] 명단 상세 보기 (탭으로 구분)
-t1, t2, t3 = st.tabs(["🚨 미퇴실/특이사항 명단", "❌ 결석자 명단", "📋 전체 출석부"])
+t1, t2, t3 = st.tabs(["🚨 미퇴실/특이사항", "❌ 결석자", "📋 전체 출석부"])
 
 with t1:
-    st.markdown("##### 📢 현재 교실에 있거나(미퇴실), 지각/조퇴한 훈련생")
-    issue_list = df_monitor[
-        (df_monitor['OUT_TIME'].isna() & df_monitor['IN_TIME'].notna()) | 
-        (df_monitor['ATEND_STATUS'].isin(['지각', '조퇴', '외출']))
-    ].copy()
-    
+    issue_list = df_monitor[(df_monitor['OUT_TIME'].isna() & df_monitor['IN_TIME'].notna()) | (df_monitor['ATEND_STATUS'].isin(['지각', '조퇴', '외출']))].copy()
     if not issue_list.empty:
-        issue_list['상태_요약'] = issue_list.apply(
-            lambda x: '🟢 미퇴실(수업중)' if pd.isna(x['OUT_TIME']) and pd.notna(x['IN_TIME']) else x['ATEND_STATUS'], axis=1
-        )
+        issue_list['상태_요약'] = issue_list.apply(lambda x: '🟢 미퇴실(수업중)' if pd.isna(x['OUT_TIME']) and pd.notna(x['IN_TIME']) else x['ATEND_STATUS'], axis=1)
         st.dataframe(issue_list[['TRNEE_NM', 'IN_TIME', 'OUT_TIME', '상태_요약']], use_container_width=True, hide_index=True)
-    else:
-        st.success("특이사항이 있는 훈련생이 없습니다.")
+    else: st.success("특이사항 없음")
 
 with t2:
-    st.markdown("##### 📞 연락이 필요한 결석(미출석) 훈련생")
-    if not absent_students.empty:
-        st.dataframe(absent_students[['TRNEE_NM', 'TRNEE_STATUS']], use_container_width=True, hide_index=True)
-    else:
-        st.success("전원 출석하였습니다! 🎉")
+    if not absent_students.empty: st.dataframe(absent_students[['TRNEE_NM', 'TRNEE_STATUS']], use_container_width=True, hide_index=True)
+    else: st.success("전원 출석! 🎉")
 
 with t3:
-    st.markdown("##### 📋 금일 전체 훈련생 출석 현황")
     st.dataframe(df_monitor[['TRNEE_NM', 'IN_TIME', 'OUT_TIME', 'ATEND_STATUS']], use_container_width=True, hide_index=True)
