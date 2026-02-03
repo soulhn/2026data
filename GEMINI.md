@@ -25,3 +25,20 @@
 - `Docs: README.md에서 미구현된 워드클라우드 기능 언급 삭제` (커밋 ID: `ff8fa15`)
 
 ---
+
+## 세션 2: ETL 스크립트 오류 해결
+
+- **날짜:** 2026년 2월 3일
+- **목표:** `hrd_etl.py` 실행 시 발생하는 `database is locked` 오류 및 `UnicodeEncodeError` 해결.
+
+### 주요 변경 사항:
+
+1.  **`hrd_etl.py` DB 연결 수정:**
+    - `sqlite3.connect` 함수에 `timeout=30` 파라미터를 추가하여 DB lock으로 인한 대기 시간을 30초로 설정함.
+    - **관련 파일:** `hrd_etl.py`
+
+2.  **`hrd_etl.py` 출력문 수정:**
+    - Windows `cp949` 코덱과 호환되지 않는 이모지(e.g., `🚀`, `🎉`)를 모두 제거하여 `UnicodeEncodeError`를 해결함.
+    - **관련 파일:** `hrd_etl.py`
+
+---

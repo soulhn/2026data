@@ -15,12 +15,12 @@ API_KEY = os.getenv("HRD_API_KEY")
 COURSE_ID = os.getenv("HANWHA_COURSE_ID")
 
 if not API_KEY or not COURSE_ID:
-    print("❌ 오류: .env 파일 설정을 확인하세요.")
+    print("오류: .env 파일 설정을 확인하세요.")
     exit()
 
 def get_db_connection():
     # utils의 DB_FILE 사용
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_FILE, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -81,15 +81,15 @@ def run_etl():
     init_db()
     conn = get_db_connection()
     cursor = conn.cursor()
-    print(f"🚀 [ETL Start] 과정ID({COURSE_ID}) 데이터 수집 시작...")
+    print(f"[ETL Start] 과정ID({COURSE_ID}) 데이터 수집 시작...")
 
     try:
         url_course = f"https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_3.jsp?returnType=JSON&authKey={API_KEY}&srchTrprId={COURSE_ID}&outType=2"
         res = requests.get(url_course)
         course_list = json.loads(res.json()['returnJSON'])
-        print(f"📋 과정 목록({len(course_list)}건) 조회 성공.")
+        print(f"과정 목록({len(course_list)}건) 조회 성공.")
     except Exception as e:
-        print(f"❌ 과정 목록 조회 실패: {e}")
+        print(f"과정 목록 조회 실패: {e}")
         return
 
     update_cutoff_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
@@ -130,7 +130,7 @@ def run_etl():
         is_data_exists = cursor.fetchone() is not None
 
         if (end_date < update_cutoff_date) and is_data_exists:
-            print(f"   ⏭️ {trpr_degr}회차: 종료된 과정({end_date})이며 DB 데이터 존재함. Skip.")
+            print(f"   {trpr_degr}회차: 종료된 과정({end_date})이며 DB 데이터 존재함. Skip.")
             continue  
             
         url_roster = f"https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_4.jsp?returnType=JSON&authKey={API_KEY}&outType=2&srchTrprId={COURSE_ID}&srchTrprDegr={trpr_degr}"
@@ -203,7 +203,7 @@ def run_etl():
         conn.commit()
 
     conn.close()
-    print("🎉 [Complete] 스마트 ETL 수집 완료! (최신 데이터만 업데이트됨)")
+    print("[Complete] 스마트 ETL 수집 완료! (최신 데이터만 업데이트됨)")
 
 if __name__ == "__main__":
     run_etl()
