@@ -117,4 +117,4 @@ streamlit run home.py
   - 대용량 데이터 조회 시 `Pagination` 및 `Sampling` 기법 적용 (브라우저 메모리 보호)
 - **Visualization**
   - Plotly & Altair를 활용한 인터랙티브 차트 구현
-  - 워드클라우드, 산점도(Scatter), 파이 차트 등 다각적 시각화
+  - 산점도(Scatter), 파이 차트 등 다각적 시각화
