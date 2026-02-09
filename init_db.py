@@ -94,11 +94,25 @@ def init_all_tables():
     ''')
 
     # ==========================================
-    # 인덱스
+    # 인덱스 (PG: 이미 존재하면 건너뜀)
     # ==========================================
-    cursor.execute('CREATE INDEX IF NOT EXISTS IDX_MARKET_NCS ON TB_MARKET_TREND (NCS_CD)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS IDX_MARKET_DATE ON TB_MARKET_TREND (TR_STA_DT)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS IDX_MARKET_AREA ON TB_MARKET_TREND (TRNG_AREA_CD)')
+    indexes = [
+        ('IDX_MARKET_NCS',  'TB_MARKET_TREND', 'NCS_CD'),
+        ('IDX_MARKET_DATE', 'TB_MARKET_TREND', 'TR_STA_DT'),
+        ('IDX_MARKET_AREA', 'TB_MARKET_TREND', 'TRNG_AREA_CD'),
+    ]
+    for idx_name, table, col in indexes:
+        if is_pg():
+            cursor.execute(
+                "SELECT 1 FROM pg_indexes WHERE indexname = %s", (idx_name.lower(),)
+            )
+            if cursor.fetchone():
+                continue
+            conn.commit()
+            cursor.execute(f'CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({col})')
+            conn.commit()
+        else:
+            cursor.execute(f'CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({col})')
 
     # ==========================================
     # 마이그레이션 (기존 DB 호환)
