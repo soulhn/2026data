@@ -1,13 +1,12 @@
 import sqlite3
-import requests
 import json
 import os
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 
-# 🚀 리팩토링: utils에서 공통 기능 가져오기
-from utils import get_connection
+from utils import get_connection, get_retry_session
+from init_db import init_all_tables
 
 load_dotenv()
 
@@ -33,66 +32,18 @@ def get_month_list(start_date_str, end_date_str):
         curr += relativedelta(months=1)
     return date_list
 
-def init_db():
-    conn = get_connection(timeout=30, row_factory=sqlite3.Row)
-    cursor = conn.cursor()
-    
-    # 내부 운영 데이터 테이블들
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS TB_COURSE_MASTER (
-            TRPR_ID TEXT, TRPR_DEGR INTEGER, TRPR_NM TEXT, 
-            TR_STA_DT TEXT, TR_END_DT TEXT, 
-            TOT_TRCO INTEGER, FINI_CNT INTEGER, 
-            TOT_FXNUM INTEGER, TOT_PAR_MKS INTEGER, TOT_TRP_CNT INTEGER, INST_INO TEXT,
-            EI_EMPL_RATE_3 TEXT, EI_EMPL_CNT_3 INTEGER, EI_EMPL_RATE_6 TEXT, EI_EMPL_CNT_6 INTEGER, 
-            HRD_EMPL_RATE_6 TEXT, HRD_EMPL_CNT_6 INTEGER, REAL_EMPL_RATE REAL,
-            COLLECTED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (TRPR_ID, TRPR_DEGR)
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS TB_TRAINEE_INFO (
-            TRPR_ID TEXT, TRPR_DEGR INTEGER, TRNEE_ID TEXT, TRNEE_NM TEXT,
-            TRNEE_STATUS TEXT, TRNEE_TYPE TEXT, BIRTH_DATE TEXT,
-            TOTAL_DAYS INTEGER, OFLHD_CNT INTEGER, VCATN_CNT INTEGER,
-            ABSENT_CNT INTEGER, ATEND_CNT INTEGER,
-            COLLECTED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (TRPR_ID, TRPR_DEGR, TRNEE_ID)
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS TB_ATTENDANCE_LOG (
-            TRPR_ID TEXT, TRPR_DEGR INTEGER, TRNEE_ID TEXT, 
-            ATEND_DT TEXT, DAY_NM TEXT, IN_TIME TEXT, OUT_TIME TEXT, 
-            ATEND_STATUS TEXT, ATEND_STATUS_CD TEXT,
-            COLLECTED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT)
-        )
-    ''')
-    # 기존 DB 마이그레이션: ABSENT_CNT, ATEND_CNT 컬럼 추가
-    try:
-        cursor.execute("ALTER TABLE TB_TRAINEE_INFO ADD COLUMN ABSENT_CNT INTEGER")
-    except sqlite3.OperationalError:
-        pass  # 이미 존재
-    try:
-        cursor.execute("ALTER TABLE TB_TRAINEE_INFO ADD COLUMN ATEND_CNT INTEGER")
-    except sqlite3.OperationalError:
-        pass  # 이미 존재
-
-    conn.commit()
-    conn.close()
-
 def run_etl():
-    init_db()
+    init_all_tables()
     conn = get_connection(timeout=30, row_factory=sqlite3.Row)
     cursor = conn.cursor()
+    session = get_retry_session()
     print(f"[ETL Start] 과정ID({COURSE_ID}) 데이터 수집 시작...")
 
     BASE_URL_COURSE = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_3.jsp"
     BASE_URL_DETAIL = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_4.jsp"
 
     try:
-        res = requests.get(BASE_URL_COURSE, params={
+        res = session.get(BASE_URL_COURSE, params={
             "returnType": "JSON", "authKey": API_KEY,
             "srchTrprId": COURSE_ID, "outType": "2"
         })
@@ -159,7 +110,7 @@ def run_etl():
             continue  
             
         try:
-            res_roster = requests.get(BASE_URL_DETAIL, params={
+            res_roster = session.get(BASE_URL_DETAIL, params={
                 "returnType": "JSON", "authKey": API_KEY, "outType": "2",
                 "srchTrprId": COURSE_ID, "srchTrprDegr": trpr_degr
             })
@@ -204,7 +155,7 @@ def run_etl():
         target_months = get_month_list(course.get('trStaDt'), course.get('trEndDt'))
         for yyyymm in target_months:
             try:
-                res_attend = requests.get(BASE_URL_DETAIL, params={
+                res_attend = session.get(BASE_URL_DETAIL, params={
                     "returnType": "JSON", "authKey": API_KEY, "outType": "2",
                     "srchTrprId": COURSE_ID, "srchTrprDegr": trpr_degr,
                     "srchTorgId": "student_detail", "atendMo": yyyymm

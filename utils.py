@@ -44,6 +44,24 @@ def calculate_age_at_training(birth_date_str, training_start_date_str):
     except (ValueError, TypeError):
         return None
 
+def get_retry_session(retries=5, backoff_factor=1):
+    """재시도 로직이 포함된 requests Session을 반환합니다."""
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+
+    session = requests.Session()
+    retry = Retry(
+        total=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=[500, 502, 503, 504],
+        allowed_methods=["GET"]
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
 def safe_float(val, default=0.0):
     """안전한 float 변환. 'A', 'B', 'null' 등 비숫자도 처리."""
     if not val or val == "":

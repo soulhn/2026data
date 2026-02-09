@@ -6,10 +6,9 @@ import datetime as dt
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
-from utils import get_connection, DB_FILE, safe_float, safe_int
+from utils import get_connection, DB_FILE, safe_float, safe_int, get_retry_session
+from init_db import init_all_tables
 
 load_dotenv()
 
@@ -35,18 +34,6 @@ if not AUTH_KEY:
 def ymd(d: dt.date) -> str:
     return d.strftime("%Y%m%d")
 
-def get_retry_session():
-    session = requests.Session()
-    retry = Retry(
-        total=5,
-        backoff_factor=1,
-        status_forcelist=[500, 502, 503, 504],
-        allowed_methods=["GET"]
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-    return session
 
 def month_shards(start: dt.date, end: dt.date):
     cur = dt.date(start.year, start.month, 1)
@@ -233,6 +220,7 @@ def save_rows(rows):
 # 5. 메인 실행
 # ==========================================
 def main():
+    init_all_tables()
     start_date, end_date = get_collect_range()
     print(f"[Market ETL] 수집 기간: {start_date} ~ {end_date}")
 
