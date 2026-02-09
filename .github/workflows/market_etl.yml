@@ -26,4 +26,4 @@ jobs:
         env:
           HRD_API_KEY: ${{ secrets.HRD_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python market_etl.py
+        run: python -u market_etl.py

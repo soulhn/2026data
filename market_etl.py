@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-from utils import get_connection, DB_FILE, safe_float, safe_int, get_retry_session, adapt_query
+from utils import get_connection, DB_FILE, safe_float, safe_int, get_retry_session, adapt_query, is_pg
 from init_db import init_all_tables
 
 load_dotenv()
@@ -205,10 +205,17 @@ def save_rows(rows):
     upsert_query = adapt_query(_UPSERT_QUERY_RAW)
     try:
         batch_size = 1000
-        for i in range(0, len(rows), batch_size):
-            batch = rows[i:i+batch_size]
-            cursor.executemany(upsert_query, batch)
-            conn.commit()
+        if is_pg():
+            from psycopg2.extras import execute_batch
+            for i in range(0, len(rows), batch_size):
+                batch = rows[i:i+batch_size]
+                execute_batch(cursor, upsert_query, batch, page_size=100)
+                conn.commit()
+        else:
+            for i in range(0, len(rows), batch_size):
+                batch = rows[i:i+batch_size]
+                cursor.executemany(upsert_query, batch)
+                conn.commit()
         return len(rows)
     except Exception as e:
         print(f"DB 저장 중 오류: {e}")
