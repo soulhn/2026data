@@ -2,7 +2,31 @@
 
 ## 프로젝트 개요
 
-HRD-Net 공공데이터 기반 훈련 과정 성과 분석 대시보드 (Streamlit + SQLite)
+HRD-Net 공공데이터 기반 훈련 과정 성과 분석 대시보드 (Streamlit + PostgreSQL/SQLite)
+
+## 아키텍처
+
+```
+[GitHub Actions]                [Supabase]              [Streamlit Cloud]
+hrd_etl.py (평일 매시간)  →   PostgreSQL DB    ←    대시보드 (읽기 전용)
+market_etl.py (매일 21시) →                    ←    https://2026data.streamlit.app
+```
+
+### DB 이중 지원 (SQLite / PostgreSQL)
+- `DATABASE_URL` 환경변수 있으면 → PostgreSQL (Supabase), 없으면 → SQLite (로컬)
+- `utils.py`의 `is_pg()`, `get_database_url()`, `adapt_query()`로 자동 전환
+- `adapt_query()`: `?` → `%s`, `INSERT OR IGNORE` → `ON CONFLICT DO NOTHING` 자동 변환
+- PostgreSQL은 컬럼명을 소문자로 반환하므로 `load_data()`에서 대문자 변환 처리
+
+### ETL 자동화 (GitHub Actions)
+- `.github/workflows/hrd_etl.yml` - 평일 KST 09:00~18:00 매시간
+- `.github/workflows/market_etl.yml` - 매일 KST 21:00
+- Secrets: `HRD_API_KEY`, `HANWHA_COURSE_ID`, `DATABASE_URL`
+
+### 주의사항
+- ETL 파일(hrd_etl.py, market_etl.py)에서 모듈 최상위 레벨에 `exit()` 사용 금지 (Streamlit import 시 앱 종료됨)
+- 모든 SQL 쿼리는 `adapt_query()`를 거쳐야 PG 호환
+- 페이지에서 직접 `pd.read_sql()` 대신 `load_data()` 사용 권장
 
 ## 커밋 컨벤션
 
@@ -12,6 +36,29 @@ HRD-Net 공공데이터 기반 훈련 과정 성과 분석 대시보드 (Streaml
 
 - `HRD_API_KEY` - HRD-Net API 인증키
 - `HANWHA_COURSE_ID` - 내부 관리 대상 과정 ID
+- `DATABASE_URL` - PostgreSQL 연결 문자열 (없으면 SQLite 폴백)
+
+## 파일 구조
+
+| 파일 | 역할 |
+|---|---|
+| `utils.py` | DB 연결, adapt_query, load_data 등 공통 유틸 |
+| `init_db.py` | 테이블 DDL 및 마이그레이션 |
+| `hrd_etl.py` | 내부 과정/훈련생/출결 데이터 수집 |
+| `market_etl.py` | 시장 동향 데이터 수집 (30만건+) |
+| `pages/1_*.py` | 기수별 성과 분석 |
+| `pages/2_*.py` | 진행과정 관리 |
+| `pages/3_*.py` | 데이터 감사 (전체 테이블 조회) |
+| `pages/4_*.py` | 시장 동향 분석 (30만건 시각화) |
+
+## DB 테이블
+
+| 테이블 | 용도 | PK |
+|---|---|---|
+| `TB_COURSE_MASTER` | 과정 마스터 (회차별 운영 정보) | (TRPR_ID, TRPR_DEGR) |
+| `TB_TRAINEE_INFO` | 훈련생 정보 | (TRPR_ID, TRPR_DEGR, TRNEE_ID) |
+| `TB_ATTENDANCE_LOG` | 출결 로그 | UNIQUE(TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT) |
+| `TB_MARKET_TREND` | 시장 동향 (외부 과정 전체) | (TRPR_ID, TRPR_DEGR) |
 
 ---
 
