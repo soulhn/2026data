@@ -37,31 +37,35 @@ COLUMN_MAP = {
 
 @st.cache_data(ttl=3600)
 def load_market_data():
-    df = _load_data("SELECT * FROM TB_MARKET_TREND")
-    
+    df = _load_data("""
+        SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TRAINST_NM,
+               TR_STA_DT, TR_END_DT, NCS_CD, TRNG_AREA_CD,
+               TOT_FXNUM, TOT_TRCO, COURSE_MAN, REG_COURSE_MAN,
+               EI_EMPL_RATE_3, EI_EMPL_RATE_6, EI_EMPL_CNT_3,
+               STDG_SCOR, GRADE, ADDRESS,
+               TRAIN_TARGET, WKEND_SE
+        FROM TB_MARKET_TREND
+    """)
+
     # 1. 날짜/파생변수
     df['TR_STA_DT'] = pd.to_datetime(df['TR_STA_DT'])
     df['TR_END_DT'] = pd.to_datetime(df['TR_END_DT'], errors='coerce')
     df['YEAR_MONTH'] = df['TR_STA_DT'].dt.strftime('%Y-%m')
     df['REGION'] = df['ADDRESS'].str.split(' ').str[0]
-    
+
     # 2. 수치형 변환
     cols = ['TOT_TRCO', 'EI_EMPL_RATE_3', 'STDG_SCOR', 'TOT_FXNUM', 'REG_COURSE_MAN']
     for c in cols:
         df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-        
-    # 3. 모집률 계산 (개별 과정용)
-    df['모집률'] = df.apply(
-        lambda x: (x['REG_COURSE_MAN'] / x['TOT_FXNUM'] * 100) if x['TOT_FXNUM'] > 0 else 0, 
-        axis=1
-    )
-    df['모집률'] = df['모집률'].clip(upper=100)
-        
+
+    # 3. 모집률 계산 (벡터 연산)
+    df['모집률'] = (df['REG_COURSE_MAN'] / df['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
+
     # 4. 코드값 매핑
     wk_map = {'1': '주중', '2': '주말', '3': '주중+주말'}
     df['주말구분_명'] = df['WKEND_SE'].astype(str).map(wk_map).fillna('기타')
     df['TRAIN_TARGET'] = df['TRAIN_TARGET'].fillna('기타')
-    
+
     return df
 
 with st.spinner('30만 건의 데이터에서 인사이트를 추출 중입니다... 🚀'):
@@ -476,6 +480,6 @@ with tabs[6]:
     priority = ['과정명', '훈련기관명', '훈련유형', '지역', '주말구분', '훈련비(원)', '정원(명)', '등록인원', '모집률(%)', '취업률(3개월)', '개설일']
     cols = [c for c in priority if c in display_df.columns] + [c for c in display_df.columns if c not in priority]
     st.warning("⚠️ 상위 1,000건만 표시됩니다. 전체 데이터는 CSV로 다운로드하세요.")
-    st.dataframe(display_df[cols].head(1000), use_container_width=True)
+    st.dataframe(display_df[cols].head(1000), use_container_width=True, height=600)
     csv = display_df[cols].to_csv(index=False).encode('utf-8-sig')
     st.download_button("📥 전체 데이터 다운로드 (CSV)", csv, "market_analysis.csv", "text/csv")
