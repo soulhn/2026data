@@ -24,17 +24,17 @@ st.markdown("현재 운영 중인 과정의 **실시간 출결 현황(입/퇴실
 # ==========================================
 # 2. 데이터 로드 (진행 중인 과정만)
 # ==========================================
-@st.cache_data
+@st.cache_data(ttl=300)
 def get_active_data():
     today_str = datetime.now().strftime('%Y-%m-%d')
     
     # 1. 진행 중인 과정 목록
-    query_course = f"""
+    query_course = """
         SELECT * FROM TB_COURSE_MASTER 
-        WHERE TR_END_DT >= '{today_str}'
+        WHERE TR_END_DT >= ?
         ORDER BY TR_STA_DT
     """
-    active_courses = load_data(query_course)
+    active_courses = load_data(query_course, params=[today_str])
     
     if active_courses.empty:
         return None, None, None

@@ -17,7 +17,7 @@ st.set_page_config(
 # ==========================================
 # 2. 데이터 로드 및 전처리
 # ==========================================
-@st.cache_data
+@st.cache_data(ttl=600)
 def get_dashboard_data():
     # 과정 마스터 정보 가져오기
     df_course = load_data("SELECT * FROM TB_COURSE_MASTER ORDER BY TR_STA_DT DESC")

@@ -40,16 +40,14 @@ COLUMN_MAP = {
 }
 
 def get_connection():
-    return sqlite3.connect(DB_FILE)
+    return _utils_get_connection()
 
 def safe_sum_rate(row):
-    try: ei = float(row.get('EI_EMPL_RATE_6', 0))
-    except: ei = 0.0
-    try: hrd = float(row.get('HRD_EMPL_RATE_6', 0))
-    except: hrd = 0.0
+    ei = safe_float(row.get('EI_EMPL_RATE_6', 0))
+    hrd = safe_float(row.get('HRD_EMPL_RATE_6', 0))
     return round(ei + hrd, 1)
 
-@st.cache_data
+@st.cache_data(ttl=600)
 def load_all_data():
     if not os.path.exists(DB_FILE):
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()

@@ -10,7 +10,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # 🚀 리팩토링: utils에서 공통 기능 가져오기
-from utils import get_connection, DB_FILE
+from utils import get_connection, DB_FILE, safe_float, safe_int
 
 load_dotenv()
 
@@ -69,16 +69,6 @@ def week_shards(start: dt.date, end: dt.date):
         yield cur, w_end
         cur = w_end + dt.timedelta(days=1)
 
-def safe_float(val):
-    if not val or val == "": return None
-    try: return float(val)
-    except: return None
-
-def safe_int(val):
-    if not val or val == "": return None
-    try: return int(val)
-    except: return None
-
 def parse_rows_xml(soup: BeautifulSoup):
     out = []
     sl = soup.find("srchList")
@@ -93,9 +83,9 @@ def parse_rows_xml(soup: BeautifulSoup):
             g("trprId"), safe_int(g("trprDegr")),
             g("title"), g("subTitle"), g("traStartDate"), g("traEndDate"),
             g("ncsCd"), g("trngAreaCd"),
-            safe_int(g("yardMan")), safe_float(g("realMan")), safe_float(g("courseMan")), safe_int(g("regCourseMan")),
-            safe_float(g("eiEmplRate3")), safe_float(g("eiEmplRate6")), safe_int(g("eiEmplCnt3")), g("eiEmplCnt3Gt10"),
-            safe_float(g("stdgScor")), g("grade"),
+            safe_int(g("yardMan")), safe_float(g("realMan"), default=None), safe_float(g("courseMan"), default=None), safe_int(g("regCourseMan")),
+            safe_float(g("eiEmplRate3"), default=None), safe_float(g("eiEmplRate6"), default=None), safe_int(g("eiEmplCnt3")), g("eiEmplCnt3Gt10"),
+            safe_float(g("stdgScor"), default=None), g("grade"),
             g("certificate"), g("contents"), g("address"), g("telNo"),
             g("instCd"), g("trainstCstId"), g("trainTarget"), g("trainTargetCd"),
             g("wkendSe"),

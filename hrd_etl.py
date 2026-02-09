@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 
-# 🚀 리팩토링: DB 파일 경로 가져오기
-from utils import DB_FILE
+# 🚀 리팩토링: utils에서 공통 기능 가져오기
+from utils import get_connection
 
 load_dotenv()
 
@@ -17,12 +17,6 @@ COURSE_ID = os.getenv("HANWHA_COURSE_ID")
 if not API_KEY or not COURSE_ID:
     print("오류: .env 파일 설정을 확인하세요.")
     exit()
-
-def get_db_connection():
-    # utils의 DB_FILE 사용
-    conn = sqlite3.connect(DB_FILE, timeout=30)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 def clean_time(time_str):
     if not time_str or time_str == '0000' or len(time_str) != 4: return None
@@ -40,7 +34,7 @@ def get_month_list(start_date_str, end_date_str):
     return date_list
 
 def init_db():
-    conn = get_db_connection()
+    conn = get_connection(timeout=30, row_factory=sqlite3.Row)
     cursor = conn.cursor()
     
     # 내부 운영 데이터 테이블들
@@ -79,13 +73,18 @@ def init_db():
 
 def run_etl():
     init_db()
-    conn = get_db_connection()
+    conn = get_connection(timeout=30, row_factory=sqlite3.Row)
     cursor = conn.cursor()
     print(f"[ETL Start] 과정ID({COURSE_ID}) 데이터 수집 시작...")
 
+    BASE_URL_COURSE = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_3.jsp"
+    BASE_URL_DETAIL = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_4.jsp"
+
     try:
-        url_course = f"https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_3.jsp?returnType=JSON&authKey={API_KEY}&srchTrprId={COURSE_ID}&outType=2"
-        res = requests.get(url_course)
+        res = requests.get(BASE_URL_COURSE, params={
+            "returnType": "JSON", "authKey": API_KEY,
+            "srchTrprId": COURSE_ID, "outType": "2"
+        })
         course_list = json.loads(res.json()['returnJSON'])
         print(f"과정 목록({len(course_list)}건) 조회 성공.")
     except Exception as e:
@@ -96,14 +95,17 @@ def run_etl():
 
     for course in course_list:
         try: trpr_degr = int(course.get('trprDegr', 0))
-        except: continue
+        except (ValueError, TypeError) as e:
+            print(f"   회차 변환 실패 (trprDegr={course.get('trprDegr')}): {e}")
+            continue
         if trpr_degr == 0: continue 
 
         ei_rate = course.get('eiEmplRate3')
         real_rate = None
-        try: 
+        try:
             if ei_rate and ei_rate not in ['A', 'B', 'C', 'D', 'null']: real_rate = float(ei_rate)
-        except: pass
+        except (ValueError, TypeError) as e:
+            print(f"   {trpr_degr}회차 취업률 변환 실패 (ei_rate={ei_rate}): {e}")
 
         cursor.execute('''
             INSERT INTO TB_COURSE_MASTER (
@@ -133,9 +135,11 @@ def run_etl():
             print(f"   {trpr_degr}회차: 종료된 과정({end_date})이며 DB 데이터 존재함. Skip.")
             continue  
             
-        url_roster = f"https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_4.jsp?returnType=JSON&authKey={API_KEY}&outType=2&srchTrprId={COURSE_ID}&srchTrprDegr={trpr_degr}"
         try:
-            res_roster = requests.get(url_roster)
+            res_roster = requests.get(BASE_URL_DETAIL, params={
+                "returnType": "JSON", "authKey": API_KEY, "outType": "2",
+                "srchTrprId": COURSE_ID, "srchTrprDegr": trpr_degr
+            })
             raw_json = res_roster.json().get('returnJSON')
             if raw_json:
                 roster_data = json.loads(raw_json)
@@ -167,13 +171,17 @@ def run_etl():
                         trnee.get('oflhdCnt'), trnee.get('vcatnCnt')
                     ))
                 print(f"   >> {trpr_degr}회차 명부: {valid_cnt}건 수집 완료")
-        except: pass
+        except Exception as e:
+            print(f"   ⚠️ {trpr_degr}회차 명부 수집 실패: {e}")
 
         target_months = get_month_list(course.get('trStaDt'), course.get('trEndDt'))
         for yyyymm in target_months:
-            url_attend = f"https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_4.jsp?returnType=JSON&authKey={API_KEY}&outType=2&srchTrprId={COURSE_ID}&srchTrprDegr={trpr_degr}&srchTorgId=student_detail&atendMo={yyyymm}"
             try:
-                res_attend = requests.get(url_attend)
+                res_attend = requests.get(BASE_URL_DETAIL, params={
+                    "returnType": "JSON", "authKey": API_KEY, "outType": "2",
+                    "srchTrprId": COURSE_ID, "srchTrprDegr": trpr_degr,
+                    "srchTorgId": "student_detail", "atendMo": yyyymm
+                })
                 raw_json = res_attend.json().get('returnJSON')
                 if not raw_json: continue
                 
@@ -199,7 +207,9 @@ def run_etl():
                         clean_time(log.get('lpsilTime')), clean_time(log.get('levromTime')), 
                         log.get('atendSttusNm'), log.get('atendSttusCd')
                     ))
-            except: continue
+            except Exception as e:
+                print(f"   ⚠️ {trpr_degr}회차 출결({yyyymm}) 수집 실패: {e}")
+                continue
         conn.commit()
 
     conn.close()
