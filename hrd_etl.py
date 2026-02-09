@@ -13,10 +13,6 @@ load_dotenv()
 API_KEY = os.getenv("HRD_API_KEY")
 COURSE_ID = os.getenv("HANWHA_COURSE_ID")
 
-if not API_KEY or not COURSE_ID:
-    print("오류: .env 파일 설정을 확인하세요.")
-    exit()
-
 def clean_time(time_str):
     if not time_str or time_str == '0000' or len(time_str) != 4: return None
     return f"{time_str[:2]}:{time_str[2:]}"
@@ -33,6 +29,9 @@ def get_month_list(start_date_str, end_date_str):
     return date_list
 
 def run_etl():
+    if not API_KEY or not COURSE_ID:
+        print("오류: HRD_API_KEY 또는 HANWHA_COURSE_ID 환경변수가 설정되지 않았습니다.")
+        return
     init_all_tables()
     conn = get_connection(timeout=30, row_factory=sqlite3.Row)  # PG에서는 RealDictCursor로 자동 변환
     cursor = conn.cursor()

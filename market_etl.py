@@ -25,8 +25,7 @@ MAX_WORKERS= 4
 BASE_URL = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_1.jsp"
 
 if not AUTH_KEY:
-    print("오류: .env 파일에서 HRD_API_KEY를 찾을 수 없습니다.")
-    exit()
+    print("경고: .env 파일에서 HRD_API_KEY를 찾을 수 없습니다. ETL 실행 시 오류가 발생합니다.")
 
 # ==========================================
 # 2. 유틸리티 함수
