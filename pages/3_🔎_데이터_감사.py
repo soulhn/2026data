@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
 import sys
 import os
 from datetime import datetime, timedelta
@@ -9,7 +8,7 @@ from datetime import datetime, timedelta
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 try:
     from hrd_etl import run_etl
-    from utils import DB_FILE, get_connection as _utils_get_connection, safe_float, check_password
+    from utils import DB_FILE, get_connection as _utils_get_connection, safe_float, check_password, is_pg
 except ImportError:
     def run_etl(): st.error("❌ 'hrd_etl.py'를 찾을 수 없습니다.")
     DB_FILE = "hrd_analysis.db" # 비상용 기본값
@@ -52,7 +51,7 @@ def safe_sum_rate(row):
 
 @st.cache_data(ttl=600)
 def load_all_data():
-    if not os.path.exists(DB_FILE):
+    if not is_pg() and not os.path.exists(DB_FILE):
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     conn = get_connection()

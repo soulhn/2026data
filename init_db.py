@@ -3,7 +3,7 @@
 모든 테이블의 CREATE/ALTER를 한 곳에서 관리합니다.
 """
 import sqlite3
-from utils import get_connection, DB_FILE
+from utils import get_connection, DB_FILE, is_pg
 
 
 def init_all_tables():
@@ -109,13 +109,20 @@ def init_all_tables():
     ]
     for sql in migrations:
         try:
+            if is_pg():
+                conn.commit()  # PG: 이전 작업 커밋 후 개별 실행
             cursor.execute(sql)
-        except sqlite3.OperationalError:
-            pass  # 이미 존재
+            if is_pg():
+                conn.commit()
+        except Exception:
+            if is_pg():
+                conn.rollback()  # PG: 실패한 트랜잭션 롤백 필수
+            pass  # 이미 존재하거나 지원하지 않는 ALTER
 
     conn.commit()
     conn.close()
-    print(f"[init_db] 전체 테이블 초기화 완료 (DB: {DB_FILE})")
+    db_label = "PostgreSQL" if is_pg() else DB_FILE
+    print(f"[init_db] 전체 테이블 초기화 완료 (DB: {db_label})")
 
 
 if __name__ == "__main__":

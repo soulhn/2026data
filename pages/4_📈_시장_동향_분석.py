@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
 import plotly.express as px
 from collections import Counter
 import sys
@@ -8,7 +7,7 @@ import os
 
 # 🚀 상위 폴더의 utils.py를 가져오기 위한 경로 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import DB_FILE, check_password
+from utils import check_password, get_connection
 
 # ==========================================
 # 1. 설정 및 데이터 로드
@@ -38,7 +37,7 @@ COLUMN_MAP = {
 
 @st.cache_data(ttl=3600)
 def load_market_data():
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_connection()
     query = "SELECT * FROM TB_MARKET_TREND"
     df = pd.read_sql(query, conn)
     conn.close()

@@ -1,6 +1,7 @@
 # utils.py
 import sqlite3
 import hmac
+import re
 import pandas as pd
 import os
 from datetime import datetime
@@ -11,6 +12,43 @@ load_dotenv()
 
 # ✅ [핵심] DB 설정 중앙화: 모든 파일이 이 변수를 가져다 씁니다.
 DB_FILE = "hrd_analysis.db"
+
+def get_database_url():
+    """os.getenv → st.secrets 순으로 DATABASE_URL을 매번 동적 탐색"""
+    url = os.getenv("DATABASE_URL")
+    if url:
+        return url
+    try:
+        import streamlit as st
+        return st.secrets.get("DATABASE_URL")
+    except Exception:
+        return None
+
+
+def is_pg():
+    """현재 PostgreSQL 모드인지 반환"""
+    return get_database_url() is not None
+
+
+def adapt_query(sql):
+    """SQLite 쿼리를 현재 DB 엔진에 맞게 변환"""
+    if not is_pg():
+        return sql
+    # ? → %s
+    sql = sql.replace("?", "%s")
+    # INSERT OR IGNORE INTO → INSERT INTO ... (+ ON CONFLICT DO NOTHING 자동 추가)
+    if re.search(r"INSERT\s+OR\s+IGNORE\s+INTO", sql, re.IGNORECASE):
+        sql = re.sub(
+            r"INSERT\s+OR\s+IGNORE\s+INTO",
+            "INSERT INTO",
+            sql,
+            flags=re.IGNORECASE,
+        )
+        # ON CONFLICT DO NOTHING 이 아직 없으면 VALUES(...) 뒤에 추가
+        if "ON CONFLICT" not in sql.upper():
+            sql = sql.rstrip().rstrip(";")
+            sql += " ON CONFLICT DO NOTHING"
+    return sql
 
 def check_password():
     """Streamlit 비밀번호 인증. 인증 실패 시 st.stop()으로 앱을 중단합니다."""
@@ -29,7 +67,15 @@ def check_password():
     st.stop()
 
 def get_connection(timeout=5, row_factory=None):
-    """DB 연결 객체를 반환합니다."""
+    """DB 연결 객체를 반환합니다. DATABASE_URL이 있으면 PostgreSQL, 없으면 SQLite."""
+    if is_pg():
+        import psycopg2
+        import psycopg2.extras
+        conn = psycopg2.connect(get_database_url(), connect_timeout=timeout)
+        conn.autocommit = False
+        if row_factory == sqlite3.Row:
+            conn.cursor_factory = psycopg2.extras.RealDictCursor
+        return conn
     conn = sqlite3.connect(DB_FILE, timeout=timeout)
     if row_factory:
         conn.row_factory = row_factory

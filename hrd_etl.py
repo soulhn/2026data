@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 
-from utils import get_connection, get_retry_session
+from utils import get_connection, get_retry_session, adapt_query
 from init_db import init_all_tables
 
 load_dotenv()
@@ -34,7 +34,7 @@ def get_month_list(start_date_str, end_date_str):
 
 def run_etl():
     init_all_tables()
-    conn = get_connection(timeout=30, row_factory=sqlite3.Row)
+    conn = get_connection(timeout=30, row_factory=sqlite3.Row)  # PG에서는 RealDictCursor로 자동 변환
     cursor = conn.cursor()
     session = get_retry_session()
     print(f"[ETL Start] 과정ID({COURSE_ID}) 데이터 수집 시작...")
@@ -69,11 +69,11 @@ def run_etl():
         except (ValueError, TypeError) as e:
             print(f"   {trpr_degr}회차 취업률 변환 실패 (ei_rate={ei_rate}): {e}")
 
-        cursor.execute('''
+        cursor.execute(adapt_query('''
             INSERT INTO TB_COURSE_MASTER (
-                TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT, 
+                TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT,
                 TOT_TRCO, FINI_CNT, TOT_FXNUM, TOT_PAR_MKS, TOT_TRP_CNT, INST_INO,
-                EI_EMPL_RATE_3, EI_EMPL_CNT_3, EI_EMPL_RATE_6, EI_EMPL_CNT_6, 
+                EI_EMPL_RATE_3, EI_EMPL_CNT_3, EI_EMPL_RATE_6, EI_EMPL_CNT_6,
                 HRD_EMPL_RATE_6, HRD_EMPL_CNT_6, REAL_EMPL_RATE
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(TRPR_ID, TRPR_DEGR) DO UPDATE SET
@@ -91,7 +91,7 @@ def run_etl():
                 HRD_EMPL_CNT_6=excluded.HRD_EMPL_CNT_6,
                 REAL_EMPL_RATE=excluded.REAL_EMPL_RATE,
                 COLLECTED_AT=CURRENT_TIMESTAMP
-        ''', (
+        '''), (
             course.get('trprId'), trpr_degr, course.get('trprNm'), 
             course.get('trStaDt'), course.get('trEndDt'),
             course.get('totTrco'), course.get('finiCnt'),
@@ -102,7 +102,7 @@ def run_etl():
 
         trpr_id = course.get('trprId')
         end_date = course.get('trEndDt', '9999-12-31')
-        cursor.execute("SELECT 1 FROM TB_ATTENDANCE_LOG WHERE TRPR_ID=? AND TRPR_DEGR=? LIMIT 1", (trpr_id, trpr_degr))
+        cursor.execute(adapt_query("SELECT 1 FROM TB_ATTENDANCE_LOG WHERE TRPR_ID=? AND TRPR_DEGR=? LIMIT 1"), (trpr_id, trpr_degr))
         is_data_exists = cursor.fetchone() is not None
 
         if (end_date < update_cutoff_date) and is_data_exists:
@@ -124,7 +124,7 @@ def run_etl():
                 for trnee in trne_list:
                     if not isinstance(trnee, dict): continue
                     valid_cnt += 1
-                    cursor.execute('''
+                    cursor.execute(adapt_query('''
                         INSERT INTO TB_TRAINEE_INFO (
                             TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM,
                             TRNEE_STATUS, TRNEE_TYPE, BIRTH_DATE,
@@ -141,7 +141,7 @@ def run_etl():
                             ABSENT_CNT = excluded.ABSENT_CNT,
                             ATEND_CNT = excluded.ATEND_CNT,
                             COLLECTED_AT = CURRENT_TIMESTAMP
-                    ''', (
+                    '''), (
                         COURSE_ID, trpr_degr, str(trnee.get('trneeCstmrId')), trnee.get('trneeCstmrNm'),
                         trnee.get('trneeSttusNm'), trnee.get('trneeTracseSe'),
                         trnee.get('lifyeaMd'), trnee.get('traingDeCnt'),
@@ -171,16 +171,16 @@ def run_etl():
                     if not isinstance(log, dict): continue
                     # print(log)
                     trnee_id = str(log.get('trneeCstmrId'))
-                    cursor.execute('INSERT OR IGNORE INTO TB_TRAINEE_INFO (TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM) VALUES (?, ?, ?, ?)', 
+                    cursor.execute(adapt_query('INSERT OR IGNORE INTO TB_TRAINEE_INFO (TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM) VALUES (?, ?, ?, ?)'),
                                    (COURSE_ID, trpr_degr, trnee_id, log.get('cstmrNm')))
-                    cursor.execute('''
+                    cursor.execute(adapt_query('''
                         INSERT INTO TB_ATTENDANCE_LOG (
                             TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT, DAY_NM, IN_TIME, OUT_TIME, ATEND_STATUS, ATEND_STATUS_CD
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT) DO UPDATE SET 
-                            IN_TIME=excluded.IN_TIME, OUT_TIME=excluded.OUT_TIME, 
+                        ON CONFLICT(TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT) DO UPDATE SET
+                            IN_TIME=excluded.IN_TIME, OUT_TIME=excluded.OUT_TIME,
                             ATEND_STATUS=excluded.ATEND_STATUS, COLLECTED_AT=CURRENT_TIMESTAMP
-                    ''', (
+                    '''), (
                         COURSE_ID, trpr_degr, trnee_id, log.get('atendDe'), log.get('korDayNm'), 
                         clean_time(log.get('lpsilTime')), clean_time(log.get('levromTime')), 
                         log.get('atendSttusNm'), log.get('atendSttusCd')

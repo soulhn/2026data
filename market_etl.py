@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-from utils import get_connection, DB_FILE, safe_float, safe_int, get_retry_session
+from utils import get_connection, DB_FILE, safe_float, safe_int, get_retry_session, adapt_query
 from init_db import init_all_tables
 
 load_dotenv()
@@ -163,7 +163,7 @@ def collect_one_month(idx: int, m_start: dt.date, m_end: dt.date):
 # ==========================================
 # 4. DB 저장
 # ==========================================
-UPSERT_QUERY = '''
+_UPSERT_QUERY_RAW = '''
     INSERT INTO TB_MARKET_TREND (
         TRPR_ID, TRPR_DEGR, TRPR_NM, TRAINST_NM, TR_STA_DT, TR_END_DT, NCS_CD, TRNG_AREA_CD,
         TOT_FXNUM, TOT_TRCO, COURSE_MAN, REG_COURSE_MAN,
@@ -203,11 +203,12 @@ def save_rows(rows):
         return 0
     conn = get_connection()
     cursor = conn.cursor()
+    upsert_query = adapt_query(_UPSERT_QUERY_RAW)
     try:
         batch_size = 1000
         for i in range(0, len(rows), batch_size):
             batch = rows[i:i+batch_size]
-            cursor.executemany(UPSERT_QUERY, batch)
+            cursor.executemany(upsert_query, batch)
             conn.commit()
         return len(rows)
     except Exception as e:
