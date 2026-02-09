@@ -28,4 +28,4 @@ jobs:
           HRD_API_KEY: ${{ secrets.HRD_API_KEY }}
           HANWHA_COURSE_ID: ${{ secrets.HANWHA_COURSE_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python hrd_etl.py
+        run: python -u hrd_etl.py
