@@ -85,7 +85,10 @@ def load_data(query, params=None):
     """SQL 쿼리를 받아 Pandas DataFrame으로 반환합니다."""
     conn = get_connection()
     try:
-        df = pd.read_sql(adapt_query(query), conn, params=params)
+        converted = adapt_query(query)
+        print(f"[load_data] is_pg={is_pg()}, url={get_database_url() is not None}, cols_before_query")
+        df = pd.read_sql(converted, conn, params=params)
+        print(f"[load_data] columns={list(df.columns)}")
         if is_pg():
             df.columns = [c.upper() for c in df.columns]
         return df
