@@ -85,7 +85,7 @@ def load_data(query, params=None):
     """SQL 쿼리를 받아 Pandas DataFrame으로 반환합니다."""
     conn = get_connection()
     try:
-        df = pd.read_sql(query, conn, params=params)
+        df = pd.read_sql(adapt_query(query), conn, params=params)
         return df
     finally:
         conn.close()
