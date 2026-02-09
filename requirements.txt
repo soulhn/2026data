@@ -18,3 +18,4 @@ psycopg2-binary
 streamlit
 plotly
 altair
+scikit-learn

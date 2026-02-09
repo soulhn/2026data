@@ -23,10 +23,18 @@ market_etl.py (매일 21시) →                    ←    https://2026data.stre
 - `.github/workflows/market_etl.yml` - 매일 KST 21:00
 - Secrets: `HRD_API_KEY`, `HANWHA_COURSE_ID`, `DATABASE_URL`
 
+### 시장 동향 페이지 (pages/4_*.py) 구조
+- 11개 탭: 시장 개요 / 순위&모집 / **우리 과정 vs 시장** / 유형·일정 / 비용·성과 / **시계열 트렌드** / **경쟁 심화도** / **비용 대비 성과** / 경쟁 현황 / 키워드 / 데이터 조회
+- `load_internal_courses()`: TB_COURSE_MASTER 캐시 로드 (HANWHA_COURSE_ID 기반)
+- 내부 과정 NCS 코드는 TB_MARKET_TREND와 TRPR_ID merge로 매칭
+- `scikit-learn` LinearRegression: 비용→취업률 시뮬레이터
+- HANWHA_COURSE_ID 미설정 시 시장 전체 분석만 표시 (st.info 안내)
+
 ### 주의사항
 - ETL 파일(hrd_etl.py, market_etl.py)에서 모듈 최상위 레벨에 `exit()` 사용 금지 (Streamlit import 시 앱 종료됨)
 - 모든 SQL 쿼리는 `adapt_query()`를 거쳐야 PG 호환
 - 페이지에서 직접 `pd.read_sql()` 대신 `load_data()` 사용 권장
+- Plotly `add_vline`에 문자열 x값 + `annotation_text` 동시 사용 시 TypeError 발생 → `add_annotation` 별도 호출
 
 ## 커밋 컨벤션
 
@@ -49,7 +57,7 @@ market_etl.py (매일 21시) →                    ←    https://2026data.stre
 | `pages/1_*.py` | 기수별 성과 분석 |
 | `pages/2_*.py` | 진행과정 관리 |
 | `pages/3_*.py` | 데이터 감사 (전체 테이블 조회) |
-| `pages/4_*.py` | 시장 동향 분석 (30만건 시각화) |
+| `pages/4_*.py` | 시장 동향 분석 11탭 (교차분석, 시계열, 경쟁, 비용-성과 등) |
 
 ## DB 테이블
 
