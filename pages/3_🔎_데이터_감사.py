@@ -34,6 +34,7 @@ COLUMN_MAP = {
     "TRNEE_ID": "TRNEE_ID (훈련생ID)", "TRNEE_NM": "TRNEE_NM (이름)", "TRNEE_STATUS": "TRNEE_STATUS (상태)",
     "TRNEE_TYPE": "TRNEE_TYPE (유형코드)", "BIRTH_DATE": "BIRTH_DATE (생년월일)",
     "TOTAL_DAYS": "TOTAL_DAYS (총훈련일수)", "OFLHD_CNT": "OFLHD_CNT (공가일수)", "VCATN_CNT": "VCATN_CNT (휴가일수)",
+    "ABSENT_CNT": "ABSENT_CNT (결석일수)", "ATEND_CNT": "ATEND_CNT (출석일수)",
     "ATEND_DT": "ATEND_DT (출석일자)", "DAY_NM": "DAY_NM (요일)", "IN_TIME": "IN_TIME (입실시간)",
     "OUT_TIME": "OUT_TIME (퇴실시간)", "ATEND_STATUS": "ATEND_STATUS (상태_한글)", "ATEND_STATUS_CD": "ATEND_STATUS_CD (상태코드)",
     "TOTAL_RATE_6": "TOTAL_RATE_6 (총 취업률 합산)", "모집률(%)": "모집률 (%)", "나이": "나이 (훈련 당시 기준)", "이름_가공": "이름 (ID매핑)"
