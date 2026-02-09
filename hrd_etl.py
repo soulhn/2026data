@@ -5,8 +5,19 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 
-from utils import get_connection, get_retry_session, adapt_query
+from utils import get_connection, get_retry_session, adapt_query, is_pg
 from init_db import init_all_tables
+
+
+def batch_execute(cursor, sql, data_list):
+    """PG: execute_batch로 네트워크 왕복 최소화, SQLite: executemany"""
+    if not data_list:
+        return
+    if is_pg():
+        from psycopg2.extras import execute_batch
+        execute_batch(cursor, adapt_query(sql), data_list, page_size=100)
+    else:
+        cursor.executemany(sql, data_list)
 
 load_dotenv()
 
@@ -120,41 +131,42 @@ def run_etl():
                 trne_list = roster_data if isinstance(roster_data, list) else roster_data.get('trneList', [])
                 if not isinstance(trne_list, list): trne_list = []
 
-                valid_cnt = 0
+                trainee_rows = []
                 for trnee in trne_list:
                     if not isinstance(trnee, dict): continue
-                    valid_cnt += 1
-                    cursor.execute(adapt_query('''
-                        INSERT INTO TB_TRAINEE_INFO (
-                            TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM,
-                            TRNEE_STATUS, TRNEE_TYPE, BIRTH_DATE,
-                            TOTAL_DAYS, OFLHD_CNT, VCATN_CNT,
-                            ABSENT_CNT, ATEND_CNT
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(TRPR_ID, TRPR_DEGR, TRNEE_ID) DO UPDATE SET
-                            TRNEE_STATUS = excluded.TRNEE_STATUS,
-                            TRNEE_TYPE = excluded.TRNEE_TYPE,
-                            BIRTH_DATE = excluded.BIRTH_DATE,
-                            TOTAL_DAYS = excluded.TOTAL_DAYS,
-                            OFLHD_CNT = excluded.OFLHD_CNT,
-                            VCATN_CNT = excluded.VCATN_CNT,
-                            ABSENT_CNT = excluded.ABSENT_CNT,
-                            ATEND_CNT = excluded.ATEND_CNT,
-                            COLLECTED_AT = CURRENT_TIMESTAMP
-                    '''), (
+                    trainee_rows.append((
                         COURSE_ID, trpr_degr, str(trnee.get('trneeCstmrId')), trnee.get('trneeCstmrNm'),
                         trnee.get('trneeSttusNm'), trnee.get('trneeTracseSe'),
                         trnee.get('lifyeaMd'), trnee.get('traingDeCnt'),
                         trnee.get('oflhdCnt'), trnee.get('vcatnCnt'),
                         trnee.get('absentCnt'), trnee.get('atendCnt')
                     ))
-                print(f"   >> {trpr_degr}회차 명부: {valid_cnt}건 수집 완료")
+                batch_execute(cursor, '''
+                    INSERT INTO TB_TRAINEE_INFO (
+                        TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM,
+                        TRNEE_STATUS, TRNEE_TYPE, BIRTH_DATE,
+                        TOTAL_DAYS, OFLHD_CNT, VCATN_CNT,
+                        ABSENT_CNT, ATEND_CNT
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(TRPR_ID, TRPR_DEGR, TRNEE_ID) DO UPDATE SET
+                        TRNEE_STATUS = excluded.TRNEE_STATUS,
+                        TRNEE_TYPE = excluded.TRNEE_TYPE,
+                        BIRTH_DATE = excluded.BIRTH_DATE,
+                        TOTAL_DAYS = excluded.TOTAL_DAYS,
+                        OFLHD_CNT = excluded.OFLHD_CNT,
+                        VCATN_CNT = excluded.VCATN_CNT,
+                        ABSENT_CNT = excluded.ABSENT_CNT,
+                        ATEND_CNT = excluded.ATEND_CNT,
+                        COLLECTED_AT = CURRENT_TIMESTAMP
+                ''', trainee_rows)
+                print(f"   >> {trpr_degr}회차 명부: {len(trainee_rows)}건 수집 완료")
         except Exception as e:
             print(f"   ⚠️ {trpr_degr}회차 명부 수집 실패: {e}")
 
         target_months = get_month_list(course.get('trStaDt'), course.get('trEndDt'))
         print(f"   >> {trpr_degr}회차 출결: {len(target_months)}개월 수집 시작")
-        atab_total = 0
+        trnee_ignore_rows = []
+        atab_rows = []
         for yyyymm in target_months:
             try:
                 res_attend = session.get(BASE_URL_DETAIL, params={
@@ -164,33 +176,36 @@ def run_etl():
                 })
                 raw_json = res_attend.json().get('returnJSON')
                 if not raw_json: continue
-                
+
                 atab_data = json.loads(raw_json)
                 atab_list = atab_data if isinstance(atab_data, list) else atab_data.get('atabList', [])
                 if not isinstance(atab_list, list): atab_list = []
 
-                atab_total += len(atab_list)
                 for log in atab_list:
                     if not isinstance(log, dict): continue
                     trnee_id = str(log.get('trneeCstmrId'))
-                    cursor.execute(adapt_query('INSERT OR IGNORE INTO TB_TRAINEE_INFO (TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM) VALUES (?, ?, ?, ?)'),
-                                   (COURSE_ID, trpr_degr, trnee_id, log.get('cstmrNm')))
-                    cursor.execute(adapt_query('''
-                        INSERT INTO TB_ATTENDANCE_LOG (
-                            TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT, DAY_NM, IN_TIME, OUT_TIME, ATEND_STATUS, ATEND_STATUS_CD
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT) DO UPDATE SET
-                            IN_TIME=excluded.IN_TIME, OUT_TIME=excluded.OUT_TIME,
-                            ATEND_STATUS=excluded.ATEND_STATUS, COLLECTED_AT=CURRENT_TIMESTAMP
-                    '''), (
-                        COURSE_ID, trpr_degr, trnee_id, log.get('atendDe'), log.get('korDayNm'), 
-                        clean_time(log.get('lpsilTime')), clean_time(log.get('levromTime')), 
+                    trnee_ignore_rows.append((COURSE_ID, trpr_degr, trnee_id, log.get('cstmrNm')))
+                    atab_rows.append((
+                        COURSE_ID, trpr_degr, trnee_id, log.get('atendDe'), log.get('korDayNm'),
+                        clean_time(log.get('lpsilTime')), clean_time(log.get('levromTime')),
                         log.get('atendSttusNm'), log.get('atendSttusCd')
                     ))
             except Exception as e:
                 print(f"   ⚠️ {trpr_degr}회차 출결({yyyymm}) 수집 실패: {e}")
                 continue
-        print(f"   >> {trpr_degr}회차 출결: 총 {atab_total}건 수집 완료")
+
+        batch_execute(cursor,
+            'INSERT OR IGNORE INTO TB_TRAINEE_INFO (TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM) VALUES (?, ?, ?, ?)',
+            trnee_ignore_rows)
+        batch_execute(cursor, '''
+            INSERT INTO TB_ATTENDANCE_LOG (
+                TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT, DAY_NM, IN_TIME, OUT_TIME, ATEND_STATUS, ATEND_STATUS_CD
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT) DO UPDATE SET
+                IN_TIME=excluded.IN_TIME, OUT_TIME=excluded.OUT_TIME,
+                ATEND_STATUS=excluded.ATEND_STATUS, COLLECTED_AT=CURRENT_TIMESTAMP
+        ''', atab_rows)
+        print(f"   >> {trpr_degr}회차 출결: 총 {len(atab_rows)}건 수집 완료")
         conn.commit()
 
     conn.close()
