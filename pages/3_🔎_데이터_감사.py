@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 try:
     from hrd_etl import run_etl
-    from utils import DB_FILE, get_connection as _utils_get_connection, safe_float, check_password, is_pg
+    from utils import DB_FILE, get_connection as _utils_get_connection, load_data as _load_data, safe_float, check_password, is_pg
 except ImportError:
     def run_etl(): st.error("❌ 'hrd_etl.py'를 찾을 수 없습니다.")
     DB_FILE = "hrd_analysis.db" # 비상용 기본값
@@ -54,10 +54,7 @@ def load_all_data():
     if not is_pg() and not os.path.exists(DB_FILE):
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-    conn = get_connection()
-    df_course = pd.read_sql("SELECT * FROM TB_COURSE_MASTER ORDER BY TRPR_DEGR ASC", conn)
-    if is_pg():
-        df_course.columns = [c.upper() for c in df_course.columns]
+    df_course = _load_data("SELECT * FROM TB_COURSE_MASTER ORDER BY TRPR_DEGR ASC")
     
     if not df_course.empty:
         df_course['TOT_PAR_MKS'] = pd.to_numeric(df_course['TOT_PAR_MKS'], errors='coerce').fillna(0)
@@ -65,9 +62,7 @@ def load_all_data():
         df_course['모집률(%)'] = df_course.apply(lambda x: round((x['TOT_PAR_MKS']/x['TOT_FXNUM']*100),1) if x['TOT_FXNUM']>0 else 0, axis=1)
         df_course['TOTAL_RATE_6'] = df_course.apply(safe_sum_rate, axis=1)
 
-    df_trainee = pd.read_sql("SELECT * FROM TB_TRAINEE_INFO", conn)
-    if is_pg():
-        df_trainee.columns = [c.upper() for c in df_trainee.columns]
+    df_trainee = _load_data("SELECT * FROM TB_TRAINEE_INFO")
     
     if not df_trainee.empty and not df_course.empty:
         year_map = {}
@@ -87,10 +82,7 @@ def load_all_data():
                 
         df_trainee['나이'] = df_trainee.apply(calc_training_age, axis=1)
 
-    df_log = pd.read_sql("SELECT * FROM TB_ATTENDANCE_LOG ORDER BY ATEND_DT DESC, IN_TIME ASC", conn)
-    if is_pg():
-        df_log.columns = [c.upper() for c in df_log.columns]
-    conn.close()
+    df_log = _load_data("SELECT * FROM TB_ATTENDANCE_LOG ORDER BY ATEND_DT DESC, IN_TIME ASC")
 
     def apply_kst(df):
         if not df.empty and 'COLLECTED_AT' in df.columns:
