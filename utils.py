@@ -1,5 +1,6 @@
 # utils.py
 import sqlite3
+import hmac
 import pandas as pd
 import os
 from datetime import datetime
@@ -10,6 +11,22 @@ load_dotenv()
 
 # ✅ [핵심] DB 설정 중앙화: 모든 파일이 이 변수를 가져다 씁니다.
 DB_FILE = "hrd_analysis.db"
+
+def check_password():
+    """Streamlit 비밀번호 인증. 인증 실패 시 st.stop()으로 앱을 중단합니다."""
+    import streamlit as st
+
+    if st.session_state.get("authenticated"):
+        return True
+
+    pwd = st.text_input("비밀번호를 입력하세요", type="password")
+    if pwd and hmac.compare_digest(pwd, st.secrets.passwords.admin):
+        st.session_state.authenticated = True
+        st.rerun()
+    elif pwd:
+        st.error("비밀번호가 틀렸습니다")
+
+    st.stop()
 
 def get_connection(timeout=5, row_factory=None):
     """DB 연결 객체를 반환합니다."""

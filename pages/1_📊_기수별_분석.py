@@ -7,7 +7,7 @@ import os
 
 # 상위 폴더의 utils.py를 불러오기 위한 경로 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_data, calculate_age_at_training, safe_float
+from utils import load_data, calculate_age_at_training, safe_float, check_password
 
 # ==========================================
 # 1. 페이지 설정
@@ -17,6 +17,8 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
+
+check_password()
 
 st.title("📊 기수별 성과 심층 분석")
 st.markdown("종료된 과정의 **수료율, 취업률, 출석 패턴**을 다각도로 분석합니다.")

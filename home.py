@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 from datetime import datetime
-from utils import load_data  # utils.py에서 공통 함수 불러오기
+from utils import load_data, check_password
 
 # ==========================================
 # 1. 페이지 설정
@@ -13,6 +13,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+check_password()
 
 # ==========================================
 # 2. 데이터 로드 및 전처리

@@ -4,3 +4,4 @@
 __pycache__/
 hrd_analysis.db
 *.db-journal
+.streamlit/secrets.toml

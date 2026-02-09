@@ -7,7 +7,7 @@ import os
 
 # utils.py 경로 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_data
+from utils import load_data, check_password
 
 # ==========================================
 # 1. 페이지 설정
@@ -17,6 +17,8 @@ st.set_page_config(
     page_icon="🚨",
     layout="wide"
 )
+
+check_password()
 
 st.title("🚨 진행 과정 실시간 관리")
 st.markdown("현재 운영 중인 과정의 **실시간 출결 현황(입/퇴실)**과 **특이사항**을 집중 모니터링합니다.")

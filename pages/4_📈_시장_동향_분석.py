@@ -8,12 +8,14 @@ import os
 
 # 🚀 상위 폴더의 utils.py를 가져오기 위한 경로 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import DB_FILE
+from utils import DB_FILE, check_password
 
 # ==========================================
 # 1. 설정 및 데이터 로드
 # ==========================================
 st.set_page_config(page_title="시장 동향 분석", page_icon="📈", layout="wide")
+
+check_password()
 
 # ✅ 컬럼명 한글 매핑
 COLUMN_MAP = {

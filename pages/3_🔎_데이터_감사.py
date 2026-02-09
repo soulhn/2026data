@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 try:
     from hrd_etl import run_etl
-    from utils import DB_FILE, get_connection as _utils_get_connection, safe_float
+    from utils import DB_FILE, get_connection as _utils_get_connection, safe_float, check_password
 except ImportError:
     def run_etl(): st.error("❌ 'hrd_etl.py'를 찾을 수 없습니다.")
     DB_FILE = "hrd_analysis.db" # 비상용 기본값
@@ -18,6 +18,8 @@ except ImportError:
 # 1. 설정 및 컬럼 매핑
 # ==========================================
 st.set_page_config(page_title="HRD 데이터 감사 시스템", page_icon="🔎", layout="wide")
+
+check_password()
 
 # DB_FILE 정의 제거됨 (utils 사용)
 
