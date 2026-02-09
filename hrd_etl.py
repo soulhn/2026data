@@ -55,6 +55,7 @@ def init_db():
             TRPR_ID TEXT, TRPR_DEGR INTEGER, TRNEE_ID TEXT, TRNEE_NM TEXT,
             TRNEE_STATUS TEXT, TRNEE_TYPE TEXT, BIRTH_DATE TEXT,
             TOTAL_DAYS INTEGER, OFLHD_CNT INTEGER, VCATN_CNT INTEGER,
+            ABSENT_CNT INTEGER, ATEND_CNT INTEGER,
             COLLECTED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (TRPR_ID, TRPR_DEGR, TRNEE_ID)
         )
@@ -68,6 +69,16 @@ def init_db():
             UNIQUE(TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT)
         )
     ''')
+    # 기존 DB 마이그레이션: ABSENT_CNT, ATEND_CNT 컬럼 추가
+    try:
+        cursor.execute("ALTER TABLE TB_TRAINEE_INFO ADD COLUMN ABSENT_CNT INTEGER")
+    except sqlite3.OperationalError:
+        pass  # 이미 존재
+    try:
+        cursor.execute("ALTER TABLE TB_TRAINEE_INFO ADD COLUMN ATEND_CNT INTEGER")
+    except sqlite3.OperationalError:
+        pass  # 이미 존재
+
     conn.commit()
     conn.close()
 
@@ -114,8 +125,20 @@ def run_etl():
                 EI_EMPL_RATE_3, EI_EMPL_CNT_3, EI_EMPL_RATE_6, EI_EMPL_CNT_6, 
                 HRD_EMPL_RATE_6, HRD_EMPL_CNT_6, REAL_EMPL_RATE
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(TRPR_ID, TRPR_DEGR) DO UPDATE SET 
-                FINI_CNT=excluded.FINI_CNT, REAL_EMPL_RATE=excluded.REAL_EMPL_RATE,
+            ON CONFLICT(TRPR_ID, TRPR_DEGR) DO UPDATE SET
+                TRPR_NM=excluded.TRPR_NM,
+                TOT_TRCO=excluded.TOT_TRCO,
+                FINI_CNT=excluded.FINI_CNT,
+                TOT_FXNUM=excluded.TOT_FXNUM,
+                TOT_PAR_MKS=excluded.TOT_PAR_MKS,
+                TOT_TRP_CNT=excluded.TOT_TRP_CNT,
+                EI_EMPL_RATE_3=excluded.EI_EMPL_RATE_3,
+                EI_EMPL_CNT_3=excluded.EI_EMPL_CNT_3,
+                EI_EMPL_RATE_6=excluded.EI_EMPL_RATE_6,
+                EI_EMPL_CNT_6=excluded.EI_EMPL_CNT_6,
+                HRD_EMPL_RATE_6=excluded.HRD_EMPL_RATE_6,
+                HRD_EMPL_CNT_6=excluded.HRD_EMPL_CNT_6,
+                REAL_EMPL_RATE=excluded.REAL_EMPL_RATE,
                 COLLECTED_AT=CURRENT_TIMESTAMP
         ''', (
             course.get('trprId'), trpr_degr, course.get('trprNm'), 
@@ -154,8 +177,9 @@ def run_etl():
                         INSERT INTO TB_TRAINEE_INFO (
                             TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM,
                             TRNEE_STATUS, TRNEE_TYPE, BIRTH_DATE,
-                            TOTAL_DAYS, OFLHD_CNT, VCATN_CNT
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            TOTAL_DAYS, OFLHD_CNT, VCATN_CNT,
+                            ABSENT_CNT, ATEND_CNT
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(TRPR_ID, TRPR_DEGR, TRNEE_ID) DO UPDATE SET
                             TRNEE_STATUS = excluded.TRNEE_STATUS,
                             TRNEE_TYPE = excluded.TRNEE_TYPE,
@@ -163,12 +187,15 @@ def run_etl():
                             TOTAL_DAYS = excluded.TOTAL_DAYS,
                             OFLHD_CNT = excluded.OFLHD_CNT,
                             VCATN_CNT = excluded.VCATN_CNT,
+                            ABSENT_CNT = excluded.ABSENT_CNT,
+                            ATEND_CNT = excluded.ATEND_CNT,
                             COLLECTED_AT = CURRENT_TIMESTAMP
                     ''', (
                         COURSE_ID, trpr_degr, str(trnee.get('trneeCstmrId')), trnee.get('trneeCstmrNm'),
-                        trnee.get('trneeSttusNm'), trnee.get('trneeTracseSe'), 
-                        trnee.get('lifyeaMd'), trnee.get('traingDeCnt'), 
-                        trnee.get('oflhdCnt'), trnee.get('vcatnCnt')
+                        trnee.get('trneeSttusNm'), trnee.get('trneeTracseSe'),
+                        trnee.get('lifyeaMd'), trnee.get('traingDeCnt'),
+                        trnee.get('oflhdCnt'), trnee.get('vcatnCnt'),
+                        trnee.get('absentCnt'), trnee.get('atendCnt')
                     ))
                 print(f"   >> {trpr_degr}회차 명부: {valid_cnt}건 수집 완료")
         except Exception as e:
