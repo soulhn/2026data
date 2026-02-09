@@ -1,0 +1,31 @@
+name: HRD ETL (매시간)
+
+on:
+  schedule:
+    # UTC 기준: KST 09:00~18:10 = UTC 00:00~09:10
+    # 매일 UTC 00:00 ~ 09:00 매시간 실행 (KST 09:00 ~ 18:00)
+    - cron: '0 0-9 * * 1-5'  # 평일만
+  workflow_dispatch:  # 수동 실행 버튼
+
+jobs:
+  etl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run HRD ETL
+        env:
+          HRD_API_KEY: ${{ secrets.HRD_API_KEY }}
+          HANWHA_COURSE_ID: ${{ secrets.HANWHA_COURSE_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python hrd_etl.py

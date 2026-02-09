@@ -1,0 +1,29 @@
+name: Market ETL (매일 저녁)
+
+on:
+  schedule:
+    # UTC 12:00 = KST 21:00 (매일 저녁 9시)
+    - cron: '0 12 * * *'
+  workflow_dispatch:  # 수동 실행 버튼
+
+jobs:
+  etl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Market ETL
+        env:
+          HRD_API_KEY: ${{ secrets.HRD_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python market_etl.py
