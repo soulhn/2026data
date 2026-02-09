@@ -54,12 +54,13 @@ def run_etl():
 
     update_cutoff_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
 
-    for course in course_list:
+    for idx, course in enumerate(course_list, 1):
         try: trpr_degr = int(course.get('trprDegr', 0))
         except (ValueError, TypeError) as e:
             print(f"   회차 변환 실패 (trprDegr={course.get('trprDegr')}): {e}")
             continue
-        if trpr_degr == 0: continue 
+        if trpr_degr == 0: continue
+        print(f"\n[{idx}/{len(course_list)}] {trpr_degr}회차 처리 시작...")
 
         ei_rate = course.get('eiEmplRate3')
         real_rate = None
@@ -152,6 +153,8 @@ def run_etl():
             print(f"   ⚠️ {trpr_degr}회차 명부 수집 실패: {e}")
 
         target_months = get_month_list(course.get('trStaDt'), course.get('trEndDt'))
+        print(f"   >> {trpr_degr}회차 출결: {len(target_months)}개월 수집 시작")
+        atab_total = 0
         for yyyymm in target_months:
             try:
                 res_attend = session.get(BASE_URL_DETAIL, params={
@@ -166,9 +169,9 @@ def run_etl():
                 atab_list = atab_data if isinstance(atab_data, list) else atab_data.get('atabList', [])
                 if not isinstance(atab_list, list): atab_list = []
 
+                atab_total += len(atab_list)
                 for log in atab_list:
                     if not isinstance(log, dict): continue
-                    # print(log)
                     trnee_id = str(log.get('trneeCstmrId'))
                     cursor.execute(adapt_query('INSERT OR IGNORE INTO TB_TRAINEE_INFO (TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM) VALUES (?, ?, ?, ?)'),
                                    (COURSE_ID, trpr_degr, trnee_id, log.get('cstmrNm')))
@@ -187,6 +190,7 @@ def run_etl():
             except Exception as e:
                 print(f"   ⚠️ {trpr_degr}회차 출결({yyyymm}) 수집 실패: {e}")
                 continue
+        print(f"   >> {trpr_degr}회차 출결: 총 {atab_total}건 수집 완료")
         conn.commit()
 
     conn.close()
