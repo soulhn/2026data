@@ -86,6 +86,8 @@ def load_data(query, params=None):
     conn = get_connection()
     try:
         df = pd.read_sql(adapt_query(query), conn, params=params)
+        if is_pg():
+            df.columns = [c.upper() for c in df.columns]
         return df
     finally:
         conn.close()

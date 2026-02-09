@@ -7,7 +7,7 @@ import os
 
 # 🚀 상위 폴더의 utils.py를 가져오기 위한 경로 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, get_connection
+from utils import check_password, get_connection, is_pg
 
 # ==========================================
 # 1. 설정 및 데이터 로드
@@ -41,6 +41,8 @@ def load_market_data():
     query = "SELECT * FROM TB_MARKET_TREND"
     df = pd.read_sql(query, conn)
     conn.close()
+    if is_pg():
+        df.columns = [c.upper() for c in df.columns]
     
     # 1. 날짜/파생변수
     df['TR_STA_DT'] = pd.to_datetime(df['TR_STA_DT'])

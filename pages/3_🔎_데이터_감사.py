@@ -56,6 +56,8 @@ def load_all_data():
 
     conn = get_connection()
     df_course = pd.read_sql("SELECT * FROM TB_COURSE_MASTER ORDER BY TRPR_DEGR ASC", conn)
+    if is_pg():
+        df_course.columns = [c.upper() for c in df_course.columns]
     
     if not df_course.empty:
         df_course['TOT_PAR_MKS'] = pd.to_numeric(df_course['TOT_PAR_MKS'], errors='coerce').fillna(0)
@@ -64,6 +66,8 @@ def load_all_data():
         df_course['TOTAL_RATE_6'] = df_course.apply(safe_sum_rate, axis=1)
 
     df_trainee = pd.read_sql("SELECT * FROM TB_TRAINEE_INFO", conn)
+    if is_pg():
+        df_trainee.columns = [c.upper() for c in df_trainee.columns]
     
     if not df_trainee.empty and not df_course.empty:
         year_map = {}
@@ -84,6 +88,8 @@ def load_all_data():
         df_trainee['나이'] = df_trainee.apply(calc_training_age, axis=1)
 
     df_log = pd.read_sql("SELECT * FROM TB_ATTENDANCE_LOG ORDER BY ATEND_DT DESC, IN_TIME ASC", conn)
+    if is_pg():
+        df_log.columns = [c.upper() for c in df_log.columns]
     conn.close()
 
     def apply_kst(df):
