@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 try:
     from hrd_etl import run_etl
-    from utils import DB_FILE # 👈 utils에서 가져옴
+    from utils import DB_FILE, get_connection as _utils_get_connection, safe_float
 except ImportError:
     def run_etl(): st.error("❌ 'hrd_etl.py'를 찾을 수 없습니다.")
     DB_FILE = "hrd_analysis.db" # 비상용 기본값
