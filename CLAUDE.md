@@ -24,9 +24,9 @@ market_etl.py (매일 21시) →                    ←    https://2026data.stre
 - Secrets: `HRD_API_KEY`, `HANWHA_COURSE_ID`, `DATABASE_URL`
 
 ### 홈 페이지 (home.py)
-- KPI 요약 (총 과정수, 누적 수강생, 모집률, 취업률)
-- **오늘의 출결 현황** 섹션: 진행 중 과정의 출석률/결석/지각 KPI + 기수별 출석률 바차트
-- 연도별 운영 규모, 우수 성과 Top 5, 현재 운영 중 과정 테이블
+- KPI 요약 (총 과정수, 누적 수강생, **수료율**, 취업률)
+- **오늘의 출결 현황** 섹션: 입실중 재분류(IN_TIME 있으면 결석→입실중), 출석률/입실중/결석/지각/조퇴 KPI 6칸 + 기수별 출석률 바차트
+- 연도별 운영 규모, 우수 성과 Top 5, 현재 운영 중 과정 테이블 (수강신청/수강인원/수료인원/수료율)
 
 ### 기수별 분석 페이지 (pages/1_*.py) 구조
 - **2가지 모드**: 개별 기수 분석 / 전체 기수 비교 (st.radio 전환)
@@ -50,6 +50,7 @@ market_etl.py (매일 21시) →                    ←    https://2026data.stre
 - 내부 과정 NCS 코드는 TB_MARKET_TREND와 TRPR_ID merge로 매칭
 - `scikit-learn` LinearRegression: 비용→취업률 시뮬레이터
 - **자격증 분석**: CERTIFICATE 컬럼 파싱 → 자격증별 과정수/취업률 Top 20
+- **회차별 상세 비교**: 정원/수강신청인원/수료인원/수료율/취업률 (모집률 clip 제거)
 - HANWHA_COURSE_ID 미설정 시 시장 전체 분석만 표시 (st.info 안내)
 
 ### 주의사항
