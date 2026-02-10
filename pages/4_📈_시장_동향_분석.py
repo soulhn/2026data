@@ -98,7 +98,9 @@ def load_internal_courses():
         internal[c] = pd.to_numeric(internal[c], errors='coerce').fillna(0)
     for c in ['EI_EMPL_RATE_3', 'EI_EMPL_RATE_6']:
         internal[c] = pd.to_numeric(internal[c], errors='coerce')
-    internal['모집률'] = (internal['TOT_TRP_CNT'] / internal['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
+    internal['모집률'] = (internal['TOT_TRP_CNT'] / internal['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0)
+    internal['FINI_CNT'] = pd.to_numeric(internal['FINI_CNT'], errors='coerce').fillna(0)
+    internal['수료율'] = (internal['FINI_CNT'] / internal['TOT_PAR_MKS'].replace(0, pd.NA) * 100).fillna(0)
     return internal, course_id
 
 with st.spinner('30만 건의 데이터에서 인사이트를 추출 중입니다... 🚀'):
@@ -541,11 +543,11 @@ with tabs[2]:
 
             # --- 회차별 상세 비교 테이블 ---
             st.subheader("회차별 상세 비교")
-            detail = internal_df[['TRPR_DEGR', 'TRPR_NM', 'TR_STA_DT', 'TOT_TRCO', 'TOT_FXNUM', 'TOT_TRP_CNT', '모집률', 'EI_EMPL_RATE_3']].copy()
-            detail.columns = ['회차', '과정명', '시작일', '훈련비', '정원', '수강인원', '모집률(%)', '취업률(%)']
+            detail = internal_df[['TRPR_DEGR', 'TRPR_NM', 'TR_STA_DT', 'TOT_TRCO', 'TOT_FXNUM', 'TOT_TRP_CNT', 'FINI_CNT', '수료율', 'EI_EMPL_RATE_3']].copy()
+            detail.columns = ['회차', '과정명', '시작일', '훈련비', '정원', '수강신청인원', '수료인원', '수료율(%)', '취업률(%)']
             detail['시작일'] = detail['시작일'].dt.strftime('%Y-%m-%d')
             st.dataframe(
-                detail.style.format({'훈련비': '{:,.0f}원', '정원': '{:,.0f}명', '수강인원': '{:,.0f}명', '모집률(%)': '{:.1f}%', '취업률(%)': '{:.1f}%'}),
+                detail.style.format({'훈련비': '{:,.0f}원', '정원': '{:,.0f}명', '수강신청인원': '{:,.0f}명', '수료인원': '{:,.0f}명', '수료율(%)': '{:.1f}%', '취업률(%)': '{:.1f}%'}),
                 use_container_width=True, hide_index=True
             )
 
