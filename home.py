@@ -23,8 +23,10 @@ def get_dashboard_data():
     for col in numeric_cols:
         df_course[col] = pd.to_numeric(df_course[col], errors='coerce').fillna(0)
     df_course['TOTAL_RATE_6'] = df_course['EI_EMPL_RATE_6'] + df_course['HRD_EMPL_RATE_6']
-    df_course['모집률'] = df_course.apply(
-        lambda x: (x['TOT_PAR_MKS'] / x['TOT_FXNUM'] * 100) if x['TOT_FXNUM'] > 0 else 0, axis=1
+    df_course['FINI_CNT'] = pd.to_numeric(df_course['FINI_CNT'], errors='coerce').fillna(0)
+    df_course['TOT_TRP_CNT'] = pd.to_numeric(df_course['TOT_TRP_CNT'], errors='coerce').fillna(0)
+    df_course['수료율'] = df_course.apply(
+        lambda x: (x['FINI_CNT'] / x['TOT_PAR_MKS'] * 100) if x['TOT_PAR_MKS'] > 0 else 0, axis=1
     )
     today = pd.Timestamp(datetime.now().date())
     df_course['상태'] = df_course['TR_END_DT'].apply(lambda x: '진행중' if x >= today else '종료')
@@ -73,7 +75,8 @@ active_courses = len(df[df['상태'] == '진행중'])
 kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
 kpi1.metric("총 운영 과정", f"{total_courses}개", delta=f"진행중 {active_courses}개")
 kpi2.metric("누적 수강생", f"{total_trainees:,}명")
-kpi3.metric("평균 모집률", f"{df['모집률'].mean():.1f}%")
+avg_completion = df[df['상태'] == '종료']['수료율'].mean()
+kpi3.metric("평균 수료율", f"{avg_completion:.1f}%", help="수료인원 / 수강인원 기준")
 kpi4.metric("평균 취업률(3개월)", f"{avg_rate_3:.1f}%", help="수료 후 3개월 고용보험 가입 기준")
 kpi5.metric("평균 취업률(6개월)", f"{avg_rate_6:.1f}%", help="6개월 고용보험 + HRD자체취업 합산")
 st.divider()
@@ -164,13 +167,15 @@ st.subheader("🚨 현재 운영 중인 과정 현황")
 active_df = df[df['상태'] == '진행중'].copy()
 if not active_df.empty:
     st.dataframe(
-        active_df[['TRPR_DEGR', 'TRPR_NM', 'TR_END_DT', 'TOT_PAR_MKS', '모집률']],
+        active_df[['TRPR_DEGR', 'TRPR_NM', 'TR_END_DT', 'TOT_TRP_CNT', 'TOT_PAR_MKS', 'FINI_CNT', '수료율']],
         column_config={
             "TRPR_DEGR": "회차",
             "TRPR_NM": "과정명",
             "TR_END_DT": st.column_config.DateColumn("종료예정일"),
-            "TOT_PAR_MKS": st.column_config.NumberColumn("현재원", format="%d명"),
-            "모집률": st.column_config.ProgressColumn("모집률", format="%.1f%%", min_value=0, max_value=100),
+            "TOT_TRP_CNT": st.column_config.NumberColumn("수강신청", format="%d명"),
+            "TOT_PAR_MKS": st.column_config.NumberColumn("수강인원", format="%d명"),
+            "FINI_CNT": st.column_config.NumberColumn("수료인원", format="%d명"),
+            "수료율": st.column_config.ProgressColumn("수료율", format="%.1f%%", min_value=0, max_value=100),
         },
         hide_index=True,
         use_container_width=True,

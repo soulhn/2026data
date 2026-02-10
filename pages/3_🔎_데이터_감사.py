@@ -30,7 +30,7 @@ COLUMN_MAP = {
     "ABSENT_CNT": "ABSENT_CNT (결석일수)", "ATEND_CNT": "ATEND_CNT (출석일수)",
     "ATEND_DT": "ATEND_DT (출석일자)", "DAY_NM": "DAY_NM (요일)", "IN_TIME": "IN_TIME (입실시간)",
     "OUT_TIME": "OUT_TIME (퇴실시간)", "ATEND_STATUS": "ATEND_STATUS (상태_한글)", "ATEND_STATUS_CD": "ATEND_STATUS_CD (상태코드)",
-    "TOTAL_RATE_6": "TOTAL_RATE_6 (총 취업률 합산)", "모집률(%)": "모집률 (%)", "나이": "나이 (훈련 당시 기준)",
+    "TOTAL_RATE_6": "TOTAL_RATE_6 (총 취업률 합산)", "수료율(%)": "수료율 (%)", "나이": "나이 (훈련 당시 기준)",
     "TRAINST_NM": "TRAINST_NM (훈련기관명)", "NCS_CD": "NCS_CD (NCS코드)", "TRNG_AREA_CD": "TRNG_AREA_CD (지역코드)",
     "COURSE_MAN": "COURSE_MAN (수강비)", "REG_COURSE_MAN": "REG_COURSE_MAN (등록인원)",
     "EI_EMPL_RATE_3": "EI_EMPL_RATE_3 (3개월 취업률)", "STDG_SCOR": "STDG_SCOR (만족도)",
@@ -58,8 +58,9 @@ def load_all_data():
     if not df_course.empty:
         df_course['TOT_PAR_MKS'] = pd.to_numeric(df_course['TOT_PAR_MKS'], errors='coerce').fillna(0)
         df_course['TOT_FXNUM'] = pd.to_numeric(df_course['TOT_FXNUM'], errors='coerce').fillna(0)
-        df_course['모집률(%)'] = df_course.apply(
-            lambda x: round((x['TOT_PAR_MKS'] / x['TOT_FXNUM'] * 100), 1) if x['TOT_FXNUM'] > 0 else 0, axis=1
+        df_course['FINI_CNT'] = pd.to_numeric(df_course['FINI_CNT'], errors='coerce').fillna(0)
+        df_course['수료율(%)'] = df_course.apply(
+            lambda x: round((x['FINI_CNT'] / x['TOT_PAR_MKS'] * 100), 1) if x['TOT_PAR_MKS'] > 0 else 0, axis=1
         )
         df_course['TOTAL_RATE_6'] = df_course.apply(safe_sum_rate, axis=1)
 
