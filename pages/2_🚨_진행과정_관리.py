@@ -115,22 +115,15 @@ real_absent_cnt = len(absent_students)
 attendance_rate = (present_cnt / total_cnt * 100) if total_cnt > 0 else 0
 
 # ==========================================
-# 대시보드 화면 (개편)
+# [1] 출석률 + KPI
 # ==========================================
 st.subheader(f"📌 {selected_degr}회차 실시간 현황 ({target_date} 기준)")
 d_day = (pd.to_datetime(this_course['TR_END_DT']) - pd.to_datetime(datetime.now().date())).days
 st.info(f"**과정명:** {this_course['TRPR_NM']} (D-{d_day})")
 st.divider()
 
-# --- 출석률 게이지 + KPI ---
 gauge_col, kpi_col = st.columns([1, 3])
 with gauge_col:
-    gauge_color = '#2ecc71' if attendance_rate >= 90 else '#f39c12' if attendance_rate >= 80 else '#e74c3c'
-    gauge = alt.Chart(pd.DataFrame({'value': [attendance_rate]})).mark_arc(
-        innerRadius=60, outerRadius=80, theta=3.14159, theta2=3.14159 * (1 + attendance_rate / 100),
-    ).encode(
-        color=alt.value(gauge_color),
-    ).properties(width=180, height=120)
     st.markdown(f"### 출석률 **{attendance_rate:.1f}%**")
     st.caption(f"{present_cnt}/{total_cnt}명 출석")
 
@@ -149,71 +142,10 @@ with kpi_col:
 
 st.divider()
 
-# --- 주간 출결 추이 미니차트 (신규) ---
-if not this_logs.empty:
-    recent_dates = sorted(this_logs['ATEND_DT'].unique())[-10:]  # 최근 10일
-    weekly_data = []
-    for dt in recent_dates:
-        day_logs = this_logs[this_logs['ATEND_DT'] == dt]
-        day_total = len(day_logs['TRNEE_ID'].unique())
-        day_present = len(day_logs[day_logs['IN_TIME'].notna()]['TRNEE_ID'].unique())
-        day_rate = (day_present / day_total * 100) if day_total > 0 else 0
-        weekly_data.append({'날짜': dt, '출석률': round(day_rate, 1), '출석': day_present, '총원': day_total})
-
-    if weekly_data:
-        weekly_df = pd.DataFrame(weekly_data)
-        st.markdown("##### 📈 최근 출결 추이")
-        line = alt.Chart(weekly_df).mark_line(point=True, color='#3498db').encode(
-            x=alt.X('날짜:N', title='날짜'),
-            y=alt.Y('출석률:Q', title='출석률 (%)', scale=alt.Scale(domain=[50, 100])),
-            tooltip=['날짜', '출석률', '출석', '총원'],
-        ).properties(height=200)
-        rule = alt.Chart(pd.DataFrame({'y': [90]})).mark_rule(strokeDash=[5, 5], color='red').encode(y='y:Q')
-        st.altair_chart(line + rule, use_container_width=True)
-        st.divider()
-
-# --- 누적 위험 지표 (신규) ---
-if not this_logs.empty:
-    st.markdown("##### ⚠️ 누적 출결 위험 지표")
-    st.caption("최근 출결 기록 누적 기준으로 위험군을 감지합니다.")
-
-    # 학생별 누적 결석/지각
-    cumul = this_logs.groupby('TRNEE_ID').agg(
-        누적_결석=('ATEND_STATUS', lambda x: (x == '결석').sum()),
-        누적_지각=('ATEND_STATUS', lambda x: (x == '지각').sum()),
-        누적_조퇴=('ATEND_STATUS', lambda x: (x == '조퇴').sum()),
-        총_기록=('ATEND_DT', 'count'),
-    ).reset_index()
-    cumul = cumul.merge(active_students[['TRNEE_ID', 'TRNEE_NM']], on='TRNEE_ID', how='inner')
-
-    # 위험군: 결석 3회 이상 또는 지각 5회 이상
-    risk_mask = (cumul['누적_결석'] >= 3) | (cumul['누적_지각'] >= 5)
-    risk_df = cumul[risk_mask].sort_values('누적_결석', ascending=False)
-
-    if not risk_df.empty:
-        rc1, rc2 = st.columns([1, 2])
-        with rc1:
-            st.metric("위험군 인원", f"{len(risk_df)}명", delta_color="inverse")
-            st.caption("결석 3회+ 또는 지각 5회+")
-        with rc2:
-            st.dataframe(
-                risk_df[['TRNEE_NM', '누적_결석', '누적_지각', '누적_조퇴', '총_기록']],
-                column_config={
-                    'TRNEE_NM': '이름',
-                    '누적_결석': st.column_config.NumberColumn('결석', format="%d회"),
-                    '누적_지각': st.column_config.NumberColumn('지각', format="%d회"),
-                    '누적_조퇴': st.column_config.NumberColumn('조퇴', format="%d회"),
-                    '총_기록': st.column_config.NumberColumn('총 기록일', format="%d일"),
-                },
-                use_container_width=True,
-                hide_index=True,
-            )
-    else:
-        st.success("현재 출결 위험군이 없습니다. 👍")
-    st.divider()
-
-# --- 보고용 텍스트 ---
-with st.expander("📝 보고용 텍스트 복사", expanded=False):
+# ==========================================
+# [2] 보고용 텍스트
+# ==========================================
+with st.expander("📝 보고용 텍스트 복사", expanded=True):
     def get_names_str(df, type_):
         names = []
         if type_ == 'absent':
@@ -252,7 +184,90 @@ with st.expander("📝 보고용 텍스트 복사", expanded=False):
 """
     st.text_area("보고 양식", report_text, height=300)
 
-# --- 상세 탭 ---
+st.divider()
+
+# ==========================================
+# [3] 최근 출결 추이
+# ==========================================
+if not this_logs.empty:
+    recent_dates = sorted(this_logs['ATEND_DT'].unique())[-10:]
+    weekly_data = []
+    for dt in recent_dates:
+        day_logs = this_logs[this_logs['ATEND_DT'] == dt]
+        day_total = len(day_logs['TRNEE_ID'].unique())
+        day_present = len(day_logs[day_logs['IN_TIME'].notna()]['TRNEE_ID'].unique())
+        day_rate = (day_present / day_total * 100) if day_total > 0 else 0
+        weekly_data.append({'날짜': dt, '출석률': round(day_rate, 1), '출석': day_present, '총원': day_total})
+
+    if weekly_data:
+        weekly_df = pd.DataFrame(weekly_data)
+        st.markdown("##### 📈 최근 출결 추이")
+        st.caption("최근 10일간 일별 출석률 변화입니다. 빨간 점선은 90% 기준선입니다.")
+        line = alt.Chart(weekly_df).mark_line(point=True, color='#3498db').encode(
+            x=alt.X('날짜:N', title='날짜'),
+            y=alt.Y('출석률:Q', title='출석률 (%)', scale=alt.Scale(domain=[50, 100])),
+            tooltip=['날짜', '출석률', '출석', '총원'],
+        ).properties(height=200)
+        rule = alt.Chart(pd.DataFrame({'y': [90]})).mark_rule(strokeDash=[5, 5], color='red').encode(y='y:Q')
+        st.altair_chart(line + rule, use_container_width=True)
+    st.divider()
+
+# ==========================================
+# [4] 누적 출결 위험 지표
+# ==========================================
+if not this_logs.empty:
+    st.markdown("##### ⚠️ 누적 출결 위험 지표")
+
+    # 과정 시작일부터 현재까지의 전체 출결 기록 기준
+    total_dates = sorted(this_logs['ATEND_DT'].unique())
+    total_days_cnt = len(total_dates)
+
+    st.caption(
+        f"**집계 기간:** 과정 전체 기간 ({total_dates[0]} ~ {total_dates[-1]}, 총 {total_days_cnt}일)  \n"
+        "**위험군 기준:** 아래 조건 중 하나 이상 해당 시 위험군으로 분류  \n"
+        "- 누적 결석 **3회 이상** (수료 기준 출석률 80% 미달 위험)  \n"
+        "- 누적 지각 **5회 이상** (습관적 지각 패턴)  \n"
+        "- 누적 조퇴 **5회 이상** (조기 이탈 패턴)"
+    )
+
+    cumul = this_logs.groupby('TRNEE_ID').agg(
+        누적_결석=('ATEND_STATUS', lambda x: (x == '결석').sum()),
+        누적_지각=('ATEND_STATUS', lambda x: (x == '지각').sum()),
+        누적_조퇴=('ATEND_STATUS', lambda x: (x == '조퇴').sum()),
+        누적_출석=('ATEND_STATUS', lambda x: (x == '출석').sum()),
+        총_기록=('ATEND_DT', 'count'),
+    ).reset_index()
+    cumul = cumul.merge(active_students[['TRNEE_ID', 'TRNEE_NM']], on='TRNEE_ID', how='inner')
+    cumul['출석률(%)'] = (cumul['누적_출석'] / cumul['총_기록'] * 100).round(1)
+
+    risk_mask = (cumul['누적_결석'] >= 3) | (cumul['누적_지각'] >= 5) | (cumul['누적_조퇴'] >= 5)
+    risk_df = cumul[risk_mask].sort_values('누적_결석', ascending=False)
+
+    if not risk_df.empty:
+        rc1, rc2 = st.columns([1, 3])
+        with rc1:
+            st.metric("위험군 인원", f"{len(risk_df)}명", delta_color="inverse")
+        with rc2:
+            st.dataframe(
+                risk_df[['TRNEE_NM', '누적_결석', '누적_지각', '누적_조퇴', '총_기록', '출석률(%)']],
+                column_config={
+                    'TRNEE_NM': '이름',
+                    '누적_결석': st.column_config.NumberColumn('결석', format="%d회"),
+                    '누적_지각': st.column_config.NumberColumn('지각', format="%d회"),
+                    '누적_조퇴': st.column_config.NumberColumn('조퇴', format="%d회"),
+                    '총_기록': st.column_config.NumberColumn('총 기록일', format="%d일"),
+                    '출석률(%)': st.column_config.ProgressColumn('출석률', min_value=0, max_value=100, format="%.1f%%"),
+                },
+                use_container_width=True,
+                hide_index=True,
+            )
+    else:
+        st.success("현재 출결 위험군이 없습니다. 👍")
+    st.divider()
+
+# ==========================================
+# 상세 탭
+# ==========================================
 t1, t2, t3 = st.tabs(["🚨 미퇴실/특이사항", "❌ 결석자", "📋 전체 출석부"])
 
 with t1:
