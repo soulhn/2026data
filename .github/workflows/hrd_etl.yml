@@ -2,9 +2,9 @@ name: HRD ETL (매시간)
 
 on:
   schedule:
-    # UTC 기준: KST 09:00~18:10 = UTC 00:00~09:10
-    # 매일 UTC 00:00 ~ 09:00 매시간 실행 (KST 09:00 ~ 18:00)
-    - cron: '0 0-9 * * 1-5'  # 평일만
+    # UTC 기준: KST 09:00~18:00 = UTC 00:00~09:00
+    # 평일 매시간 실행
+    - cron: '10 0-9 * * 1-5'
   workflow_dispatch:  # 수동 실행 버튼
 
 jobs:
