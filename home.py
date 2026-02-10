@@ -33,16 +33,21 @@ def get_dashboard_data():
 
 @st.cache_data(ttl=300)
 def get_today_attendance():
-    """진행 중 과정의 오늘 출결 현황 요약"""
+    """진행 중 과정의 오늘 출결 현황 요약 (입실중 재분류 포함)"""
     today_str = datetime.now().strftime('%Y-%m-%d')
-    # 진행 중 과정의 최신 출결 로그
+    # IN_TIME이 있는데 결석인 경우 → '입실중'으로 재분류
     query = (
-        "SELECT a.TRPR_DEGR, a.ATEND_STATUS, COUNT(*) as CNT "
+        "SELECT a.TRPR_DEGR, "
+        "CASE WHEN a.ATEND_STATUS = '결석' AND a.IN_TIME IS NOT NULL AND a.IN_TIME != '' "
+        "THEN '입실중' ELSE a.ATEND_STATUS END as ATEND_STATUS, "
+        "COUNT(*) as CNT "
         "FROM TB_ATTENDANCE_LOG a "
         "INNER JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
         "WHERE c.TR_END_DT >= ? "
         "AND a.ATEND_DT = (SELECT MAX(ATEND_DT) FROM TB_ATTENDANCE_LOG WHERE TRPR_DEGR = a.TRPR_DEGR) "
-        "GROUP BY a.TRPR_DEGR, a.ATEND_STATUS"
+        "GROUP BY a.TRPR_DEGR, "
+        "CASE WHEN a.ATEND_STATUS = '결석' AND a.IN_TIME IS NOT NULL AND a.IN_TIME != '' "
+        "THEN '입실중' ELSE a.ATEND_STATUS END"
     )
     return load_data(query, params=[today_str])
 
@@ -81,22 +86,26 @@ if active_courses > 0:
         if not attend_df.empty:
             total_logs = attend_df['CNT'].sum()
             present = attend_df[attend_df['ATEND_STATUS'] == '출석']['CNT'].sum()
+            in_class = attend_df[attend_df['ATEND_STATUS'] == '입실중']['CNT'].sum()
             absent = attend_df[attend_df['ATEND_STATUS'] == '결석']['CNT'].sum()
             late = attend_df[attend_df['ATEND_STATUS'] == '지각']['CNT'].sum()
             leave_early = attend_df[attend_df['ATEND_STATUS'] == '조퇴']['CNT'].sum()
-            attendance_rate = (present / total_logs * 100) if total_logs > 0 else 0
+            # 출석률: 출석 + 입실중 + 지각을 출석으로 간주
+            effective_present = present + in_class + late
+            attendance_rate = (effective_present / total_logs * 100) if total_logs > 0 else 0
 
-            ac1, ac2, ac3, ac4, ac5 = st.columns(5)
-            ac1.metric("출석률", f"{attendance_rate:.1f}%")
+            ac1, ac2, ac3, ac4, ac5, ac6 = st.columns(6)
+            ac1.metric("출석률", f"{attendance_rate:.1f}%", help="출석 + 입실중 + 지각 기준")
             ac2.metric("출석", f"{int(present)}명")
-            ac3.metric("결석", f"{int(absent)}명", delta_color="inverse")
-            ac4.metric("지각", f"{int(late)}명", delta_color="inverse")
-            ac5.metric("조퇴", f"{int(leave_early)}명", delta_color="inverse")
+            ac3.metric("입실중", f"{int(in_class)}명", help="입실 완료, 퇴실 전 (수업 중)")
+            ac4.metric("결석", f"{int(absent)}명", delta_color="inverse")
+            ac5.metric("지각", f"{int(late)}명", delta_color="inverse")
+            ac6.metric("조퇴", f"{int(leave_early)}명", delta_color="inverse")
 
-            # 기수별 출석률 바차트
+            # 기수별 출석률 바차트 (입실중도 출석으로 간주)
             degr_total = attend_df.groupby('TRPR_DEGR')['CNT'].sum().reset_index()
             degr_total.columns = ['TRPR_DEGR', '총건수']
-            degr_present = attend_df[attend_df['ATEND_STATUS'] == '출석'].groupby('TRPR_DEGR')['CNT'].sum().reset_index()
+            degr_present = attend_df[attend_df['ATEND_STATUS'].isin(['출석', '입실중', '지각'])].groupby('TRPR_DEGR')['CNT'].sum().reset_index()
             degr_present.columns = ['TRPR_DEGR', '출석건수']
             degr_rate = degr_total.merge(degr_present, on='TRPR_DEGR', how='left').fillna(0)
             degr_rate['출석률'] = (degr_rate['출석건수'] / degr_rate['총건수'] * 100).round(1)
