@@ -76,8 +76,8 @@ def load_internal_courses():
     course_id = os.getenv("HANWHA_COURSE_ID")
     if not course_id:
         try:
-            course_id = st.secrets.get("HANWHA_COURSE_ID")
-        except Exception:
+            course_id = st.secrets["HANWHA_COURSE_ID"]
+        except (KeyError, FileNotFoundError):
             pass
     if not course_id:
         return None, None
