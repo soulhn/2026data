@@ -202,7 +202,7 @@ tabs = st.tabs([
     "📊 시장 개요", "🏆 순위 & 모집 분석", "💎 우리 과정 vs 시장",
     "🎨 유형/일정 분석", "💰 비용/성과 분석",
     "📈 시계열 트렌드", "⚔️ 경쟁 심화도", "🎯 비용 대비 성과",
-    "🏢 경쟁 현황", "☁️ 키워드", "📑 데이터 조회"
+    "🏢 경쟁 현황", "☁️ 키워드", "🎓 자격증 분석", "📑 데이터 조회"
 ])
 
 # [Tab 1] 시장 개요
@@ -889,8 +889,94 @@ with tabs[9]:
     kwd = pd.DataFrame(Counter(words).most_common(25), columns=['키워드', '빈도'])
     st.plotly_chart(px.bar(kwd, x='키워드', y='빈도', color='빈도'), use_container_width=True)
 
-# [Tab 11] 데이터 조회
+
+# [Tab 11] 자격증 분석 (신규)
 with tabs[10]:
+    st.subheader("🎓 자격증 연계 분석")
+
+    # CERTIFICATE 컬럼 로드
+    cert_df = _load_data("""
+        SELECT CERTIFICATE, EI_EMPL_RATE_3, TOT_TRCO, TRAIN_TARGET, NCS_CD
+        FROM TB_MARKET_TREND
+        WHERE CERTIFICATE IS NOT NULL AND CERTIFICATE != ''
+    """)
+
+    if cert_df.empty:
+        st.info("자격증 데이터가 없습니다.")
+    else:
+        cert_df['EI_EMPL_RATE_3'] = pd.to_numeric(cert_df['EI_EMPL_RATE_3'], errors='coerce')
+        cert_df['TOT_TRCO'] = pd.to_numeric(cert_df['TOT_TRCO'], errors='coerce')
+
+        # 자격증 파싱 (쉼표/줄바꿈 구분)
+        all_certs = []
+        for _, row in cert_df.iterrows():
+            raw = str(row['CERTIFICATE'])
+            for sep in [',', '\n', '/', '·']:
+                raw = raw.replace(sep, '|')
+            certs = [c.strip() for c in raw.split('|') if c.strip() and len(c.strip()) > 1]
+            for c in certs:
+                all_certs.append({
+                    '자격증': c,
+                    '취업률': row['EI_EMPL_RATE_3'],
+                    '훈련비': row['TOT_TRCO'],
+                })
+
+        if all_certs:
+            cert_parsed = pd.DataFrame(all_certs)
+            cert_stats = cert_parsed.groupby('자격증').agg(
+                과정수=('자격증', 'count'),
+                평균_취업률=('취업률', 'mean'),
+                평균_훈련비=('훈련비', 'mean'),
+            ).reset_index()
+            cert_stats = cert_stats[cert_stats['과정수'] >= 5]  # 5건 이상만
+            cert_stats['평균_취업률'] = cert_stats['평균_취업률'].round(1)
+            cert_stats['평균_훈련비'] = cert_stats['평균_훈련비'].round(0)
+            cert_stats = cert_stats.sort_values('과정수', ascending=False)
+
+            st.metric("연계 자격증 종류", f"{len(cert_stats)}개", help="5건 이상 연계된 자격증만 표시")
+
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                st.markdown("##### Top 20 자격증 (과정수 기준)")
+                top20 = cert_stats.head(20)
+                import plotly.express as px
+                fig = px.bar(
+                    top20, x='과정수', y='자격증', orientation='h',
+                    color='평균_취업률', color_continuous_scale='RdYlGn',
+                    hover_data=['평균_취업률', '평균_훈련비'],
+                )
+                fig.update_layout(height=500, yaxis={'categoryorder': 'total ascending'})
+                st.plotly_chart(fig, use_container_width=True)
+
+            with cc2:
+                st.markdown("##### 자격증별 평균 취업률 Top 20")
+                top_empl = cert_stats[cert_stats['과정수'] >= 10].sort_values('평균_취업률', ascending=False).head(20)
+                if not top_empl.empty:
+                    fig2 = px.bar(
+                        top_empl, x='평균_취업률', y='자격증', orientation='h',
+                        color='과정수', color_continuous_scale='Blues',
+                        hover_data=['과정수', '평균_훈련비'],
+                    )
+                    fig2.update_layout(height=500, yaxis={'categoryorder': 'total ascending'})
+                    st.plotly_chart(fig2, use_container_width=True)
+
+            st.markdown("##### 전체 자격증 데이터")
+            st.dataframe(
+                cert_stats,
+                column_config={
+                    '과정수': st.column_config.NumberColumn(format="%d"),
+                    '평균_취업률': st.column_config.NumberColumn('평균 취업률(%)', format="%.1f"),
+                    '평균_훈련비': st.column_config.NumberColumn('평균 훈련비(원)', format="%,.0f"),
+                },
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("파싱 가능한 자격증 데이터가 없습니다.")
+
+
+# [Tab 12] 데이터 조회
+with tabs[11]:
     st.subheader(f"📄 상세 데이터 ({len(df):,}건)")
     display_df = df.rename(columns=COLUMN_MAP)
     priority = ['과정명', '훈련기관명', '훈련유형', '지역', '주말구분', '훈련비(원)', '정원(명)', '등록인원', '모집률(%)', '취업률(3개월)', '개설일']

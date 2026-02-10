@@ -14,9 +14,6 @@ st.title("📊 기수별 성과 심층 분석")
 st.markdown("종료된 과정의 **수료율, 취업률, 출석 패턴**을 다각도로 분석합니다.")
 
 
-# ==========================================
-# 데이터 로드 함수
-# ==========================================
 @st.cache_data(ttl=600)
 def get_course_list():
     today = datetime.now().strftime('%Y-%m-%d')
@@ -82,6 +79,18 @@ def get_late_times(degr):
 
 
 @st.cache_data(ttl=600)
+def get_stay_duration(degr):
+    """체류시간 분석용 데이터"""
+    return load_data(
+        "SELECT TRNEE_ID, ATEND_DT, IN_TIME, OUT_TIME "
+        "FROM TB_ATTENDANCE_LOG "
+        "WHERE TRPR_DEGR = ? AND IN_TIME IS NOT NULL AND IN_TIME != '' "
+        "AND OUT_TIME IS NOT NULL AND OUT_TIME != ''",
+        params=[degr],
+    )
+
+
+@st.cache_data(ttl=600)
 def get_all_degr_attendance():
     return load_data(
         "SELECT TRPR_DEGR, ATEND_STATUS, COUNT(*) as CNT "
@@ -99,9 +108,17 @@ def get_all_course_master():
     )
 
 
-# ==========================================
-# 메인 로직
-# ==========================================
+def parse_time_to_minutes(t):
+    """HH:MM 형태의 시간을 분으로 변환"""
+    try:
+        parts = str(t).split(':')
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            return int(parts[0]) * 60 + int(parts[1])
+    except Exception:
+        pass
+    return None
+
+
 course_list = get_course_list()
 if course_list.empty:
     st.warning("분석할 수 있는 종료된 과정 데이터가 없습니다.")
@@ -111,9 +128,6 @@ mode = st.radio("분석 모드", ["개별 기수 분석", "전체 기수 비교"
 st.divider()
 
 
-# ==========================================
-# 모드 1: 개별 기수 분석
-# ==========================================
 if mode == "개별 기수 분석":
     with st.sidebar:
         st.header("🔍 분석 대상 선택")
@@ -144,29 +158,23 @@ if mode == "개별 기수 분석":
     total_empl_rate = ei_rate + hrd_rate
 
     mc1, mc2, mc3, mc4 = st.columns(4)
-    mc1.metric(
-        "수료율",
-        f"{(fini_std / total_std * 100):.1f}%" if total_std > 0 else "0%",
-        f"{fini_std}/{total_std}명",
-    )
+    mc1.metric("수료율", f"{(fini_std / total_std * 100):.1f}%" if total_std > 0 else "0%", f"{fini_std}/{total_std}명")
     mc2.metric("총 취업률 (6개월)", f"{total_empl_rate:.1f}%", help="고용보험 + HRD 합산")
     mc3.metric("중도 탈락", f"{dropout_std}명", delta_color="inverse")
-    mc4.metric(
-        "평균 결석일",
-        f"{students_df['결석_횟수'].mean():.1f}일" if '결석_횟수' in students_df.columns else "-",
-    )
+    mc4.metric("평균 결석일", f"{students_df['결석_횟수'].mean():.1f}일" if '결석_횟수' in students_df.columns else "-")
     st.divider()
 
-    # --- 5개 탭 ---
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    # --- 6개 탭 ---
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "👥 인구통계 분석",
         "📅 요일별 출결 패턴",
         "⏰ 시간대별 지각 분포",
+        "🕐 체류시간 분석",
         "📉 출결/이탈 분석",
         "📋 학생별 출결 현황",
     ])
 
-    # [Tab 1] 인구통계 분석
+    # [Tab 1] 인구통계 분석 + 유형별 성과
     with tab1:
         left, right = st.columns(2)
         with left:
@@ -195,7 +203,43 @@ if mode == "개별 기수 분석":
                     use_container_width=True,
                 )
 
-    # [Tab 2] 요일별 출결 패턴 (신규)
+        # 유형별 성과 분석 (신규)
+        if 'TRNEE_TYPE' in students_df.columns and '결석_횟수' in students_df.columns:
+            st.divider()
+            st.markdown("##### 📊 훈련생 유형별 성과 비교")
+            type_stats = students_df.groupby('TRNEE_TYPE').agg(
+                인원=('TRNEE_ID', 'count'),
+                수료_인원=('TRNEE_STATUS', lambda x: (x == '수료').sum()),
+                평균_결석=('결석_횟수', 'mean'),
+                평균_지각=('지각_횟수', 'mean'),
+            ).reset_index()
+            type_stats['수료율(%)'] = (type_stats['수료_인원'] / type_stats['인원'] * 100).round(1)
+            type_stats['평균_결석'] = type_stats['평균_결석'].round(1)
+            type_stats['평균_지각'] = type_stats['평균_지각'].round(1)
+
+            tc1, tc2 = st.columns(2)
+            with tc1:
+                st.altair_chart(
+                    alt.Chart(type_stats).mark_bar().encode(
+                        x=alt.X('TRNEE_TYPE:N', title='유형'),
+                        y=alt.Y('수료율(%):Q', title='수료율 (%)'),
+                        color=alt.value('#3498db'),
+                        tooltip=['TRNEE_TYPE', '수료율(%)', '인원'],
+                    ).properties(height=250, title='유형별 수료율'),
+                    use_container_width=True,
+                )
+            with tc2:
+                st.altair_chart(
+                    alt.Chart(type_stats).mark_bar().encode(
+                        x=alt.X('TRNEE_TYPE:N', title='유형'),
+                        y=alt.Y('평균_결석:Q', title='평균 결석일'),
+                        color=alt.value('#e74c3c'),
+                        tooltip=['TRNEE_TYPE', '평균_결석', '평균_지각'],
+                    ).properties(height=250, title='유형별 평균 결석일'),
+                    use_container_width=True,
+                )
+
+    # [Tab 2] 요일별 출결 패턴
     with tab2:
         st.markdown("##### 📅 요일별 출결 현황 히트맵")
         st.caption("요일에 따라 결석/지각/조퇴 패턴이 다를 수 있습니다.")
@@ -206,7 +250,6 @@ if mode == "개별 기수 분석":
             day_order = ['월', '화', '수', '목', '금', '토', '일']
             daily_df['요일'] = daily_df['DAY_NM'].str[0]
             daily_agg = daily_df.groupby(['요일', 'ATEND_STATUS'], as_index=False)['CNT'].sum()
-
             base = alt.Chart(daily_agg).encode(
                 x=alt.X('요일:N', sort=day_order, title='요일'),
                 y=alt.Y('ATEND_STATUS:N', title='출결 상태'),
@@ -218,15 +261,9 @@ if mode == "개별 기수 분석":
             median_val = float(daily_agg['CNT'].median())
             text = base.mark_text(baseline='middle').encode(
                 text='CNT:Q',
-                color=alt.condition(
-                    alt.datum.CNT > median_val,
-                    alt.value('white'),
-                    alt.value('black'),
-                ),
+                color=alt.condition(alt.datum.CNT > median_val, alt.value('white'), alt.value('black')),
             )
-            st.altair_chart(
-                (heatmap + text).properties(height=300), use_container_width=True
-            )
+            st.altair_chart((heatmap + text).properties(height=300), use_container_width=True)
 
             st.markdown("##### 요일별 결석 건수")
             absent_df = daily_agg[daily_agg['ATEND_STATUS'] == '결석']
@@ -242,7 +279,7 @@ if mode == "개별 기수 분석":
             else:
                 st.success("결석 기록이 없습니다.")
 
-    # [Tab 3] 시간대별 지각 분포 (신규)
+    # [Tab 3] 시간대별 지각 분포
     with tab3:
         st.markdown("##### ⏰ 지각 입실 시간 분포")
         st.caption("지각으로 기록된 훈련생의 입실 시간 분포입니다.")
@@ -254,13 +291,8 @@ if mode == "개별 기수 분석":
             if late_df.empty:
                 st.info("지각 기록에 입실 시간이 기록되지 않았습니다.")
             else:
-                late_df['시간'] = late_df['IN_TIME'].str.split(':').str[0]
-                late_df['분'] = late_df['IN_TIME'].str.split(':').str[1]
-                valid_mask = late_df['시간'].str.isdigit() & late_df['분'].str.isdigit()
-                late_df = late_df[valid_mask].copy()
-                late_df['시간'] = late_df['시간'].astype(int)
-                late_df['분'] = late_df['분'].astype(int)
-                late_df['입실시각_분'] = late_df['시간'] * 60 + late_df['분']
+                late_df['입실시각_분'] = late_df['IN_TIME'].apply(parse_time_to_minutes)
+                late_df = late_df[late_df['입실시각_분'].notna()].copy()
                 if late_df.empty:
                     st.info("유효한 입실 시간 데이터가 없습니다.")
                 else:
@@ -283,8 +315,72 @@ if mode == "개별 기수 분석":
                         latest_row = late_df.loc[late_df['입실시각_분'].idxmax()]
                         st.metric("가장 늦은 입실", latest_row['IN_TIME'])
 
-    # [Tab 4] 출결 및 이탈 분석 (기존)
+    # [Tab 4] 체류시간 분석 (신규)
     with tab4:
+        st.markdown("##### 🕐 일일 체류시간 분석")
+        st.caption("입실~퇴실 시간으로 계산한 실제 체류시간입니다.")
+        stay_df = get_stay_duration(selected_degr)
+        if stay_df.empty:
+            st.info("입퇴실 시간 데이터가 없습니다.")
+        else:
+            stay_df['입실_분'] = stay_df['IN_TIME'].apply(parse_time_to_minutes)
+            stay_df['퇴실_분'] = stay_df['OUT_TIME'].apply(parse_time_to_minutes)
+            stay_df = stay_df[stay_df['입실_분'].notna() & stay_df['퇴실_분'].notna()].copy()
+            stay_df['체류시간_분'] = stay_df['퇴실_분'] - stay_df['입실_분']
+            stay_df = stay_df[stay_df['체류시간_분'] > 0].copy()
+
+            if stay_df.empty:
+                st.info("유효한 체류시간 데이터가 없습니다.")
+            else:
+                stay_df['체류시간'] = stay_df['체류시간_분'] / 60
+                avg_stay = stay_df['체류시간'].mean()
+                avg_h_stay, avg_m_stay = divmod(int(avg_stay * 60), 60)
+
+                sc1, sc2, sc3 = st.columns(3)
+                sc1.metric("평균 체류시간", f"{avg_h_stay}시간 {avg_m_stay}분")
+                sc2.metric("분석 대상 로그", f"{len(stay_df):,}건")
+                max_stay = stay_df['체류시간'].max()
+                mh, mm = divmod(int(max_stay * 60), 60)
+                sc3.metric("최장 체류", f"{mh}시간 {mm}분")
+
+                # 체류시간 분포 히스토그램
+                st.altair_chart(
+                    alt.Chart(stay_df).mark_bar(color='#9b59b6').encode(
+                        alt.X('체류시간:Q', bin=alt.Bin(step=0.5), title='체류시간 (시간)'),
+                        alt.Y('count()', title='건수'),
+                        tooltip=['count()'],
+                    ).properties(height=300, title='체류시간 분포'),
+                    use_container_width=True,
+                )
+
+                # 학생별 평균 체류시간
+                st.markdown("##### 학생별 평균 체류시간")
+                student_stay = stay_df.groupby('TRNEE_ID').agg(
+                    평균_체류시간=('체류시간', 'mean'),
+                    기록_일수=('ATEND_DT', 'count'),
+                ).reset_index()
+                student_stay['평균_체류시간'] = student_stay['평균_체류시간'].round(2)
+                # 이름 매핑
+                if not students_df.empty:
+                    name_map = students_df[['TRNEE_ID', 'TRNEE_NM']].drop_duplicates()
+                    student_stay = student_stay.merge(name_map, on='TRNEE_ID', how='left')
+                    cols = ['TRNEE_NM', '평균_체류시간', '기록_일수']
+                else:
+                    cols = ['TRNEE_ID', '평균_체류시간', '기록_일수']
+
+                student_stay = student_stay.sort_values('평균_체류시간', ascending=False)
+                st.dataframe(
+                    student_stay[cols],
+                    column_config={
+                        '평균_체류시간': st.column_config.NumberColumn('평균 체류(시간)', format="%.1f"),
+                        '기록_일수': st.column_config.NumberColumn('기록 일수', format="%d"),
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+    # [Tab 5] 출결 및 이탈 분석
+    with tab5:
         st.markdown("##### 📍 출석률과 수료 상태의 상관관계")
         st.caption("결석이 많을수록 '중도탈락'이나 '제적' 상태일 확률이 높습니다.")
         if '결석_횟수' in students_df.columns:
@@ -298,8 +394,7 @@ if mode == "개별 기수 분석":
                 use_container_width=True,
             )
             risk = students_df[
-                (students_df['결석_횟수'] >= 3)
-                & (students_df['TRNEE_STATUS'] != '수료')
+                (students_df['결석_횟수'] >= 3) & (students_df['TRNEE_STATUS'] != '수료')
             ]
             if not risk.empty:
                 st.warning(
@@ -311,8 +406,8 @@ if mode == "개별 기수 분석":
                     hide_index=True,
                 )
 
-    # [Tab 5] 학생별 출결 현황 (기존 명부 확장)
-    with tab5:
+    # [Tab 6] 학생별 출결 현황
+    with tab6:
         st.markdown("##### 📋 학생별 상세 출결 현황")
         st.caption("각 열 헤더를 클릭하여 정렬할 수 있습니다.")
         display_cols = ['TRNEE_NM', '나이', '연령대', 'TRNEE_STATUS']
@@ -394,10 +489,8 @@ else:
         attend_per = all_attend[all_attend['ATEND_STATUS'] == '출석'][['기수', 'CNT']].copy()
         attend_per.columns = ['기수', '출석건수']
         comp = (
-            total_per
-            .merge(absent_per, on='기수', how='left')
-            .merge(attend_per, on='기수', how='left')
-            .fillna(0)
+            total_per.merge(absent_per, on='기수', how='left')
+            .merge(attend_per, on='기수', how='left').fillna(0)
         )
         comp['출석률'] = (comp['출석건수'] / comp['총건수'] * 100).round(1)
 
@@ -426,19 +519,12 @@ else:
             )
 
     st.markdown("##### 종합 비교 테이블")
-    summary_cols = [
-        '기수', 'TRPR_NM', 'TR_STA_DT', 'TR_END_DT',
-        'TOT_PAR_MKS', 'FINI_CNT', '수료율', '총_취업률',
-    ]
+    summary_cols = ['기수', 'TRPR_NM', 'TR_STA_DT', 'TR_END_DT', 'TOT_PAR_MKS', 'FINI_CNT', '수료율', '총_취업률']
     st.dataframe(
         all_master[summary_cols].rename(columns={
-            'TRPR_NM': '과정명',
-            'TR_STA_DT': '시작일',
-            'TR_END_DT': '종료일',
-            'TOT_PAR_MKS': '현원',
-            'FINI_CNT': '수료인원',
-            '수료율': '수료율(%)',
-            '총_취업률': '취업률(%)',
+            'TRPR_NM': '과정명', 'TR_STA_DT': '시작일', 'TR_END_DT': '종료일',
+            'TOT_PAR_MKS': '현원', 'FINI_CNT': '수료인원',
+            '수료율': '수료율(%)', '총_취업률': '취업률(%)',
         }),
         column_config={
             "수료율(%)": st.column_config.NumberColumn(format="%.1f%%"),
