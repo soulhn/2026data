@@ -198,10 +198,10 @@ with st.expander("📝 보고용 텍스트 복사", expanded=True):
 
 - 총인원: {total_cnt}명
  ㄴ 현 인원: {not_left_cnt}명
- ㄴ 미출석/퇴실완료: {total_cnt - not_left_cnt}명
+ ㄴ 현재 강의장에 없는 인원: {total_cnt - not_left_cnt}명
 
 <특이사항>
-지각: {late_cnt}명, 조퇴: {early_cnt}명, 외출: {out_cnt}명
+지각: {late_cnt}명, 조퇴: {early_cnt}명, 외출: {out_cnt}명, 결석: {real_absent_cnt}명
 [지각] {get_names_str(df_monitor, 'late')}
 [조퇴] {get_names_str(df_monitor, 'early')}
 [외출] {get_names_str(df_monitor, 'out')}
