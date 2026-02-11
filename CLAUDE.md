@@ -9,7 +9,7 @@ HRD-Net 공공데이터 기반 훈련 과정 성과 분석 대시보드 (Streaml
 ```
 [GitHub Actions]                [Supabase]              [Streamlit Cloud]
 hrd_etl.py (평일 매시간)  →   PostgreSQL DB    ←    대시보드 (읽기 전용)
-market_etl.py (매일 21시) →                    ←    https://2026data.streamlit.app
+market_etl.py (매일 21시) →                    ←    https://playdata.streamlit.app
 ```
 
 ### DB 이중 지원 (SQLite / PostgreSQL)
@@ -62,6 +62,7 @@ market_etl.py (매일 21시) →                    ←    https://2026data.stre
 ## 커밋 컨벤션
 
 `태그: 작업 내용 요약` (Feat / Fix / Docs / Style / Refactor / Chore)
+- 커밋 메시지에 `Co-Authored-By` 라인 포함하지 않음
 
 ## 환경 변수 (.env)
 

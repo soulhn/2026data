@@ -148,3 +148,9 @@ Repository Secrets에 등록:
 - **Visualization:** Plotly & Altair 인터랙티브 차트 (히트맵, 히스토그램, 게이지 등)
 - **시장 분석:** 내부 과정 vs 시장 교차분석, 시계열 트렌드, 경쟁 심화도, 비용-성과 시뮬레이터, 자격증 분석 (scikit-learn)
 - **위험 관리:** 누적 출결 위험 지표 (결석 3회+, 지각 5회+, 조퇴 5회+), 출결 추이 모니터링
+
+---
+
+## 🔗 배포 URL
+
+https://playdata.streamlit.app
