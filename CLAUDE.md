@@ -61,8 +61,32 @@ market_etl.py (매일 21시) →                    ←    https://playdata.stre
 
 ## 커밋 컨벤션
 
-`태그: 작업 내용 요약` (Feat / Fix / Docs / Style / Refactor / Chore)
+### 형식
+```
+Tag: English summary (한글 설명)
+```
+
+### 태그
+| Tag | 용도 |
+|---|---|
+| `Feat` | 새로운 기능 추가 |
+| `Fix` | 버그 수정 |
+| `Docs` | 문서 변경 (README, CLAUDE.md 등) |
+| `Style` | UI/CSS 변경, 코드 포맷팅 (기능 변경 없음) |
+| `Refactor` | 코드 리팩토링 (기능 변경 없음) |
+| `Chore` | 빌드, CI/CD, 설정 파일 변경 |
+
+### 예시
+```
+Feat: Add attendance risk alert on dashboard (출결 위험군 알림 추가)
+Fix: Correct completion rate calculation (수료율 계산 오류 수정)
+Chore: Configure devcontainer with Node.js and pip cache (개발 컨테이너 환경 설정)
+```
+
+### 규칙
 - 커밋 메시지에 `Co-Authored-By` 라인 포함하지 않음
+- 영어 요약은 동사 원형으로 시작 (Add, Fix, Update, Remove 등)
+- 한글 설명은 괄호 안에 간결하게
 
 ## 환경 변수 (.env)
 
