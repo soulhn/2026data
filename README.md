@@ -57,13 +57,21 @@ market_etl.py (매일 21시)        →               ←
  ┃ ┣ 📜 1_📊_기수별_분석.py      # [내부] 기수별 심층 분석 6탭 + 전체 기수 비교 모드
  ┃ ┣ 📜 2_🚨_진행과정_관리.py    # [내부] 출석률 게이지, 출결추이, 누적 위험지표
  ┃ ┣ 📜 3_🔎_데이터_감사.py      # [공통] DB 원본 데이터 조회 4탭 (과정/훈련생/출결/시장동향)
- ┃ ┗ 📜 4_📈_시장_동향_분석.py    # [외부] 시장 분석 12개 탭 (교차분석, 시계열, 경쟁, 비용-성과, 자격증 등)
+ ┃ ┗ 📜 4_📈_시장_동향_분석.py    # [외부] 시장 분석 12탭 (헬퍼 함수 3개로 중복 제거)
+ ┣ 📂 tests                     # pytest 테스트 (56개)
+ ┃ ┣ 📜 conftest.py              # 인메모리 SQLite fixture
+ ┃ ┣ 📜 test_utils.py            # adapt_query, safe_float, safe_int, calculate_age
+ ┃ ┣ 📜 test_config.py           # 상수 타입/범위 검증
+ ┃ ┣ 📜 test_init_db.py          # 테이블 생성, 멱등성, 인덱스
+ ┃ ┣ 📜 test_hrd_etl.py          # clean_time, get_month_list, batch_execute
+ ┃ ┗ 📜 test_market_etl.py       # parse_rows_xml, ymd, shards
  ┣ 📜 home.py                   # 메인 대시보드 (KPI 요약 + 수료율 + 오늘의 출결 현황(입실중 재분류))
- ┣ 📜 hrd_etl.py                # [수집] 내부 과정/훈련생/출결 데이터
- ┣ 📜 market_etl.py             # [수집] 외부 시장 전체 데이터 (32만건)
- ┣ 📜 init_db.py                # [DB] 전체 테이블 초기화 및 마이그레이션
+ ┣ 📜 hrd_etl.py                # [수집] 내부 과정/훈련생/출결 (배치 에러 폴백 + Summary)
+ ┣ 📜 market_etl.py             # [수집] 외부 시장 전체 데이터 (32만건, ThreadPool 에러 핸들링)
+ ┣ 📜 init_db.py                # [DB] 테이블 DDL + 인덱스 6개 + 마이그레이션
+ ┣ 📜 config.py                 # [설정] 전역 상수 (출결 기준, 캐시 TTL, ETL 파라미터)
  ┣ 📜 utils.py                  # [공통] DB 연결, adapt_query, 유틸리티
- ┣ 📜 requirements.txt          # 의존성 라이브러리 목록
+ ┣ 📜 requirements.txt          # 의존성 (pytest 포함)
  ┗ 📜 CLAUDE.md                 # Claude Code 프로젝트 컨텍스트
 ```
 
@@ -161,8 +169,9 @@ Repository Secrets에 등록:
 - **DB 이중 지원:** `DATABASE_URL` 환경변수 유무로 PostgreSQL/SQLite 자동 전환
 - **ETL 자동화:** GitHub Actions cron으로 무인 데이터 갱신
 - **Smart Update:** 종료 과정 중복 수집 방지, 증분 수집 지원
-- **Robustness:** 자동 재시도(Retry), 세션 관리로 대용량 수집 안정성 확보
-- **Performance:** `@st.cache_data`, Pagination, Sampling으로 대시보드 최적화
+- **Robustness:** 자동 재시도(Retry), 배치 실패 시 row-by-row 폴백, ETL Summary 리포트
+- **Performance:** `@st.cache_data`, Pagination, Sampling, DB 인덱스 6개로 대시보드 최적화
+- **Testing:** pytest 56개 테스트 (유틸리티, DB 초기화, ETL 함수, 설정 검증)
 - **Visualization:** Plotly & Altair 인터랙티브 차트 (히트맵, 히스토그램, 게이지 등)
 - **시장 분석:** 내부 과정 vs 시장 교차분석, 시계열 트렌드, 경쟁 심화도, 비용-성과 시뮬레이터, 자격증 분석 (scikit-learn)
 - **위험 관리:** 누적 출결 위험 지표 (결석 3회+, 지각 5회+, 조퇴 5회+), 출결 추이 모니터링

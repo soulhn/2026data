@@ -10,6 +10,109 @@ import os
 # 🚀 상위 폴더의 utils.py를 가져오기 위한 경로 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import check_password, get_connection, is_pg, load_data as _load_data
+from config import (
+    CACHE_TTL_MARKET, COST_BINS, COST_BIN_LABELS,
+    SCATTER_SAMPLE_LIMIT, REGRESSION_SAMPLE_LIMIT,
+    NCS_MIN_COURSES, CERT_MIN_COURSES, CERT_EMPL_MIN_COURSES, TOP_CERTS_LIMIT,
+)
+
+# ==========================================
+# 0. 헬퍼 함수
+# ==========================================
+
+def render_ranking_table(stats_df, display_cols, format_dict, search_col, search_label,
+                         search_placeholder, top_n, title, expander_title, st_key):
+    """순위 테이블 렌더링: 검색 → 주변 순위 / 기본 Top N → expander 전체."""
+    st.markdown(f"##### {title}")
+    query = st.text_input(search_label, placeholder=search_placeholder, key=st_key)
+
+    if query:
+        found = stats_df[stats_df[search_col].str.contains(query)]
+        if not found.empty:
+            top = found.iloc[0]
+            st.info(f"**'{top[search_col]}'** - 순위 **{top['순위']}위**")
+            idx = top.name
+            neighbor = stats_df.iloc[max(0, idx-2):min(len(stats_df), idx+3)][display_cols].copy()
+            st.dataframe(
+                neighbor.style.format(format_dict),
+                use_container_width=True, hide_index=True
+            )
+        else:
+            st.warning(f"검색 결과가 없습니다.")
+    else:
+        st.dataframe(
+            stats_df.head(top_n)[display_cols].style.format(format_dict),
+            use_container_width=True, hide_index=True
+        )
+
+    with st.expander(expander_title):
+        st.dataframe(
+            stats_df[display_cols].style.format(format_dict),
+            use_container_width=True, hide_index=True
+        )
+
+
+def render_agg_bar_chart(source_df, group_col, agg_dict, result_columns,
+                         x_col, y_col, chart_title, column_config=None,
+                         expander_label="📄 상세 데이터 보기", compute_모집률=True,
+                         top_n=None, bar_kwargs=None, sort_col=None):
+    """그룹별 집계 → 바차트 + expander 테이블 패턴 통합."""
+    table = source_df.groupby(group_col).agg(agg_dict).reset_index()
+    if compute_모집률:
+        table['평균모집률'] = (table['REG_COURSE_MAN'] / table['TOT_FXNUM'] * 100).fillna(0).clip(upper=100)
+    table.columns = result_columns
+    _sort = sort_col or y_col
+    if top_n:
+        table = table.sort_values(_sort, ascending=False).head(top_n)
+    else:
+        table = table.sort_values(_sort, ascending=False)
+
+    kwargs = dict(x=x_col, y=y_col, color=y_col, text_auto='.1f', title=chart_title)
+    if bar_kwargs:
+        kwargs.update(bar_kwargs)
+    fig = px.bar(table, **kwargs)
+    st.plotly_chart(fig, use_container_width=True)
+
+    if column_config:
+        with st.expander(expander_label, expanded=True):
+            st.dataframe(table, use_container_width=True, hide_index=True, column_config=column_config)
+    return table
+
+
+def render_scatter_with_overlay(market_sample, internal_scatter, x_col, y_col,
+                                title, x_label, y_label, name_col='TRPR_NM',
+                                quadrant_labels=None):
+    """시장 산점도 + 우리 과정 오버레이 + 4분면 라인."""
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=market_sample[x_col], y=market_sample[y_col],
+        mode='markers', name='시장 과정', opacity=0.4,
+        marker=dict(size=6, color='steelblue'),
+        text=market_sample[name_col], hoverinfo='text+x+y'
+    ))
+    if internal_scatter is not None and not internal_scatter.empty:
+        fig.add_trace(go.Scatter(
+            x=internal_scatter[x_col], y=internal_scatter[y_col],
+            mode='markers', name='우리 과정',
+            marker=dict(size=15, color='red', symbol='star'),
+            text=internal_scatter[name_col], hoverinfo='text+x+y'
+        ))
+    med_x = market_sample[x_col].median()
+    med_y = market_sample[y_col].median()
+    fig.add_hline(y=med_y, line_dash="dash", line_color="gray", opacity=0.5)
+    fig.add_vline(x=med_x, line_dash="dash", line_color="gray", opacity=0.5)
+
+    annotations = []
+    if quadrant_labels:
+        for label_cfg in quadrant_labels:
+            annotations.append(dict(
+                x=label_cfg['x'], y=label_cfg['y'], text=label_cfg['text'],
+                showarrow=False, font=dict(color=label_cfg.get('color', 'gray'), size=12)
+            ))
+    fig.update_layout(xaxis_title=x_label, yaxis_title=y_label, title=title, annotations=annotations)
+    st.plotly_chart(fig, use_container_width=True)
+    return med_x, med_y
+
 
 # ==========================================
 # 1. 설정 및 데이터 로드
@@ -37,7 +140,7 @@ COLUMN_MAP = {
     '모집률': '모집률(%)' 
 }
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=CACHE_TTL_MARKET)
 def load_market_data():
     df = _load_data("""
         SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TRAINST_NM,
@@ -70,7 +173,7 @@ def load_market_data():
 
     return df
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=CACHE_TTL_MARKET)
 def load_internal_courses():
     """TB_COURSE_MASTER에서 우리 과정 데이터 로드 (HANWHA_COURSE_ID 기반)"""
     course_id = os.getenv("HANWHA_COURSE_ID")
@@ -272,99 +375,28 @@ with tabs[1]:
     # 3. 화면 구성 (2단 컬럼)
     # ----------------------------------------------------
     col_rank1, col_rank2 = st.columns(2)
-    
-    # [왼쪽] 기관 순위 섹션
-    with col_rank1:
-        st.markdown("##### 🏫 훈련기관 순위 (총 신청인원 기준)")
-        target_inst = st.text_input("기관명 검색", placeholder="기관명 입력", key="rank_inst")
-        
-        # 만족도(점) 추가됨
-        display_inst_cols = ['순위', '기관명', '총모집정원', '총신청인원', '평균모집률', '만족도(점)']
-        
-        if target_inst:
-            found = inst_stats[inst_stats['기관명'].str.contains(target_inst)]
-            if not found.empty:
-                my_rank = found.iloc[0]
-                st.info(f"**'{my_rank['기관명']}'**의 신청인원 순위는 **{my_rank['순위']}위**입니다.")
-                
-                idx = my_rank.name
-                start = max(0, idx - 2)
-                end = min(len(inst_stats), idx + 3)
-                neighbor = inst_stats.iloc[start:end][display_inst_cols].copy()
-                
-                def style_me(s):
-                    return ['background-color: #d1e7dd' if s['기관명'] == my_rank['기관명'] else '' for _ in s]
-                
-                st.dataframe(
-                    neighbor.style.apply(style_me, axis=1).format({
-                        "총모집정원": "{:,}명", "총신청인원": "{:,}명", "평균모집률": "{:.1f}%", "만족도(점)": "{:.1f}점"
-                    }), 
-                    use_container_width=True, hide_index=True
-                )
-            else:
-                st.warning("검색된 기관이 없습니다.")
-        else:
-            # 기본 Top 5
-            st.markdown("🏆 **신청인원 Top 5 기관**")
-            st.dataframe(
-                inst_stats.head(5)[display_inst_cols].style.format({
-                    "총모집정원": "{:,}명", "총신청인원": "{:,}명", "평균모집률": "{:.1f}%", "만족도(점)": "{:.1f}점"
-                }),
-                use_container_width=True, hide_index=True
-            )
-            
-        with st.expander("📋 전체 훈련기관 순위표 펼치기"):
-            st.dataframe(
-                inst_stats[display_inst_cols].style.format({
-                    "총모집정원": "{:,}명", "총신청인원": "{:,}명", "평균모집률": "{:.1f}%", "만족도(점)": "{:.1f}점"
-                }),
-                use_container_width=True, hide_index=True
-            )
 
-    # [오른쪽] 과정 순위 섹션
+    with col_rank1:
+        render_ranking_table(
+            inst_stats,
+            display_cols=['순위', '기관명', '총모집정원', '총신청인원', '평균모집률', '만족도(점)'],
+            format_dict={"총모집정원": "{:,}명", "총신청인원": "{:,}명", "평균모집률": "{:.1f}%", "만족도(점)": "{:.1f}점"},
+            search_col='기관명', search_label="기관명 검색",
+            search_placeholder="기관명 입력", top_n=5,
+            title="🏫 훈련기관 순위 (총 신청인원 기준)",
+            expander_title="📋 전체 훈련기관 순위표 펼치기", st_key="rank_inst",
+        )
+
     with col_rank2:
-        st.markdown("##### 📚 인기 훈련과정 (과정 통합/신청인원 기준)")
-        target_course = st.text_input("과정명 검색", placeholder="과정명 입력 (예: 한화시스템)", key="rank_course")
-        
-        # 만족도(점) 추가됨
-        display_course_cols = ['순위', '과정명', '기관명', '개설회차', '총정원', '총신청인원', '통합모집률', '만족도(점)']
-        
-        if target_course:
-            found_c = course_agg[course_agg['과정명'].str.contains(target_course)]
-            if not found_c.empty:
-                my_c = found_c.iloc[0]
-                st.info(f"**'{my_c['과정명']}'** ({my_c['기관명']}) - 통합 순위 **{my_c['순위']}위**")
-                
-                idx_c = my_c.name
-                start_c = max(0, idx_c - 2)
-                end_c = min(len(course_agg), idx_c + 3)
-                neighbor_c = course_agg.iloc[start_c:end_c][display_course_cols].copy()
-                
-                st.dataframe(
-                    neighbor_c.style.format({
-                        "총정원": "{:,}명", "총신청인원": "{:,}명", "통합모집률": "{:.1f}%", "개설회차": "{:,}회", "만족도(점)": "{:.1f}점"
-                    }), 
-                    use_container_width=True, hide_index=True
-                )
-            else:
-                st.warning("검색된 과정이 없습니다.")
-        else:
-            # 기본 Top 5
-            st.markdown("🏆 **신청인원 Top 5 과정 (통합)**")
-            st.dataframe(
-                course_agg.head(5)[display_course_cols].style.format({
-                    "총정원": "{:,}명", "총신청인원": "{:,}명", "통합모집률": "{:.1f}%", "개설회차": "{:,}회", "만족도(점)": "{:.1f}점"
-                }),
-                use_container_width=True, hide_index=True
-            )
-            
-        with st.expander("📋 전체 과정 순위표 펼치기"):
-            st.dataframe(
-                course_agg[display_course_cols].style.format({
-                    "총정원": "{:,}명", "총신청인원": "{:,}명", "통합모집률": "{:.1f}%", "개설회차": "{:,}회", "만족도(점)": "{:.1f}점"
-                }),
-                use_container_width=True, hide_index=True
-            )
+        render_ranking_table(
+            course_agg,
+            display_cols=['순위', '과정명', '기관명', '개설회차', '총정원', '총신청인원', '통합모집률', '만족도(점)'],
+            format_dict={"총정원": "{:,}명", "총신청인원": "{:,}명", "통합모집률": "{:.1f}%", "개설회차": "{:,}회", "만족도(점)": "{:.1f}점"},
+            search_col='과정명', search_label="과정명 검색",
+            search_placeholder="과정명 입력 (예: 한화시스템)", top_n=5,
+            title="📚 인기 훈련과정 (과정 통합/신청인원 기준)",
+            expander_title="📋 전체 과정 순위표 펼치기", st_key="rank_course",
+        )
 
     st.divider()
     
@@ -373,57 +405,35 @@ with tabs[1]:
     
     row2_1, row2_2 = st.columns(2)
     
+    _col_config_모집 = {
+        "총모집정원": st.column_config.NumberColumn(format="%d명"),
+        "총신청인원": st.column_config.NumberColumn(format="%d명"),
+        "평균모집률": st.column_config.NumberColumn(format="%.1f%%"),
+    }
+
     with row2_1:
         st.markdown("**1️⃣ 훈련 유형(사업)별 모집 현황**")
-        biz_table = df.groupby('TRAIN_TARGET').agg({
-            'TRPR_ID': 'count', 'TOT_FXNUM': 'sum', 'REG_COURSE_MAN': 'sum'
-        }).reset_index()
-        biz_table['평균모집률'] = (biz_table['REG_COURSE_MAN'] / biz_table['TOT_FXNUM'] * 100).fillna(0).clip(upper=100)
-        biz_table.columns = ['훈련유형', '개설수', '총모집정원', '총신청인원', '평균모집률']
-        
-        fig_biz = px.bar(biz_table.sort_values('평균모집률', ascending=False), x='훈련유형', y='평균모집률', 
-                         color='평균모집률', text_auto='.1f', title="유형별 모집률(%)")
-        st.plotly_chart(fig_biz, use_container_width=True)
-        
-        with st.expander("📄 상세 데이터 보기", expanded=True):
-             st.dataframe(
-                biz_table.sort_values('평균모집률', ascending=False), 
-                use_container_width=True, hide_index=True,
-                column_config={
-                    "총모집정원": st.column_config.NumberColumn(format="%d명"),
-                    "총신청인원": st.column_config.NumberColumn(format="%d명"),
-                    "평균모집률": st.column_config.NumberColumn(format="%.1f%%")
-                }
-            )
+        render_agg_bar_chart(
+            df, 'TRAIN_TARGET',
+            agg_dict={'TRPR_ID': 'count', 'TOT_FXNUM': 'sum', 'REG_COURSE_MAN': 'sum'},
+            result_columns=['훈련유형', '개설수', '총모집정원', '총신청인원', '평균모집률'],
+            x_col='훈련유형', y_col='평균모집률', chart_title="유형별 모집률(%)",
+            column_config=_col_config_모집,
+        )
 
     with row2_2:
         st.markdown("**2️⃣ 인기 NCS(기술)별 모집 현황**")
         ncs_counts = df['NCS_CD'].value_counts()
-        valid_ncs = ncs_counts.head(10).index if len(df) < 100 else ncs_counts[ncs_counts >= 5].index
-        
+        valid_ncs = ncs_counts.head(10).index if len(df) < 100 else ncs_counts[ncs_counts >= NCS_MIN_COURSES].index
         ncs_df = df[df['NCS_CD'].isin(valid_ncs)]
         if not ncs_df.empty:
-            ncs_table = ncs_df.groupby('NCS_CD').agg({
-                'TRPR_ID': 'count', 'TOT_FXNUM': 'sum', 'REG_COURSE_MAN': 'sum'
-            }).reset_index()
-            ncs_table['평균모집률'] = (ncs_table['REG_COURSE_MAN'] / ncs_table['TOT_FXNUM'] * 100).fillna(0).clip(upper=100)
-            ncs_table.columns = ['NCS코드', '개설수', '총모집정원', '총신청인원', '평균모집률']
-            
-            top_ncs = ncs_table.sort_values('평균모집률', ascending=False).head(10)
-            
-            fig_ncs = px.bar(top_ncs, x='NCS코드', y='평균모집률', color='평균모집률', text_auto='.1f', title="모집률 Top 10 커리큘럼")
-            st.plotly_chart(fig_ncs, use_container_width=True)
-            
-            with st.expander("📄 상세 데이터 보기", expanded=True):
-                st.dataframe(
-                    top_ncs, 
-                    use_container_width=True, hide_index=True,
-                    column_config={
-                        "총모집정원": st.column_config.NumberColumn(format="%d명"),
-                        "총신청인원": st.column_config.NumberColumn(format="%d명"),
-                        "평균모집률": st.column_config.NumberColumn(format="%.1f%%")
-                    }
-                )
+            render_agg_bar_chart(
+                ncs_df, 'NCS_CD',
+                agg_dict={'TRPR_ID': 'count', 'TOT_FXNUM': 'sum', 'REG_COURSE_MAN': 'sum'},
+                result_columns=['NCS코드', '개설수', '총모집정원', '총신청인원', '평균모집률'],
+                x_col='NCS코드', y_col='평균모집률', chart_title="모집률 Top 10 커리큘럼",
+                column_config=_col_config_모집, top_n=10,
+            )
 
 # [Tab 3] 💎 우리 과정 vs 시장 비교
 with tabs[2]:
@@ -698,9 +708,7 @@ with tabs[7]:
     # 훈련비 구간별 평균 취업률
     st.subheader("훈련비 구간별 평균 취업률")
     if not cost_valid.empty:
-        bins = [0, 1_000_000, 3_000_000, 5_000_000, 10_000_000, float('inf')]
-        labels = ['~100만', '100~300만', '300~500만', '500~1000만', '1000만~']
-        cost_valid['비용구간'] = pd.cut(cost_valid['TOT_TRCO'], bins=bins, labels=labels)
+        cost_valid['비용구간'] = pd.cut(cost_valid['TOT_TRCO'], bins=COST_BINS, labels=COST_BIN_LABELS)
         bin_stats = cost_valid.groupby('비용구간', observed=True)['EI_EMPL_RATE_3'].agg(['mean', 'count']).reset_index()
         bin_stats.columns = ['비용구간', '평균취업률', '과정수']
         fig_bin = px.bar(bin_stats, x='비용구간', y='평균취업률', text_auto='.1f', color='과정수',
@@ -714,43 +722,21 @@ with tabs[7]:
     # 4분면 scatter: 비용 vs 취업률
     st.subheader("비용 vs 취업률 4분면 분석")
     if not cost_valid.empty:
-        scatter_sample = cost_valid.sample(n=min(3000, len(cost_valid)), random_state=42)
-
-        # 우리 과정 표시
-        if internal_df is not None:
-            internal_scatter = internal_df[
-                (internal_df['TOT_TRCO'] > 0) & (internal_df['EI_EMPL_RATE_3'] > 0)
-            ].copy()
-        else:
-            internal_scatter = pd.DataFrame()
-
-        fig_quad = go.Figure()
-        fig_quad.add_trace(go.Scatter(
-            x=scatter_sample['TOT_TRCO'], y=scatter_sample['EI_EMPL_RATE_3'],
-            mode='markers', name='시장 과정', opacity=0.4,
-            marker=dict(size=6, color='steelblue'),
-            text=scatter_sample['TRPR_NM'], hoverinfo='text+x+y'
-        ))
-        if not internal_scatter.empty:
-            fig_quad.add_trace(go.Scatter(
-                x=internal_scatter['TOT_TRCO'], y=internal_scatter['EI_EMPL_RATE_3'],
-                mode='markers', name='우리 과정',
-                marker=dict(size=15, color='red', symbol='star'),
-                text=internal_scatter['TRPR_NM'], hoverinfo='text+x+y'
-            ))
-        avg_trco = cost_valid['TOT_TRCO'].median()
-        avg_empl_q = cost_valid['EI_EMPL_RATE_3'].median()
-        fig_quad.add_hline(y=avg_empl_q, line_dash="dash", line_color="gray", opacity=0.5)
-        fig_quad.add_vline(x=avg_trco, line_dash="dash", line_color="gray", opacity=0.5)
-        fig_quad.update_layout(
-            xaxis_title='훈련비(원)', yaxis_title='취업률(%)',
+        scatter_sample = cost_valid.sample(n=min(SCATTER_SAMPLE_LIMIT, len(cost_valid)), random_state=42)
+        int_scatter = (
+            internal_df[(internal_df['TOT_TRCO'] > 0) & (internal_df['EI_EMPL_RATE_3'] > 0)].copy()
+            if internal_df is not None else pd.DataFrame()
+        )
+        med_x, med_y = render_scatter_with_overlay(
+            scatter_sample, int_scatter,
+            x_col='TOT_TRCO', y_col='EI_EMPL_RATE_3',
             title='비용 vs 취업률 (우상단=고비용/고성과, 좌상단=가성비 우수)',
-            annotations=[
-                dict(x=avg_trco * 0.3, y=avg_empl_q * 1.5, text="가성비 우수", showarrow=False, font=dict(color="green", size=12)),
-                dict(x=avg_trco * 1.8, y=avg_empl_q * 0.5, text="개선 필요", showarrow=False, font=dict(color="red", size=12)),
+            x_label='훈련비(원)', y_label='취업률(%)',
+            quadrant_labels=[
+                {'x': scatter_sample['TOT_TRCO'].median() * 0.3, 'y': scatter_sample['EI_EMPL_RATE_3'].median() * 1.5, 'text': '가성비 우수', 'color': 'green'},
+                {'x': scatter_sample['TOT_TRCO'].median() * 1.8, 'y': scatter_sample['EI_EMPL_RATE_3'].median() * 0.5, 'text': '개선 필요', 'color': 'red'},
             ]
         )
-        st.plotly_chart(fig_quad, use_container_width=True)
 
     st.divider()
 
@@ -791,7 +777,7 @@ with tabs[7]:
         y_pred = model.predict(x_range.reshape(-1, 1))
 
         fig_sim = go.Figure()
-        sample_sim = cost_valid.sample(n=min(2000, len(cost_valid)), random_state=42)
+        sample_sim = cost_valid.sample(n=min(REGRESSION_SAMPLE_LIMIT, len(cost_valid)), random_state=42)
         fig_sim.add_trace(go.Scatter(x=sample_sim['TOT_TRCO'], y=sample_sim['EI_EMPL_RATE_3'], mode='markers', name='실제 데이터', opacity=0.3, marker=dict(size=4)))
         fig_sim.add_trace(go.Scatter(x=x_range, y=y_pred, mode='lines', name='회귀선', line=dict(color='red', width=2)))
         fig_sim.add_trace(go.Scatter(x=[sim_val], y=[pred], mode='markers', name='시뮬레이션', marker=dict(size=15, color='gold', symbol='star')))
@@ -843,44 +829,21 @@ with tabs[4]:
 # [Tab 9] 경쟁 현황 (🚀 총 신청인원 기준 Top 15로 변경)
 with tabs[8]:
     st.subheader("🏆 TOP 15 훈련기관 (총 신청인원 기준)")
-    
-    # 1. 기관별 집계
-    top_inst = df.groupby('TRAINST_NM').agg({
-        'REG_COURSE_MAN': 'sum', # 신청인원
-        'TOT_FXNUM': 'sum',      # 모집정원
-        'TRPR_ID': 'count'       # 개설수
-    }).reset_index()
-    
-    # 2. 모집률 계산
-    top_inst['모집률'] = (top_inst['REG_COURSE_MAN'] / top_inst['TOT_FXNUM'] * 100).fillna(0).clip(upper=100)
-    top_inst['모집률'] = top_inst['모집률'].round(1)
-    
-    # 3. 신청인원 순으로 정렬
-    top_inst = top_inst.sort_values(by='REG_COURSE_MAN', ascending=False).head(15)
-    top_inst.columns = ['기관명', '총신청인원', '총모집정원', '개설수', '평균모집률']
-    
-    # 4. 차트
-    fig = px.bar(
-        top_inst, y='기관명', x='총신청인원', 
-        orientation='h', text='총신청인원',
-        color='평균모집률', # 모집률이 높을수록 진하게
-        color_continuous_scale='Bluyl',
-        title="가장 많은 훈련생을 모은 기관 Top 15",
-        hover_data=['총모집정원', '개설수', '평균모집률']
+    render_agg_bar_chart(
+        df, 'TRAINST_NM',
+        agg_dict={'REG_COURSE_MAN': 'sum', 'TOT_FXNUM': 'sum', 'TRPR_ID': 'count'},
+        result_columns=['기관명', '총신청인원', '총모집정원', '개설수', '평균모집률'],
+        x_col='총신청인원', y_col='기관명', sort_col='총신청인원', top_n=15,
+        chart_title="가장 많은 훈련생을 모은 기관 Top 15",
+        bar_kwargs=dict(orientation='h', text='총신청인원', color='평균모집률', color_continuous_scale='Bluyl',
+                        hover_data=['총모집정원', '개설수', '평균모집률'], text_auto=False),
+        column_config={
+            "총신청인원": st.column_config.NumberColumn(format="%d명"),
+            "총모집정원": st.column_config.NumberColumn(format="%d명"),
+            "평균모집률": st.column_config.NumberColumn(format="%.1f%%"),
+        },
+        expander_label="📄 Top 15 기관 상세 데이터 보기",
     )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # 5. 표 데이터
-    with st.expander("📄 Top 15 기관 상세 데이터 보기", expanded=True):
-        st.dataframe(
-            top_inst, 
-            use_container_width=True, hide_index=True,
-            column_config={
-                "총신청인원": st.column_config.NumberColumn(format="%d명"),
-                "총모집정원": st.column_config.NumberColumn(format="%d명"),
-                "평균모집률": st.column_config.NumberColumn(format="%.1f%%")
-            }
-        )
 
 # [Tab 10] 키워드
 with tabs[9]:
@@ -930,7 +893,7 @@ with tabs[10]:
                 평균_취업률=('취업률', 'mean'),
                 평균_훈련비=('훈련비', 'mean'),
             ).reset_index()
-            cert_stats = cert_stats[cert_stats['과정수'] >= 5]  # 5건 이상만
+            cert_stats = cert_stats[cert_stats['과정수'] >= CERT_MIN_COURSES]
             cert_stats['평균_취업률'] = cert_stats['평균_취업률'].round(1)
             cert_stats['평균_훈련비'] = cert_stats['평균_훈련비'].round(0)
             cert_stats = cert_stats.sort_values('과정수', ascending=False)
@@ -939,9 +902,8 @@ with tabs[10]:
 
             cc1, cc2 = st.columns(2)
             with cc1:
-                st.markdown("##### Top 20 자격증 (과정수 기준)")
-                top20 = cert_stats.head(20)
-                import plotly.express as px
+                st.markdown(f"##### Top {TOP_CERTS_LIMIT} 자격증 (과정수 기준)")
+                top20 = cert_stats.head(TOP_CERTS_LIMIT)
                 fig = px.bar(
                     top20, x='과정수', y='자격증', orientation='h',
                     color='평균_취업률', color_continuous_scale='RdYlGn',
@@ -951,8 +913,8 @@ with tabs[10]:
                 st.plotly_chart(fig, use_container_width=True)
 
             with cc2:
-                st.markdown("##### 자격증별 평균 취업률 Top 20")
-                top_empl = cert_stats[cert_stats['과정수'] >= 10].sort_values('평균_취업률', ascending=False).head(20)
+                st.markdown(f"##### 자격증별 평균 취업률 Top {TOP_CERTS_LIMIT}")
+                top_empl = cert_stats[cert_stats['과정수'] >= CERT_EMPL_MIN_COURSES].sort_values('평균_취업률', ascending=False).head(TOP_CERTS_LIMIT)
                 if not top_empl.empty:
                     fig2 = px.bar(
                         top_empl, x='평균_취업률', y='자격증', orientation='h',
