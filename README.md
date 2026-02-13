@@ -46,6 +46,19 @@ market_etl.py (매일 21시)        →               ←
 
 ---
 
+## DB 스키마
+
+| 테이블 | 용도 | PK | 대략 건수 |
+|---|---|---|---|
+| `TB_COURSE_MASTER` | 과정 마스터 (회차별 운영 정보) | `(TRPR_ID, TRPR_DEGR)` | ~10 |
+| `TB_TRAINEE_INFO` | 훈련생 정보 (인적사항, 출결 요약) | `(TRPR_ID, TRPR_DEGR, TRNEE_ID)` | ~200 |
+| `TB_ATTENDANCE_LOG` | 출결 로그 (일별 입퇴실 기록) | `UNIQUE(TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT)` | ~20,000 |
+| `TB_MARKET_TREND` | 시장 동향 (전국 IT 훈련과정) | `(TRPR_ID, TRPR_DEGR)` | ~320,000 |
+
+> 컬럼별 상세 명세, API 매핑, 인덱스, ERD는 **[DB_SCHEMA.md](./DB_SCHEMA.md)** 참조
+
+---
+
 ## 프로젝트 구조
 
 ```text
