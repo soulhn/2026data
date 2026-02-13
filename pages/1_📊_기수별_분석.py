@@ -7,6 +7,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import load_data, calculate_age_at_training, safe_float, check_password
+from config import CACHE_TTL_DEFAULT, RISK_ABSENT
 
 st.set_page_config(page_title="기수별 성과 분석", page_icon="📊", layout="wide")
 check_password()
@@ -14,7 +15,7 @@ st.title("📊 기수별 성과 심층 분석")
 st.markdown("종료된 과정의 **수료율, 취업률, 출석 패턴**을 다각도로 분석합니다.")
 
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def get_course_list():
     today = datetime.now().strftime('%Y-%m-%d')
     return load_data(
@@ -25,7 +26,7 @@ def get_course_list():
     )
 
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def get_analysis_data(degr):
     course_df = load_data(
         "SELECT * FROM TB_COURSE_MASTER WHERE TRPR_DEGR = ?", params=[degr]
@@ -59,7 +60,7 @@ def get_analysis_data(degr):
     return course_df, trainee_df
 
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def get_daily_attendance_pattern(degr):
     return load_data(
         "SELECT DAY_NM, ATEND_STATUS, COUNT(*) as CNT "
@@ -69,7 +70,7 @@ def get_daily_attendance_pattern(degr):
     )
 
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def get_late_times(degr):
     return load_data(
         "SELECT IN_TIME FROM TB_ATTENDANCE_LOG "
@@ -78,7 +79,7 @@ def get_late_times(degr):
     )
 
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def get_stay_duration(degr):
     """체류시간 분석용 데이터"""
     return load_data(
@@ -90,7 +91,7 @@ def get_stay_duration(degr):
     )
 
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def get_all_degr_attendance():
     return load_data(
         "SELECT TRPR_DEGR, ATEND_STATUS, COUNT(*) as CNT "
@@ -98,7 +99,7 @@ def get_all_degr_attendance():
     )
 
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def get_all_course_master():
     today = datetime.now().strftime('%Y-%m-%d')
     return load_data(
@@ -394,12 +395,12 @@ if mode == "개별 기수 분석":
                 use_container_width=True,
             )
             risk = students_df[
-                (students_df['결석_횟수'] >= 3) & (students_df['TRNEE_STATUS'] != '수료')
+                (students_df['결석_횟수'] >= RISK_ABSENT) & (students_df['TRNEE_STATUS'] != '수료')
             ]
             if not risk.empty:
                 st.warning(
                     f"⚠️ **출석 불량 위험군 ({len(risk)}명):** "
-                    "결석이 3일 이상 기록된 미수료 학생들입니다."
+                    f"결석이 {RISK_ABSENT}일 이상 기록된 미수료 학생들입니다."
                 )
                 st.dataframe(
                     risk[['TRNEE_NM', '나이', '결석_횟수', '지각_조퇴_횟수', 'TRNEE_STATUS']],

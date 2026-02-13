@@ -3,6 +3,7 @@ import pandas as pd
 import altair as alt
 from datetime import datetime
 from utils import load_data, check_password
+from config import CACHE_TTL_DEFAULT, CACHE_TTL_REALTIME
 
 st.set_page_config(
     page_title="HRD 교육성과 대시보드",
@@ -14,7 +15,7 @@ st.set_page_config(
 check_password()
 
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def get_dashboard_data():
     df_course = load_data("SELECT * FROM TB_COURSE_MASTER ORDER BY TR_STA_DT DESC")
     df_course['TR_STA_DT'] = pd.to_datetime(df_course['TR_STA_DT'])
@@ -33,7 +34,7 @@ def get_dashboard_data():
     return df_course
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=CACHE_TTL_REALTIME)
 def get_today_attendance():
     """진행 중 과정의 오늘 출결 현황 요약 (입실중 재분류 포함)"""
     today_str = datetime.now().strftime('%Y-%m-%d')

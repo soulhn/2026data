@@ -7,6 +7,10 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import load_data, check_password
+from config import (
+    CACHE_TTL_REALTIME, LATE_CUTOFF_HHMM, ATTENDANCE_TARGET,
+    RISK_ABSENT, RISK_LATE, RISK_EARLY_LEAVE, RECENT_TREND_DAYS,
+)
 
 st.set_page_config(page_title="진행 과정 관리", page_icon="🚨", layout="wide")
 check_password()
@@ -14,7 +18,7 @@ st.title("🚨 진행 과정 실시간 관리")
 st.markdown("현재 운영 중인 과정의 **실시간 출결 현황** (입/퇴실)과 **특이사항**을 집중 모니터링합니다.")
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=CACHE_TTL_REALTIME)
 def get_active_data():
     today_str = datetime.now().strftime('%Y-%m-%d')
     query_course = (
@@ -95,7 +99,7 @@ def apply_late_rule(row):
         if len(time_digits) >= 3:
             try:
                 time_val = int(time_digits[:4])
-                if time_val > 910:
+                if time_val > LATE_CUTOFF_HHMM:
                     return '지각'
             except:
                 pass
@@ -190,7 +194,7 @@ st.divider()
 # [3] 최근 출결 추이
 # ==========================================
 if not this_logs.empty:
-    recent_dates = sorted(this_logs['ATEND_DT'].unique())[-10:]
+    recent_dates = sorted(this_logs['ATEND_DT'].unique())[-RECENT_TREND_DAYS:]
     weekly_data = []
     for dt in recent_dates:
         day_logs = this_logs[this_logs['ATEND_DT'] == dt]
@@ -202,13 +206,13 @@ if not this_logs.empty:
     if weekly_data:
         weekly_df = pd.DataFrame(weekly_data)
         st.markdown("##### 📈 최근 출결 추이")
-        st.caption("최근 10일간 일별 출석률 변화입니다. 빨간 점선은 90% 기준선입니다.")
+        st.caption(f"최근 {RECENT_TREND_DAYS}일간 일별 출석률 변화입니다. 빨간 점선은 {ATTENDANCE_TARGET}% 기준선입니다.")
         line = alt.Chart(weekly_df).mark_line(point=True, color='#3498db').encode(
             x=alt.X('날짜:N', title='날짜'),
             y=alt.Y('출석률:Q', title='출석률 (%)', scale=alt.Scale(domain=[50, 100])),
             tooltip=['날짜', '출석률', '출석', '총원'],
         ).properties(height=200)
-        rule = alt.Chart(pd.DataFrame({'y': [90]})).mark_rule(strokeDash=[5, 5], color='red').encode(y='y:Q')
+        rule = alt.Chart(pd.DataFrame({'y': [ATTENDANCE_TARGET]})).mark_rule(strokeDash=[5, 5], color='red').encode(y='y:Q')
         st.altair_chart(line + rule, use_container_width=True)
     st.divider()
 
@@ -225,9 +229,9 @@ if not this_logs.empty:
     st.caption(
         f"**집계 기간:** 과정 전체 기간 ({total_dates[0]} ~ {total_dates[-1]}, 총 {total_days_cnt}일)  \n"
         "**위험군 기준:** 아래 조건 중 하나 이상 해당 시 위험군으로 분류  \n"
-        "- 누적 결석 **3회 이상** (수료 기준 출석률 80% 미달 위험)  \n"
-        "- 누적 지각 **5회 이상** (습관적 지각 패턴)  \n"
-        "- 누적 조퇴 **5회 이상** (조기 이탈 패턴)"
+        f"- 누적 결석 **{RISK_ABSENT}회 이상** (수료 기준 출석률 80% 미달 위험)  \n"
+        f"- 누적 지각 **{RISK_LATE}회 이상** (습관적 지각 패턴)  \n"
+        f"- 누적 조퇴 **{RISK_EARLY_LEAVE}회 이상** (조기 이탈 패턴)"
     )
 
     cumul = this_logs.groupby('TRNEE_ID').agg(
@@ -240,7 +244,7 @@ if not this_logs.empty:
     cumul = cumul.merge(active_students[['TRNEE_ID', 'TRNEE_NM']], on='TRNEE_ID', how='inner')
     cumul['출석률(%)'] = (cumul['누적_출석'] / cumul['총_기록'] * 100).round(1)
 
-    risk_mask = (cumul['누적_결석'] >= 3) | (cumul['누적_지각'] >= 5) | (cumul['누적_조퇴'] >= 5)
+    risk_mask = (cumul['누적_결석'] >= RISK_ABSENT) | (cumul['누적_지각'] >= RISK_LATE) | (cumul['누적_조퇴'] >= RISK_EARLY_LEAVE)
     risk_df = cumul[risk_mask].sort_values('누적_결석', ascending=False)
 
     if not risk_df.empty:

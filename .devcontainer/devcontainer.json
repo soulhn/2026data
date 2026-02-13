@@ -9,7 +9,9 @@
   },
 
   "mounts": [
-    "source=pip-user-cache,target=/root/.cache/pip,type=volume"
+    "source=pip-user-cache,target=/root/.cache/pip,type=volume",
+    "source=claude-config,target=/root/.claude,type=volume",
+    "source=npm-global-cache,target=/usr/local/share/npm-global,type=volume"
   ],
 
   "customizations": {
