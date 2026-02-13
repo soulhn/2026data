@@ -162,7 +162,13 @@ with st.expander("📝 보고용 텍스트 복사", expanded=True):
                 clean_time = str(row['IN_TIME']).strip()
                 names.append(f"{row['TRNEE_NM']}({clean_time})")
         elif type_ == 'early':
-            names = df[df['ATEND_STATUS'] == '조퇴']['TRNEE_NM'].tolist()
+            target = df[df['ATEND_STATUS'] == '조퇴']
+            for _, row in target.iterrows():
+                clean_time = str(row['OUT_TIME']).strip() if pd.notna(row['OUT_TIME']) else ''
+                if clean_time:
+                    names.append(f"{row['TRNEE_NM']}({clean_time})")
+                else:
+                    names.append(row['TRNEE_NM'])
         elif type_ == 'out':
             names = df[df['ATEND_STATUS'] == '외출']['TRNEE_NM'].tolist()
         return ", ".join(names) if names else "없음"
