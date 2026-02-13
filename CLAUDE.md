@@ -17,6 +17,14 @@ market_etl.py (매일 21시) →                    ←    https://playdata.stre
 - `utils.py`의 `is_pg()`, `get_database_url()`, `adapt_query()`로 자동 전환
 - `adapt_query()`: `?` → `%s`, `INSERT OR IGNORE` → `ON CONFLICT DO NOTHING` 자동 변환
 - PostgreSQL은 컬럼명을 소문자로 반환하므로 `load_data()`에서 대문자 변환 처리
+- PG 읽기: `@st.cache_resource` 커넥션 풀링 (`_get_pg_pool()`)으로 TCP 재연결 방지
+
+### 성능 최적화 전략
+- **커넥션 풀링**: `load_data()`가 PG 읽기 시 `@st.cache_resource` 캐싱 커넥션 사용
+- **파생 컬럼 사전 계산**: `YEAR_MONTH`, `REGION` 컬럼을 ETL 시 DB에 저장 (Python 파싱 제거)
+- **SQL-Side 집계**: 시장 페이지가 30만건 전체를 Python으로 로드하지 않고, 탭별 `GROUP BY` SQL로 수백건만 조회
+- **`build_where_clause()`**: 사이드바 필터를 SQL WHERE로 변환하여 DB에서 필터링
+- **산점도/키워드**: `ORDER BY RANDOM() LIMIT N`으로 샘플링
 
 ### ETL 자동화 (GitHub Actions)
 - `.github/workflows/hrd_etl.yml` - 평일 KST 09:00~18:00 매시간
