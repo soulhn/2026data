@@ -66,6 +66,30 @@ def check_password():
 
     st.stop()
 
+def _get_pg_pool():
+    """PG 읽기 전용 커넥션을 캐싱하여 반환 (Streamlit 환경에서만 캐싱)."""
+    try:
+        import streamlit as st
+        return _get_pg_pool_cached()
+    except Exception:
+        # Streamlit 없는 환경 (ETL, 테스트 등) → 일반 커넥션
+        return None
+
+
+def _get_pg_pool_cached():
+    """@st.cache_resource 로 PG 커넥션 재사용."""
+    import streamlit as st
+
+    @st.cache_resource
+    def _create():
+        import psycopg2
+        conn = psycopg2.connect(get_database_url(), connect_timeout=5)
+        conn.autocommit = True
+        return conn
+
+    return _create()
+
+
 def get_connection(timeout=5, row_factory=None):
     """DB 연결 객체를 반환합니다. DATABASE_URL이 있으면 PostgreSQL, 없으면 SQLite."""
     if is_pg():
@@ -82,7 +106,17 @@ def get_connection(timeout=5, row_factory=None):
     return conn
 
 def load_data(query, params=None):
-    """SQL 쿼리를 받아 Pandas DataFrame으로 반환합니다."""
+    """SQL 쿼리를 받아 Pandas DataFrame으로 반환합니다.
+    PG 읽기 시 캐싱된 커넥션을 사용하여 TCP 연결 오버헤드를 줄입니다."""
+    pool_conn = _get_pg_pool() if is_pg() else None
+    if pool_conn is not None:
+        try:
+            df = pd.read_sql(adapt_query(query), pool_conn, params=params)
+            df.columns = [c.upper() for c in df.columns]
+            return df
+        except Exception:
+            # 커넥션이 끊어진 경우 폴백
+            pass
     conn = get_connection()
     try:
         df = pd.read_sql(adapt_query(query), conn, params=params)
