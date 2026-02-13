@@ -148,15 +148,21 @@ def load_market_data():
                TOT_FXNUM, TOT_TRCO, COURSE_MAN, REG_COURSE_MAN,
                EI_EMPL_RATE_3, EI_EMPL_RATE_6, EI_EMPL_CNT_3,
                STDG_SCOR, GRADE, ADDRESS,
-               TRAIN_TARGET, WKEND_SE
+               TRAIN_TARGET, WKEND_SE,
+               YEAR_MONTH, REGION
         FROM TB_MARKET_TREND
     """)
 
-    # 1. 날짜/파생변수
+    # 1. 날짜 변환 (파생변수는 DB에서 가져옴)
     df['TR_STA_DT'] = pd.to_datetime(df['TR_STA_DT'])
     df['TR_END_DT'] = pd.to_datetime(df['TR_END_DT'], errors='coerce')
-    df['YEAR_MONTH'] = df['TR_STA_DT'].dt.strftime('%Y-%m')
-    df['REGION'] = df['ADDRESS'].str.split(' ').str[0]
+    # 백필 안 된 행 폴백
+    mask_ym = df['YEAR_MONTH'].isna()
+    if mask_ym.any():
+        df.loc[mask_ym, 'YEAR_MONTH'] = df.loc[mask_ym, 'TR_STA_DT'].dt.strftime('%Y-%m')
+    mask_rg = df['REGION'].isna() & df['ADDRESS'].notna()
+    if mask_rg.any():
+        df.loc[mask_rg, 'REGION'] = df.loc[mask_rg, 'ADDRESS'].str.split(' ').str[0]
 
     # 2. 수치형 변환
     cols = ['TOT_TRCO', 'EI_EMPL_RATE_3', 'STDG_SCOR', 'TOT_FXNUM', 'REG_COURSE_MAN']

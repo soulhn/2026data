@@ -89,17 +89,23 @@ def parse_rows_xml(soup: BeautifulSoup):
             el = scn.find(tag)
             return el.text.strip() if el and el.text else ""
 
+        sta_dt = g("traStartDate")
+        address = g("address")
+        year_month = f"{sta_dt[:4]}-{sta_dt[4:6]}" if len(sta_dt) >= 6 else None
+        region = address.split()[0] if address and address.strip() else None
+
         out.append((
             g("trprId"), safe_int(g("trprDegr")),
-            g("title"), g("subTitle"), g("traStartDate"), g("traEndDate"),
+            g("title"), g("subTitle"), sta_dt, g("traEndDate"),
             g("ncsCd"), g("trngAreaCd"),
             safe_int(g("yardMan")), safe_float(g("realMan"), default=None), safe_float(g("courseMan"), default=None), safe_int(g("regCourseMan")),
             safe_float(g("eiEmplRate3"), default=None), safe_float(g("eiEmplRate6"), default=None), safe_int(g("eiEmplCnt3")), g("eiEmplCnt3Gt10"),
             safe_float(g("stdgScor"), default=None), g("grade"),
-            g("certificate"), g("contents"), g("address"), g("telNo"),
+            g("certificate"), g("contents"), address, g("telNo"),
             g("instCd"), g("trainstCstId"), g("trainTarget"), g("trainTargetCd"),
             g("wkendSe"),
-            g("titleIcon"), g("titleLink"), g("subTitleLink")
+            g("titleIcon"), g("titleLink"), g("subTitleLink"),
+            year_month, region
         ))
     return out
 
@@ -171,8 +177,9 @@ _UPSERT_QUERY_RAW = '''
         STDG_SCOR, GRADE,
         CERTIFICATE, CONTENTS, ADDRESS, TEL_NO,
         INST_INO, TRAINST_CST_ID, TRAIN_TARGET, TRAIN_TARGET_CD,
-        WKEND_SE, TITLE_ICON, TITLE_LINK, SUB_TITLE_LINK
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        WKEND_SE, TITLE_ICON, TITLE_LINK, SUB_TITLE_LINK,
+        YEAR_MONTH, REGION
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(TRPR_ID, TRPR_DEGR) DO UPDATE SET
         TRPR_NM=excluded.TRPR_NM,
         TRAINST_NM=excluded.TRAINST_NM,
@@ -194,6 +201,8 @@ _UPSERT_QUERY_RAW = '''
         TRAIN_TARGET=excluded.TRAIN_TARGET,
         TRAIN_TARGET_CD=excluded.TRAIN_TARGET_CD,
         WKEND_SE=excluded.WKEND_SE,
+        YEAR_MONTH=excluded.YEAR_MONTH,
+        REGION=excluded.REGION,
         COLLECTED_AT=CURRENT_TIMESTAMP
 '''
 

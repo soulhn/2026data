@@ -88,6 +88,8 @@ def init_all_tables():
             TITLE_ICON TEXT,        -- 아이콘
             TITLE_LINK TEXT,        -- 링크
             SUB_TITLE_LINK TEXT,    -- 부제목 링크
+            YEAR_MONTH TEXT,        -- 파생: 개설연월 (YYYY-MM)
+            REGION TEXT,            -- 파생: 지역 (ADDRESS 첫 단어)
             COLLECTED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (TRPR_ID, TRPR_DEGR)
         )
@@ -100,6 +102,10 @@ def init_all_tables():
         ('IDX_MARKET_NCS',  'TB_MARKET_TREND', 'NCS_CD'),
         ('IDX_MARKET_DATE', 'TB_MARKET_TREND', 'TR_STA_DT'),
         ('IDX_MARKET_AREA', 'TB_MARKET_TREND', 'TRNG_AREA_CD'),
+        ('IDX_MARKET_TRAINST',    'TB_MARKET_TREND', 'TRAINST_NM'),
+        ('IDX_MARKET_YEAR_MONTH', 'TB_MARKET_TREND', 'YEAR_MONTH'),
+        ('IDX_MARKET_REGION',     'TB_MARKET_TREND', 'REGION'),
+        ('IDX_MARKET_TARGET',     'TB_MARKET_TREND', 'TRAIN_TARGET'),
         ('IDX_ATTEND_DEGR',   'TB_ATTENDANCE_LOG', 'TRPR_DEGR'),
         ('IDX_ATTEND_DATE',   'TB_ATTENDANCE_LOG', 'ATEND_DT'),
         ('IDX_COURSE_END_DT', 'TB_COURSE_MASTER',  'TR_END_DT'),
@@ -123,6 +129,8 @@ def init_all_tables():
     migrations = [
         "ALTER TABLE TB_TRAINEE_INFO ADD COLUMN ABSENT_CNT INTEGER",
         "ALTER TABLE TB_TRAINEE_INFO ADD COLUMN ATEND_CNT INTEGER",
+        "ALTER TABLE TB_MARKET_TREND ADD COLUMN YEAR_MONTH TEXT",
+        "ALTER TABLE TB_MARKET_TREND ADD COLUMN REGION TEXT",
     ]
     for sql in migrations:
         try:
@@ -135,6 +143,31 @@ def init_all_tables():
             if is_pg():
                 conn.rollback()  # PG: 실패한 트랜잭션 롤백 필수
             pass  # 이미 존재하거나 지원하지 않는 ALTER
+
+    # ==========================================
+    # 백필: YEAR_MONTH, REGION (1회성)
+    # ==========================================
+    backfill_queries = []
+    if is_pg():
+        backfill_queries = [
+            "UPDATE TB_MARKET_TREND SET YEAR_MONTH = LEFT(TR_STA_DT, 4) || '-' || SUBSTR(TR_STA_DT, 5, 2) WHERE YEAR_MONTH IS NULL AND TR_STA_DT IS NOT NULL",
+            "UPDATE TB_MARKET_TREND SET REGION = SPLIT_PART(ADDRESS, ' ', 1) WHERE REGION IS NULL AND ADDRESS IS NOT NULL",
+        ]
+    else:
+        backfill_queries = [
+            "UPDATE TB_MARKET_TREND SET YEAR_MONTH = substr(TR_STA_DT, 1, 4) || '-' || substr(TR_STA_DT, 5, 2) WHERE YEAR_MONTH IS NULL AND TR_STA_DT IS NOT NULL",
+            "UPDATE TB_MARKET_TREND SET REGION = substr(ADDRESS, 1, instr(ADDRESS || ' ', ' ') - 1) WHERE REGION IS NULL AND ADDRESS IS NOT NULL",
+        ]
+    for sql in backfill_queries:
+        try:
+            if is_pg():
+                conn.commit()
+            cursor.execute(sql)
+            if is_pg():
+                conn.commit()
+        except Exception:
+            if is_pg():
+                conn.rollback()
 
     conn.commit()
     conn.close()
