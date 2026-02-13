@@ -520,14 +520,34 @@ else:
             )
 
     st.markdown("##### 종합 비교 테이블")
-    summary_cols = ['기수', 'TRPR_NM', 'TR_STA_DT', 'TR_END_DT', 'TOT_PAR_MKS', 'FINI_CNT', '수료율', '총_취업률']
+    # 제적/중도탈락 인원 집계
+    trainee_stats = load_data("""
+        SELECT TRPR_ID, TRPR_DEGR,
+               SUM(CASE WHEN TRNEE_STATUS = '제적' THEN 1 ELSE 0 END) AS EXPEL_CNT,
+               SUM(CASE WHEN TRNEE_STATUS = '중도탈락' THEN 1 ELSE 0 END) AS DROP_CNT
+        FROM TB_TRAINEE_INFO
+        GROUP BY TRPR_ID, TRPR_DEGR
+    """)
+    all_master = all_master.merge(trainee_stats, on=['TRPR_ID', 'TRPR_DEGR'], how='left')
+    for c in ['EXPEL_CNT', 'DROP_CNT', 'TOT_TRP_CNT']:
+        all_master[c] = pd.to_numeric(all_master[c], errors='coerce').fillna(0).astype(int)
+    all_master['잔여율'] = ((all_master['TOT_PAR_MKS'] - all_master['EXPEL_CNT'] - all_master['DROP_CNT']) / all_master['TOT_PAR_MKS'].replace(0, pd.NA) * 100).round(1).fillna(0)
+    summary_cols = ['기수', 'TRPR_NM', 'TR_STA_DT', 'TR_END_DT', 'TOT_TRP_CNT', 'TOT_PAR_MKS', 'EXPEL_CNT', 'DROP_CNT', '잔여율', 'FINI_CNT', '수료율', '총_취업률']
     st.dataframe(
         all_master[summary_cols].rename(columns={
             'TRPR_NM': '과정명', 'TR_STA_DT': '시작일', 'TR_END_DT': '종료일',
-            'TOT_PAR_MKS': '현원', 'FINI_CNT': '수료인원',
+            'TOT_TRP_CNT': '수강신청', 'TOT_PAR_MKS': '수강인원',
+            'EXPEL_CNT': '제적', 'DROP_CNT': '중도탈락',
+            '잔여율': '잔여율(%)', 'FINI_CNT': '수료인원',
             '수료율': '수료율(%)', '총_취업률': '취업률(%)',
         }),
         column_config={
+            "수강신청": st.column_config.NumberColumn(format="%d명"),
+            "수강인원": st.column_config.NumberColumn(format="%d명"),
+            "제적": st.column_config.NumberColumn(format="%d명"),
+            "중도탈락": st.column_config.NumberColumn(format="%d명"),
+            "잔여율(%)": st.column_config.NumberColumn(format="%.1f%%"),
+            "수료인원": st.column_config.NumberColumn(format="%d명"),
             "수료율(%)": st.column_config.NumberColumn(format="%.1f%%"),
             "취업률(%)": st.column_config.NumberColumn(format="%.1f%%"),
         },
