@@ -17,7 +17,12 @@ check_password()
 
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def get_dashboard_data():
-    df_course = load_data("SELECT * FROM TB_COURSE_MASTER ORDER BY TR_STA_DT DESC")
+    df_course = load_data("""
+        SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT,
+               TOT_FXNUM, TOT_PAR_MKS, TOT_TRP_CNT, FINI_CNT,
+               EI_EMPL_RATE_3, EI_EMPL_RATE_6, HRD_EMPL_RATE_6, REAL_EMPL_RATE
+        FROM TB_COURSE_MASTER ORDER BY TR_STA_DT DESC
+    """)
     df_course['TR_STA_DT'] = pd.to_datetime(df_course['TR_STA_DT'])
     df_course['TR_END_DT'] = pd.to_datetime(df_course['TR_END_DT'])
     numeric_cols = ['TOT_FXNUM', 'TOT_PAR_MKS', 'EI_EMPL_RATE_3', 'EI_EMPL_RATE_6', 'HRD_EMPL_RATE_6', 'REAL_EMPL_RATE']
@@ -26,9 +31,7 @@ def get_dashboard_data():
     df_course['TOTAL_RATE_6'] = df_course['EI_EMPL_RATE_6'] + df_course['HRD_EMPL_RATE_6']
     df_course['FINI_CNT'] = pd.to_numeric(df_course['FINI_CNT'], errors='coerce').fillna(0)
     df_course['TOT_TRP_CNT'] = pd.to_numeric(df_course['TOT_TRP_CNT'], errors='coerce').fillna(0)
-    df_course['수료율'] = df_course.apply(
-        lambda x: (x['FINI_CNT'] / x['TOT_PAR_MKS'] * 100) if x['TOT_PAR_MKS'] > 0 else 0, axis=1
-    )
+    df_course['수료율'] = (df_course['FINI_CNT'] / df_course['TOT_PAR_MKS'].replace(0, pd.NA) * 100).fillna(0)
     today = pd.Timestamp(datetime.now().date())
     df_course['상태'] = df_course['TR_END_DT'].apply(lambda x: '진행중' if x >= today else '종료')
     return df_course
@@ -40,14 +43,18 @@ def get_today_attendance():
     today_str = datetime.now().strftime('%Y-%m-%d')
     # IN_TIME이 있는데 결석인 경우 → '입실중'으로 재분류
     query = (
+        "WITH latest AS ("
+        "  SELECT TRPR_DEGR, MAX(ATEND_DT) AS MAX_DT"
+        "  FROM TB_ATTENDANCE_LOG GROUP BY TRPR_DEGR"
+        ") "
         "SELECT a.TRPR_DEGR, "
         "CASE WHEN a.ATEND_STATUS = '결석' AND a.IN_TIME IS NOT NULL AND a.IN_TIME != '' "
         "THEN '입실중' ELSE a.ATEND_STATUS END as ATEND_STATUS, "
         "COUNT(*) as CNT "
         "FROM TB_ATTENDANCE_LOG a "
         "INNER JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
+        "INNER JOIN latest ld ON a.TRPR_DEGR = ld.TRPR_DEGR AND a.ATEND_DT = ld.MAX_DT "
         "WHERE c.TR_END_DT >= ? "
-        "AND a.ATEND_DT = (SELECT MAX(ATEND_DT) FROM TB_ATTENDANCE_LOG WHERE TRPR_DEGR = a.TRPR_DEGR) "
         "GROUP BY a.TRPR_DEGR, "
         "CASE WHEN a.ATEND_STATUS = '결석' AND a.IN_TIME IS NOT NULL AND a.IN_TIME != '' "
         "THEN '입실중' ELSE a.ATEND_STATUS END"

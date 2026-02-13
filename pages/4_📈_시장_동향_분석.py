@@ -757,10 +757,9 @@ with tabs[7]:
     # 가격 시뮬레이터
     st.subheader("가격 시뮬레이터: 훈련비 → 예상 취업률")
     if not cost_valid.empty and len(cost_valid) >= 10:
-        from sklearn.linear_model import LinearRegression
-
         X = cost_valid[['TOT_TRCO']].values
         y = cost_valid['EI_EMPL_RATE_3'].values
+        from sklearn.linear_model import LinearRegression
         model = LinearRegression().fit(X, y)
         r2 = model.score(X, y)
 
@@ -872,22 +871,19 @@ with tabs[10]:
         cert_df['EI_EMPL_RATE_3'] = pd.to_numeric(cert_df['EI_EMPL_RATE_3'], errors='coerce')
         cert_df['TOT_TRCO'] = pd.to_numeric(cert_df['TOT_TRCO'], errors='coerce')
 
-        # 자격증 파싱 (쉼표/줄바꿈 구분)
-        all_certs = []
-        for _, row in cert_df.iterrows():
-            raw = str(row['CERTIFICATE'])
-            for sep in [',', '\n', '/', '·']:
-                raw = raw.replace(sep, '|')
-            certs = [c.strip() for c in raw.split('|') if c.strip() and len(c.strip()) > 1]
-            for c in certs:
-                all_certs.append({
-                    '자격증': c,
-                    '취업률': row['EI_EMPL_RATE_3'],
-                    '훈련비': row['TOT_TRCO'],
-                })
+        # 자격증 파싱 (벡터 연산)
+        cert_clean = (cert_df['CERTIFICATE'].astype(str)
+            .str.replace(',', '|', regex=False)
+            .str.replace('\n', '|', regex=False)
+            .str.replace('/', '|', regex=False)
+            .str.replace('·', '|', regex=False))
+        exploded = (cert_df.assign(자격증=cert_clean.str.split('|'))
+            .explode('자격증'))
+        exploded['자격증'] = exploded['자격증'].str.strip()
+        exploded = exploded[exploded['자격증'].str.len() > 1]
+        cert_parsed = exploded.rename(columns={'EI_EMPL_RATE_3': '취업률', 'TOT_TRCO': '훈련비'})
 
-        if all_certs:
-            cert_parsed = pd.DataFrame(all_certs)
+        if not cert_parsed.empty:
             cert_stats = cert_parsed.groupby('자격증').agg(
                 과정수=('자격증', 'count'),
                 평균_취업률=('취업률', 'mean'),
