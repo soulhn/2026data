@@ -174,16 +174,24 @@ with col_right:
 st.subheader("🚨 현재 운영 중인 과정 현황")
 active_df = df[df['상태'] == '진행중'].copy()
 if not active_df.empty:
+    # 현재 인원: TB_TRAINEE_INFO에서 중도탈락/제적 제외
+    active_trainee = load_data("""
+        SELECT TRPR_ID, TRPR_DEGR, COUNT(*) AS CURRENT_CNT
+        FROM TB_TRAINEE_INFO
+        WHERE TRNEE_STATUS NOT IN ('중도탈락', '제적')
+        GROUP BY TRPR_ID, TRPR_DEGR
+    """)
+    active_df = active_df.merge(active_trainee, on=['TRPR_ID', 'TRPR_DEGR'], how='left')
+    active_df['CURRENT_CNT'] = pd.to_numeric(active_df['CURRENT_CNT'], errors='coerce').fillna(0).astype(int)
     st.dataframe(
-        active_df[['TRPR_DEGR', 'TRPR_NM', 'TR_END_DT', 'TOT_TRP_CNT', 'TOT_PAR_MKS', 'FINI_CNT', '수료율']],
+        active_df[['TRPR_DEGR', 'TRPR_NM', 'TR_END_DT', 'TOT_TRP_CNT', 'TOT_PAR_MKS', 'CURRENT_CNT']],
         column_config={
             "TRPR_DEGR": "회차",
             "TRPR_NM": "과정명",
             "TR_END_DT": st.column_config.DateColumn("종료예정일"),
             "TOT_TRP_CNT": st.column_config.NumberColumn("수강신청", format="%d명"),
             "TOT_PAR_MKS": st.column_config.NumberColumn("수강인원", format="%d명"),
-            "FINI_CNT": st.column_config.NumberColumn("수료인원", format="%d명"),
-            "수료율": st.column_config.ProgressColumn("수료율", format="%.1f%%", min_value=0, max_value=100),
+            "CURRENT_CNT": st.column_config.NumberColumn("현재인원", format="%d명"),
         },
         hide_index=True,
         use_container_width=True,
