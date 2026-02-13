@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from utils import get_connection, DB_FILE, safe_float, safe_int, get_retry_session, adapt_query, is_pg
 from init_db import init_all_tables
+from config import ETL_ARCHIVE_START, ETL_REFRESH_MONTHS, ETL_PAGE_SIZE, ETL_MAX_WORKERS, ETL_BATCH_SIZE, ETL_BATCH_PAGE_SIZE
 
 load_dotenv()
 
@@ -17,10 +18,10 @@ load_dotenv()
 # ==========================================
 AUTH_KEY = os.getenv("HRD_API_KEY")
 
-ARCHIVE_START = dt.date(2023, 1, 1)  # 최초 수집 시 시작점
-REFRESH_MONTHS = 12                   # 갱신 구간 (취업률 확정 대기)
-PAGE_SIZE  = 100
-MAX_WORKERS= 4
+ARCHIVE_START = ETL_ARCHIVE_START
+REFRESH_MONTHS = ETL_REFRESH_MONTHS
+PAGE_SIZE  = ETL_PAGE_SIZE
+MAX_WORKERS= ETL_MAX_WORKERS
 
 BASE_URL = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_1.jsp"
 
@@ -204,12 +205,12 @@ def save_rows(rows):
     cursor = conn.cursor()
     upsert_query = adapt_query(_UPSERT_QUERY_RAW)
     try:
-        batch_size = 1000
+        batch_size = ETL_BATCH_SIZE
         if is_pg():
             from psycopg2.extras import execute_batch
             for i in range(0, len(rows), batch_size):
                 batch = rows[i:i+batch_size]
-                execute_batch(cursor, upsert_query, batch, page_size=100)
+                execute_batch(cursor, upsert_query, batch, page_size=ETL_BATCH_PAGE_SIZE)
                 conn.commit()
         else:
             for i in range(0, len(rows), batch_size):
@@ -233,22 +234,30 @@ def main():
 
     months = list(month_shards(start_date, end_date))
     total_saved = 0
+    success_months, failed_months = 0, 0
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
         futs = {ex.submit(collect_one_month, i, m_start, m_end): i
                 for i, (m_start, m_end) in enumerate(months, start=1)}
 
         for fut in as_completed(futs):
-            rows = fut.result()
-            if rows:
-                saved = save_rows(rows)
-                total_saved += saved
-                print(f"   >> {saved:,}건 저장 (누적: {total_saved:,}건)")
+            month_idx = futs[fut]
+            try:
+                rows = fut.result()
+                if rows:
+                    saved = save_rows(rows)
+                    total_saved += saved
+                    print(f"   >> {saved:,}건 저장 (누적: {total_saved:,}건)")
+                success_months += 1
+            except Exception as e:
+                failed_months += 1
+                print(f"   [M{month_idx:02d}] 수집 실패: {e}")
 
+    print(f"\n[Summary] 월별 성공: {success_months}, 실패: {failed_months}, 총 저장: {total_saved:,}건")
     if total_saved == 0:
         print("수집된 데이터가 없습니다.")
     else:
-        print(f"\n[Success] 총 {total_saved:,}건 저장 완료!")
+        print(f"[Success] 총 {total_saved:,}건 저장 완료!")
 
 if __name__ == "__main__":
     main()

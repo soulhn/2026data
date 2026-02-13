@@ -7,17 +7,32 @@ from dotenv import load_dotenv
 
 from utils import get_connection, get_retry_session, adapt_query, is_pg
 from init_db import init_all_tables
+from config import ETL_BATCH_PAGE_SIZE, ETL_UPDATE_CUTOFF_DAYS
 
 
 def batch_execute(cursor, sql, data_list):
-    """PG: execute_batch로 네트워크 왕복 최소화, SQLite: executemany"""
+    """PG: execute_batch로 네트워크 왕복 최소화, SQLite: executemany.
+    배치 실패 시 row-by-row 폴백. (success, errors) 반환."""
     if not data_list:
-        return
-    if is_pg():
-        from psycopg2.extras import execute_batch
-        execute_batch(cursor, adapt_query(sql), data_list, page_size=100)
-    else:
-        cursor.executemany(sql, data_list)
+        return 0, 0
+    resolved_sql = adapt_query(sql) if is_pg() else sql
+    try:
+        if is_pg():
+            from psycopg2.extras import execute_batch
+            execute_batch(cursor, resolved_sql, data_list, page_size=ETL_BATCH_PAGE_SIZE)
+        else:
+            cursor.executemany(resolved_sql, data_list)
+        return len(data_list), 0
+    except Exception as e:
+        print(f"   [batch_execute] 배치 실패, row-by-row 폴백: {e}")
+        success, errors = 0, 0
+        for row in data_list:
+            try:
+                cursor.execute(resolved_sql, row)
+                success += 1
+            except Exception:
+                errors += 1
+        return success, errors
 
 load_dotenv()
 
@@ -48,6 +63,7 @@ def run_etl():
     cursor = conn.cursor()
     session = get_retry_session()
     print(f"[ETL Start] 과정ID({COURSE_ID}) 데이터 수집 시작...")
+    total_success, total_errors = 0, 0
 
     BASE_URL_COURSE = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_3.jsp"
     BASE_URL_DETAIL = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_4.jsp"
@@ -63,7 +79,7 @@ def run_etl():
         print(f"과정 목록 조회 실패: {e}")
         return
 
-    update_cutoff_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+    update_cutoff_date = (datetime.now() - timedelta(days=ETL_UPDATE_CUTOFF_DAYS)).strftime('%Y-%m-%d')
 
     for idx, course in enumerate(course_list, 1):
         try: trpr_degr = int(course.get('trprDegr', 0))
@@ -141,7 +157,7 @@ def run_etl():
                         trnee.get('oflhdCnt'), trnee.get('vcatnCnt'),
                         trnee.get('absentCnt'), trnee.get('atendCnt')
                     ))
-                batch_execute(cursor, '''
+                s, e = batch_execute(cursor, '''
                     INSERT INTO TB_TRAINEE_INFO (
                         TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM,
                         TRNEE_STATUS, TRNEE_TYPE, BIRTH_DATE,
@@ -159,6 +175,7 @@ def run_etl():
                         ATEND_CNT = excluded.ATEND_CNT,
                         COLLECTED_AT = CURRENT_TIMESTAMP
                 ''', trainee_rows)
+                total_success += s; total_errors += e
                 print(f"   >> {trpr_degr}회차 명부: {len(trainee_rows)}건 수집 완료")
         except Exception as e:
             print(f"   ⚠️ {trpr_degr}회차 명부 수집 실패: {e}")
@@ -194,10 +211,11 @@ def run_etl():
                 print(f"   ⚠️ {trpr_degr}회차 출결({yyyymm}) 수집 실패: {e}")
                 continue
 
-        batch_execute(cursor,
+        s, e = batch_execute(cursor,
             'INSERT OR IGNORE INTO TB_TRAINEE_INFO (TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM) VALUES (?, ?, ?, ?)',
             trnee_ignore_rows)
-        batch_execute(cursor, '''
+        total_success += s; total_errors += e
+        s, e = batch_execute(cursor, '''
             INSERT INTO TB_ATTENDANCE_LOG (
                 TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT, DAY_NM, IN_TIME, OUT_TIME, ATEND_STATUS, ATEND_STATUS_CD
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -205,10 +223,12 @@ def run_etl():
                 IN_TIME=excluded.IN_TIME, OUT_TIME=excluded.OUT_TIME,
                 ATEND_STATUS=excluded.ATEND_STATUS, COLLECTED_AT=CURRENT_TIMESTAMP
         ''', atab_rows)
+        total_success += s; total_errors += e
         print(f"   >> {trpr_degr}회차 출결: 총 {len(atab_rows)}건 수집 완료")
         conn.commit()
 
     conn.close()
+    print(f"[ETL Summary] 성공: {total_success:,}건, 실패: {total_errors:,}건")
     print("[Complete] 스마트 ETL 수집 완료! (최신 데이터만 업데이트됨)")
 
 if __name__ == "__main__":
