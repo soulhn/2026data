@@ -96,35 +96,7 @@ def init_all_tables():
     ''')
 
     # ==========================================
-    # 인덱스 (PG: 이미 존재하면 건너뜀)
-    # ==========================================
-    indexes = [
-        ('IDX_MARKET_NCS',  'TB_MARKET_TREND', 'NCS_CD'),
-        ('IDX_MARKET_DATE', 'TB_MARKET_TREND', 'TR_STA_DT'),
-        ('IDX_MARKET_AREA', 'TB_MARKET_TREND', 'TRNG_AREA_CD'),
-        ('IDX_MARKET_TRAINST',    'TB_MARKET_TREND', 'TRAINST_NM'),
-        ('IDX_MARKET_YEAR_MONTH', 'TB_MARKET_TREND', 'YEAR_MONTH'),
-        ('IDX_MARKET_REGION',     'TB_MARKET_TREND', 'REGION'),
-        ('IDX_MARKET_TARGET',     'TB_MARKET_TREND', 'TRAIN_TARGET'),
-        ('IDX_ATTEND_DEGR',   'TB_ATTENDANCE_LOG', 'TRPR_DEGR'),
-        ('IDX_ATTEND_DATE',   'TB_ATTENDANCE_LOG', 'ATEND_DT'),
-        ('IDX_COURSE_END_DT', 'TB_COURSE_MASTER',  'TR_END_DT'),
-    ]
-    for idx_name, table, col in indexes:
-        if is_pg():
-            cursor.execute(
-                "SELECT 1 FROM pg_indexes WHERE indexname = %s", (idx_name.lower(),)
-            )
-            if cursor.fetchone():
-                continue
-            conn.commit()
-            cursor.execute(f'CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({col})')
-            conn.commit()
-        else:
-            cursor.execute(f'CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({col})')
-
-    # ==========================================
-    # 마이그레이션 (기존 DB 호환)
+    # 마이그레이션 (기존 DB 호환) — 인덱스보다 먼저 실행
     # ==========================================
     migrations = [
         "ALTER TABLE TB_TRAINEE_INFO ADD COLUMN ABSENT_CNT INTEGER",
@@ -143,6 +115,34 @@ def init_all_tables():
             if is_pg():
                 conn.rollback()  # PG: 실패한 트랜잭션 롤백 필수
             pass  # 이미 존재하거나 지원하지 않는 ALTER
+
+    # ==========================================
+    # 인덱스 (마이그레이션 이후 실행)
+    # ==========================================
+    indexes = [
+        ('IDX_MARKET_NCS',  'TB_MARKET_TREND', 'NCS_CD'),
+        ('IDX_MARKET_DATE', 'TB_MARKET_TREND', 'TR_STA_DT'),
+        ('IDX_MARKET_AREA', 'TB_MARKET_TREND', 'TRNG_AREA_CD'),
+        ('IDX_MARKET_TRAINST',    'TB_MARKET_TREND', 'TRAINST_NM'),
+        ('IDX_MARKET_YEAR_MONTH', 'TB_MARKET_TREND', 'YEAR_MONTH'),
+        ('IDX_MARKET_REGION',     'TB_MARKET_TREND', 'REGION'),
+        ('IDX_MARKET_TARGET',     'TB_MARKET_TREND', 'TRAIN_TARGET'),
+        ('IDX_ATTEND_DEGR',   'TB_ATTENDANCE_LOG', 'TRPR_DEGR'),
+        ('IDX_ATTEND_DATE',   'TB_ATTENDANCE_LOG', 'ATEND_DT'),
+        ('IDX_COURSE_END_DT', 'TB_COURSE_MASTER',  'TR_END_DT'),
+    ]
+    for idx_name, table, col in indexes:
+        try:
+            if is_pg():
+                conn.commit()
+                cursor.execute(f'CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({col})')
+                conn.commit()
+            else:
+                cursor.execute(f'CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({col})')
+        except Exception:
+            if is_pg():
+                conn.rollback()
+            pass  # 이미 존재하거나 컬럼 미존재 시 무시
 
     # ==========================================
     # 백필: YEAR_MONTH, REGION (1회성)
