@@ -174,24 +174,29 @@ with col_right:
 st.subheader("🚨 현재 운영 중인 과정 현황")
 active_df = df[df['상태'] == '진행중'].copy()
 if not active_df.empty:
-    # 현재 인원: TB_TRAINEE_INFO에서 중도탈락/제적 제외
-    active_trainee = load_data("""
-        SELECT TRPR_ID, TRPR_DEGR, COUNT(*) AS CURRENT_CNT
+    # 제적/중도탈락 인원 집계
+    trainee_stats = load_data("""
+        SELECT TRPR_ID, TRPR_DEGR,
+               SUM(CASE WHEN TRNEE_STATUS = '제적' THEN 1 ELSE 0 END) AS EXPEL_CNT,
+               SUM(CASE WHEN TRNEE_STATUS = '중도탈락' THEN 1 ELSE 0 END) AS DROP_CNT
         FROM TB_TRAINEE_INFO
-        WHERE TRNEE_STATUS NOT IN ('중도탈락', '제적')
         GROUP BY TRPR_ID, TRPR_DEGR
     """)
-    active_df = active_df.merge(active_trainee, on=['TRPR_ID', 'TRPR_DEGR'], how='left')
-    active_df['CURRENT_CNT'] = pd.to_numeric(active_df['CURRENT_CNT'], errors='coerce').fillna(0).astype(int)
+    active_df = active_df.merge(trainee_stats, on=['TRPR_ID', 'TRPR_DEGR'], how='left')
+    for c in ['EXPEL_CNT', 'DROP_CNT']:
+        active_df[c] = pd.to_numeric(active_df[c], errors='coerce').fillna(0).astype(int)
+    active_df['잔여율'] = ((active_df['TOT_PAR_MKS'] - active_df['EXPEL_CNT'] - active_df['DROP_CNT']) / active_df['TOT_PAR_MKS'].replace(0, pd.NA) * 100).fillna(0)
     st.dataframe(
-        active_df[['TRPR_DEGR', 'TRPR_NM', 'TR_END_DT', 'TOT_TRP_CNT', 'TOT_PAR_MKS', 'CURRENT_CNT']],
+        active_df[['TRPR_DEGR', 'TRPR_NM', 'TR_END_DT', 'TOT_TRP_CNT', 'TOT_PAR_MKS', 'EXPEL_CNT', 'DROP_CNT', '잔여율']],
         column_config={
             "TRPR_DEGR": "회차",
             "TRPR_NM": "과정명",
             "TR_END_DT": st.column_config.DateColumn("종료예정일"),
             "TOT_TRP_CNT": st.column_config.NumberColumn("수강신청", format="%d명"),
             "TOT_PAR_MKS": st.column_config.NumberColumn("수강인원", format="%d명"),
-            "CURRENT_CNT": st.column_config.NumberColumn("현재인원", format="%d명"),
+            "EXPEL_CNT": st.column_config.NumberColumn("제적", format="%d명"),
+            "DROP_CNT": st.column_config.NumberColumn("중도탈락", format="%d명"),
+            "잔여율": st.column_config.ProgressColumn("잔여율", format="%.1f%%", min_value=0, max_value=100),
         },
         hide_index=True,
         use_container_width=True,
