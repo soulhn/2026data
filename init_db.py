@@ -100,6 +100,9 @@ def init_all_tables():
         ('IDX_MARKET_NCS',  'TB_MARKET_TREND', 'NCS_CD'),
         ('IDX_MARKET_DATE', 'TB_MARKET_TREND', 'TR_STA_DT'),
         ('IDX_MARKET_AREA', 'TB_MARKET_TREND', 'TRNG_AREA_CD'),
+        ('IDX_ATTEND_DEGR',   'TB_ATTENDANCE_LOG', 'TRPR_DEGR'),
+        ('IDX_ATTEND_DATE',   'TB_ATTENDANCE_LOG', 'ATEND_DT'),
+        ('IDX_COURSE_END_DT', 'TB_COURSE_MASTER',  'TR_END_DT'),
     ]
     for idx_name, table, col in indexes:
         if is_pg():
