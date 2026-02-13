@@ -8,6 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 try:
     from hrd_etl import run_etl
     from utils import DB_FILE, get_connection as _utils_get_connection, load_data as _load_data, safe_float, check_password, is_pg
+    from config import CACHE_TTL_DEFAULT, MARKET_PREVIEW_LIMIT
 except ImportError:
     def run_etl(): st.error("❌ 'hrd_etl.py'를 찾을 수 없습니다.")
     DB_FILE = "hrd_analysis.db"
@@ -49,7 +50,7 @@ def safe_sum_rate(row):
     return round(ei + hrd, 1)
 
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def load_all_data():
     if not is_pg() and not os.path.exists(DB_FILE):
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -140,9 +141,9 @@ with tab3:
 
 with tab4:
     st.subheader("4. TB_MARKET_TREND")
-    st.caption(f"총 {market_cnt:,}건 중 최근 500건을 표시합니다.")
+    st.caption(f"총 {market_cnt:,}건 중 최근 {MARKET_PREVIEW_LIMIT}건을 표시합니다.")
     df_market_sample = _load_data(
-        "SELECT * FROM TB_MARKET_TREND ORDER BY TR_STA_DT DESC LIMIT 500"
+        f"SELECT * FROM TB_MARKET_TREND ORDER BY TR_STA_DT DESC LIMIT {MARKET_PREVIEW_LIMIT}"
     )
     if not df_market_sample.empty:
         st.dataframe(df_market_sample.rename(columns=COLUMN_MAP), use_container_width=True, height=600)
