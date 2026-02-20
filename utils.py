@@ -181,7 +181,10 @@ def safe_int(val, default=None):
 
 
 def get_billing_periods(start_date, end_date):
-    """개강일 기준 30일 단위 청구 기간 목록 반환.
+    """개강일 기준 월 단위 청구 기간 목록 반환.
+
+    청구 기간은 30일 고정이 아니라 개강일과 같은 날짜 기준 월 단위:
+    예) 5/19 개강 → 1단위: 5/19~6/18, 2단위: 6/19~7/18, ...
 
     Args:
         start_date: str(YYYY-MM-DD) 또는 date 객체 (훈련 시작일)
@@ -193,6 +196,7 @@ def get_billing_periods(start_date, end_date):
         status: '완료' | '진행중' | '예정'
     """
     import datetime as _dt
+    import calendar
 
     def _to_date(v):
         if isinstance(v, _dt.datetime):
@@ -200,6 +204,14 @@ def get_billing_periods(start_date, end_date):
         if isinstance(v, _dt.date):
             return v
         return _dt.date.fromisoformat(str(v)[:10])
+
+    def _add_one_month(d):
+        """1개월 후 같은 날짜 반환 (월말 초과 시 말일로 클램프)"""
+        month = d.month + 1
+        year = d.year + (month - 1) // 12
+        month = ((month - 1) % 12) + 1
+        max_day = calendar.monthrange(year, month)[1]
+        return _dt.date(year, month, min(d.day, max_day))
 
     start = _to_date(start_date)
     end = _to_date(end_date)
@@ -209,7 +221,8 @@ def get_billing_periods(start_date, end_date):
     period_start = start
     period_num = 1
     while period_start <= end:
-        period_end = min(period_start + _dt.timedelta(days=29), end)
+        next_start = _add_one_month(period_start)
+        period_end = min(next_start - _dt.timedelta(days=1), end)
         if period_end < today:
             status = "완료"
         elif period_start <= today <= period_end:
@@ -224,7 +237,7 @@ def get_billing_periods(start_date, end_date):
             "label": label,
             "status": status,
         })
-        period_start = period_end + _dt.timedelta(days=1)
+        period_start = next_start
         period_num += 1
     return periods
 
