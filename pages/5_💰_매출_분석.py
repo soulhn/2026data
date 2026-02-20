@@ -65,21 +65,26 @@ def build_revenue_df(trpr_id, trpr_degr, start_dt, end_dt):
     att_df = att_df.copy()
     att_df['ATEND_DT'] = pd.to_datetime(att_df['ATEND_DT']).dt.date
 
-    # 출석 인정: 출석·지각·입실중·조퇴·외출·공가·휴가
-    # (3개 합산=결석 규칙은 수료 판정용이며 청구 계산에는 미적용)
-    ATTEND_STATUSES = {'출석', '지각', '입실중', '조퇴', '외출', '공가', '휴가'}
+    # 출석 불인정 상태만 제외 → 나머지 전체 인정
+    # (공가 종류가 다양해서 포함 방식보다 제외 방식이 정확)
+    # - 결석: 단순 결석
+    # - 중도탈락미출석: 탈락 후 출결 없음
+    # - 100분의50미만출석: 훈련시간의 절반 미만 출석
+    NOT_ATTEND_STATUSES = {'결석', '중도탈락미출석', '100분의50미만출석'}
 
     rows = []
     for p in periods:
         mask = (att_df['ATEND_DT'] >= p['start']) & (att_df['ATEND_DT'] <= p['end'])
         period_df = att_df[mask]
 
-        # 훈련일수 = 해당 기간에 실제 수업이 있었던 날짜 수 (공휴일 자동 제외)
-        training_days = period_df['ATEND_DT'].nunique()
+        # 훈련일수: 중도탈락미출석 제외 후 실제 수업이 있었던 날짜 수
+        training_days = period_df[
+            ~period_df['ATEND_STATUS'].isin({'중도탈락미출석'})
+        ]['ATEND_DT'].nunique()
 
         for trnee_id, grp in period_df.groupby('TRNEE_ID'):
             trnee_nm = grp['TRNEE_NM'].iloc[0] if not grp['TRNEE_NM'].isna().all() else trnee_id
-            attend_days = grp[grp['ATEND_STATUS'].isin(ATTEND_STATUSES)]['ATEND_DT'].nunique()
+            attend_days = grp[~grp['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)]['ATEND_DT'].nunique()
             fee, rate, status = calc_revenue(attend_days, training_days)
             rows.append({
                 'TRNEE_ID': trnee_id,
