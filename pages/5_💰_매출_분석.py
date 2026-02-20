@@ -70,7 +70,11 @@ def build_revenue_df(trpr_id, trpr_degr, start_dt, end_dt):
     # - 결석: 단순 결석
     # - 중도탈락미출석: 탈락 후 출결 없음
     # - 100분의50미만출석: 훈련시간의 절반 미만 출석
-    NOT_ATTEND_STATUSES = {'결석', '중도탈락미출석', '100분의50미만출석'}
+    # - 조퇴 계열: 실제 청구 시스템에서 출석 불인정 처리
+    NOT_ATTEND_STATUSES = {
+        '결석', '중도탈락미출석', '100분의50미만출석',
+        '조퇴', '지각&조퇴', '외출&조퇴', '지각&외출&조퇴',
+    }
 
     rows = []
     for p in periods:
