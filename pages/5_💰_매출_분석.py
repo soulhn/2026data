@@ -111,7 +111,6 @@ def build_all_terms_revenue(course_df):
         )
         if rev_df.empty:
             continue
-        total_base = sum(p['end'] - p['start'] for p in periods)  # unused, calc below
         base_fee = sum(
             p['training_days_total'] for p in _enrich_periods(rev_df, periods)
         )
