@@ -35,3 +35,7 @@ CERT_MIN_COURSES = 5
 CERT_EMPL_MIN_COURSES = 10
 TOP_CERTS_LIMIT = 20
 RECENT_TREND_DAYS = 10
+
+# ── 매출 분석 상수 ──
+DAILY_TRAINING_FEE = 145_200        # 일 훈련비 단가 (원)
+REVENUE_FULL_THRESHOLD = 0.80       # 전액 청구 최소 출석률
