@@ -31,15 +31,24 @@ def load_course_list():
 
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def load_all_attendance(trpr_id, trpr_degr):
-    """과정 전체 출결 로그 1회 쿼리"""
-    return load_data(
-        "SELECT a.TRNEE_ID, t.TRNEE_NM, a.ATEND_DT, a.ATEND_STATUS "
-        "FROM TB_ATTENDANCE_LOG a "
-        "LEFT JOIN TB_TRAINEE_INFO t "
-        "  ON a.TRNEE_ID = t.TRNEE_ID AND a.TRPR_ID = t.TRPR_ID AND a.TRPR_DEGR = t.TRPR_DEGR "
-        "WHERE a.TRPR_ID = ? AND a.TRPR_DEGR = ?",
+    """과정 전체 출결 로그 1회 쿼리 (JOIN 대신 Python merge로 이름 결합)"""
+    att_df = load_data(
+        "SELECT TRNEE_ID, ATEND_DT, ATEND_STATUS "
+        "FROM TB_ATTENDANCE_LOG "
+        "WHERE TRPR_ID = ? AND TRPR_DEGR = ?",
         params=[trpr_id, trpr_degr],
     )
+    trainee_df = load_data(
+        "SELECT TRNEE_ID, TRNEE_NM "
+        "FROM TB_TRAINEE_INFO "
+        "WHERE TRPR_ID = ? AND TRPR_DEGR = ?",
+        params=[trpr_id, trpr_degr],
+    )
+    if not att_df.empty and not trainee_df.empty:
+        att_df = att_df.merge(trainee_df[['TRNEE_ID', 'TRNEE_NM']], on='TRNEE_ID', how='left')
+    elif not att_df.empty:
+        att_df['TRNEE_NM'] = att_df['TRNEE_ID']
+    return att_df
 
 
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
