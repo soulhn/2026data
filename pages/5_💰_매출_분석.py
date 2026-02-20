@@ -65,9 +65,9 @@ def build_revenue_df(trpr_id, trpr_degr, start_dt, end_dt):
     att_df = att_df.copy()
     att_df['ATEND_DT'] = pd.to_datetime(att_df['ATEND_DT']).dt.date
 
-    # 출석 인정: 출석, 지각, 입실중, 공가, 휴가
-    # 조퇴/외출은 3개 합산 = 결석 1회 규칙 적용 여부 불명확 → 별도 처리
-    ATTEND_STATUSES = {'출석', '지각', '입실중', '공가', '휴가'}
+    # 출석 인정: 출석·지각·입실중·조퇴·외출·공가·휴가
+    # (3개 합산=결석 규칙은 수료 판정용이며 청구 계산에는 미적용)
+    ATTEND_STATUSES = {'출석', '지각', '입실중', '조퇴', '외출', '공가', '휴가'}
 
     rows = []
     for p in periods:
