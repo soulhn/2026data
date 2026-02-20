@@ -178,3 +178,84 @@ def safe_int(val, default=None):
         return int(val)
     except (ValueError, TypeError):
         return default
+
+
+def get_billing_periods(start_date, end_date):
+    """개강일 기준 30일 단위 청구 기간 목록 반환.
+
+    Args:
+        start_date: str(YYYY-MM-DD) 또는 date 객체 (훈련 시작일)
+        end_date:   str(YYYY-MM-DD) 또는 date 객체 (훈련 종료일)
+
+    Returns:
+        list[dict]: [{'period_num':1, 'start':date, 'end':date,
+                      'label':str, 'status':str}, ...]
+        status: '완료' | '진행중' | '예정'
+    """
+    import datetime as _dt
+
+    def _to_date(v):
+        if isinstance(v, _dt.datetime):
+            return v.date()
+        if isinstance(v, _dt.date):
+            return v
+        return _dt.date.fromisoformat(str(v)[:10])
+
+    start = _to_date(start_date)
+    end = _to_date(end_date)
+    today = _dt.date.today()
+
+    periods = []
+    period_start = start
+    period_num = 1
+    while period_start <= end:
+        period_end = min(period_start + _dt.timedelta(days=29), end)
+        if period_end < today:
+            status = "완료"
+        elif period_start <= today <= period_end:
+            status = "진행중"
+        else:
+            status = "예정"
+        label = f"{period_num}단위 ({period_start.strftime('%m/%d')}~{period_end.strftime('%m/%d')})"
+        periods.append({
+            "period_num": period_num,
+            "start": period_start,
+            "end": period_end,
+            "label": label,
+            "status": status,
+        })
+        period_start = period_end + _dt.timedelta(days=1)
+        period_num += 1
+    return periods
+
+
+def calc_revenue(attend_days, training_days):
+    """단위기간 수강생 매출 계산.
+
+    Args:
+        attend_days:   해당 기간 출석 일수 (출석+지각+입실중, 조퇴 제외)
+        training_days: 해당 기간 총 훈련일수 (공휴일 제외 실제 수업일)
+
+    Returns:
+        tuple: (fee:int, rate:float, status:str)
+        status: '전액' | '비례' | '미청구' | '해당없음'
+    """
+    from config import DAILY_TRAINING_FEE, REVENUE_FULL_THRESHOLD
+
+    if training_days <= 0:
+        return (0, 0.0, "해당없음")
+
+    rate = round(attend_days / training_days, 3)
+    full_fee = training_days * DAILY_TRAINING_FEE
+
+    if rate >= REVENUE_FULL_THRESHOLD:
+        fee = full_fee
+        status = "전액"
+    elif rate > 0:
+        fee = int(full_fee * rate)
+        status = "비례"
+    else:
+        fee = 0
+        status = "미청구"
+
+    return (fee, rate, status)
