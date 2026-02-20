@@ -65,16 +65,15 @@ def build_revenue_df(trpr_id, trpr_degr, start_dt, end_dt):
     att_df = att_df.copy()
     att_df['ATEND_DT'] = pd.to_datetime(att_df['ATEND_DT']).dt.date
 
-    # 출석 불인정 상태만 제외 → 나머지 전체 인정
+    # 출석 불인정 상태만 제외 → 나머지 전체 출석으로 인정
     # (공가 종류가 다양해서 포함 방식보다 제외 방식이 정확)
-    # - 결석: 단순 결석
-    # - 중도탈락미출석: 탈락 후 출결 없음
-    # - 100분의50미만출석: 훈련시간의 절반 미만 출석
-    # - 조퇴 계열: 실제 청구 시스템에서 출석 불인정 처리
-    NOT_ATTEND_STATUSES = {
-        '결석', '중도탈락미출석', '100분의50미만출석',
-        '조퇴', '지각&조퇴', '외출&조퇴', '지각&외출&조퇴',
-    }
+    NOT_ATTEND_STATUSES = {'결석', '중도탈락미출석', '100분의50미만출석'}
+
+    def _penalty(status) -> int:
+        """지각/조퇴/외출 패널티 포인트 반환. 3개 누적 = 가상 결석 1일."""
+        if not isinstance(status, str):
+            return 0
+        return ('지각' in status) + ('조퇴' in status) + ('외출' in status)
 
     rows = []
     for p in periods:
@@ -88,7 +87,11 @@ def build_revenue_df(trpr_id, trpr_degr, start_dt, end_dt):
 
         for trnee_id, grp in period_df.groupby('TRNEE_ID'):
             trnee_nm = grp['TRNEE_NM'].iloc[0] if not grp['TRNEE_NM'].isna().all() else trnee_id
-            attend_days = grp[~grp['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)]['ATEND_DT'].nunique()
+            present = grp[~grp['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)]
+            base_attend = present['ATEND_DT'].nunique()
+            # 지각+조퇴+외출 3개 누적 → 가상 결석 1일 차감
+            penalty = int(present['ATEND_STATUS'].apply(_penalty).sum())
+            attend_days = max(0, base_attend - penalty // 3)
             fee, rate, status = calc_revenue(attend_days, training_days)
             rows.append({
                 'TRNEE_ID': trnee_id,
