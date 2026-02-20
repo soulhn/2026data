@@ -32,6 +32,9 @@ def load_course_list():
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def load_all_attendance(trpr_id, trpr_degr):
     """과정 전체 출결 로그 1회 쿼리 (JOIN 대신 Python merge로 이름 결합)"""
+    # numpy.int64 → Python int 변환 (psycopg2 호환)
+    trpr_id = str(trpr_id)
+    trpr_degr = int(trpr_degr)
     att_df = load_data(
         "SELECT TRNEE_ID, ATEND_DT, ATEND_STATUS "
         "FROM TB_ATTENDANCE_LOG "
@@ -103,7 +106,8 @@ def build_all_terms_revenue(course_df):
     results = []
     for _, row in course_df.iterrows():
         rev_df, periods = build_revenue_df(
-            row['TRPR_ID'], row['TRPR_DEGR'], row['TR_STA_DT'], row['TR_END_DT']
+            str(row['TRPR_ID']), int(row['TRPR_DEGR']),
+            str(row['TR_STA_DT']), str(row['TR_END_DT'])
         )
         if rev_df.empty:
             continue
@@ -188,10 +192,10 @@ if mode == "개별 기수 분석":
             f"**기간:** {sel_row['TR_STA_DT']} ~ {sel_row['TR_END_DT']}"
         )
 
-    trpr_id = sel_row['TRPR_ID']
-    trpr_degr = sel_row['TRPR_DEGR']
-    start_dt = sel_row['TR_STA_DT']
-    end_dt = sel_row['TR_END_DT']
+    trpr_id = str(sel_row['TRPR_ID'])
+    trpr_degr = int(sel_row['TRPR_DEGR'])
+    start_dt = str(sel_row['TR_STA_DT'])
+    end_dt = str(sel_row['TR_END_DT'])
 
     rev_df, periods = build_revenue_df(trpr_id, trpr_degr, start_dt, end_dt)
     periods = _enrich_periods(rev_df, periods)
