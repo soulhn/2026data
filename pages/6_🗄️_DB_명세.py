@@ -3,14 +3,14 @@ import pandas as pd
 import sys, os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, load_data, is_pg, DB_FILE
+from utils import check_password, load_data, is_pg, DB_FILE, get_connection
 from config import CACHE_TTL_DEFAULT
 
 st.set_page_config(page_title="DB 명세", page_icon="🗄️", layout="wide")
 check_password()
 
 st.title("🗄️ DB 명세 & 데이터 현황")
-st.caption("테이블 구조 및 실제 데이터 분포를 확인합니다.")
+st.caption("테이블 구조, 컬럼별 채움률, 실제 데이터 분포를 확인합니다.")
 
 db_label = "PostgreSQL (Supabase)" if is_pg() else f"SQLite ({DB_FILE})"
 st.info(f"현재 연결: **{db_label}**")
@@ -18,7 +18,7 @@ st.divider()
 
 
 # ==========================================
-# 스키마 정의 (하드코딩)
+# 스키마 정의 (컬럼명, 타입, 설명)
 # ==========================================
 SCHEMAS = {
     "TB_COURSE_MASTER": {
@@ -66,7 +66,7 @@ SCHEMAS = {
         ],
     },
     "TB_ATTENDANCE_LOG": {
-        "설명": "출결 로그. 훈련생별 날짜별 출결 상세. UNIQUE(과정ID, 회차, 훈련생ID, 날짜).",
+        "설명": "출결 로그. 훈련생별 날짜별 출결 상세.",
         "PK": "UNIQUE(TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT)",
         "columns": [
             ("TRPR_ID",         "TEXT",      "훈련과정 ID"),
@@ -85,195 +85,275 @@ SCHEMAS = {
         "설명": "시장 동향. HRD-Net API에서 수집한 전국 KDT 과정 정보 (30만건+).",
         "PK": "(TRPR_ID, TRPR_DEGR)",
         "columns": [
-            ("TRPR_ID",          "TEXT",    "훈련과정 ID"),
-            ("TRPR_DEGR",        "INTEGER", "훈련 회차"),
-            ("TRPR_NM",          "TEXT",    "과정명"),
-            ("TRAINST_NM",       "TEXT",    "훈련기관명"),
-            ("TR_STA_DT",        "TEXT",    "훈련 시작일 (YYYY-MM-DD)"),
-            ("TR_END_DT",        "TEXT",    "훈련 종료일"),
-            ("NCS_CD",           "TEXT",    "NCS 직종 코드"),
-            ("TRNG_AREA_CD",     "TEXT",    "지역 코드 (중분류)"),
-            ("TOT_FXNUM",        "INTEGER", "정원"),
-            ("TOT_TRCO",         "REAL",    "실제 훈련비 (원)"),
-            ("COURSE_MAN",       "REAL",    "수강비 (원)"),
-            ("REG_COURSE_MAN",   "INTEGER", "수강신청인원"),
-            ("EI_EMPL_RATE_3",   "REAL",    "3개월 고용보험 취업률 (%)"),
-            ("EI_EMPL_RATE_6",   "REAL",    "6개월 고용보험 취업률 (%)"),
-            ("EI_EMPL_CNT_3",    "INTEGER", "3개월 취업인원"),
-            ("STDG_SCOR",        "REAL",    "만족도 점수"),
-            ("GRADE",            "TEXT",    "기관 등급 (현재 API 미제공)"),
-            ("CERTIFICATE",      "TEXT",    "연계 자격증 목록"),
-            ("ADDRESS",          "TEXT",    "훈련기관 주소"),
-            ("TRAIN_TARGET",     "TEXT",    "훈련 유형 (K-디지털 트레이닝 등)"),
-            ("WKEND_SE",         "TEXT",    "주말/주중 구분"),
-            ("YEAR_MONTH",       "TEXT",    "개설 연월 파생 (YYYY-MM)"),
-            ("REGION",           "TEXT",    "지역 파생 (ADDRESS 첫 단어)"),
+            ("TRPR_ID",          "TEXT",      "훈련과정 ID"),
+            ("TRPR_DEGR",        "INTEGER",   "훈련 회차"),
+            ("TRPR_NM",          "TEXT",      "과정명"),
+            ("TRAINST_NM",       "TEXT",      "훈련기관명"),
+            ("TR_STA_DT",        "TEXT",      "훈련 시작일 (YYYY-MM-DD)"),
+            ("TR_END_DT",        "TEXT",      "훈련 종료일"),
+            ("NCS_CD",           "TEXT",      "NCS 직종 코드"),
+            ("TRNG_AREA_CD",     "TEXT",      "지역 코드 (중분류)"),
+            ("TOT_FXNUM",        "INTEGER",   "정원"),
+            ("TOT_TRCO",         "REAL",      "실제 훈련비 (원)"),
+            ("COURSE_MAN",       "REAL",      "수강비 (원)"),
+            ("REG_COURSE_MAN",   "INTEGER",   "수강신청인원"),
+            ("EI_EMPL_RATE_3",   "REAL",      "3개월 고용보험 취업률 (%)"),
+            ("EI_EMPL_RATE_6",   "REAL",      "6개월 고용보험 취업률 (%)"),
+            ("EI_EMPL_CNT_3",    "INTEGER",   "3개월 취업인원"),
+            ("EI_EMPL_CNT_3_GT10", "TEXT",    "3개월 취업 10인 미만 여부 (Y/N)"),
+            ("STDG_SCOR",        "REAL",      "만족도 점수"),
+            ("GRADE",            "TEXT",      "기관 등급"),
+            ("CERTIFICATE",      "TEXT",      "연계 자격증 목록"),
+            ("CONTENTS",         "TEXT",      "과정 내용"),
+            ("ADDRESS",          "TEXT",      "훈련기관 주소"),
+            ("TEL_NO",           "TEXT",      "전화번호"),
+            ("INST_INO",         "TEXT",      "기관 코드"),
+            ("TRAINST_CST_ID",   "TEXT",      "기관 ID"),
+            ("TRAIN_TARGET",     "TEXT",      "훈련 유형 (K-디지털 트레이닝 등)"),
+            ("TRAIN_TARGET_CD",  "TEXT",      "훈련 유형 코드"),
+            ("WKEND_SE",         "TEXT",      "주말/주중 구분"),
+            ("TITLE_ICON",       "TEXT",      "아이콘"),
+            ("TITLE_LINK",       "TEXT",      "과정 링크"),
+            ("SUB_TITLE_LINK",   "TEXT",      "부제목 링크"),
+            ("YEAR_MONTH",       "TEXT",      "개설 연월 파생 (YYYY-MM)"),
+            ("REGION",           "TEXT",      "지역 파생 (ADDRESS 첫 단어)"),
             ("COLLECTED_AT",     "TIMESTAMP", "수집 시각"),
         ],
     },
     "TB_MARKET_CACHE": {
-        "설명": "시장 집계 캐시. market_etl.py 완료 후 10개 집계를 JSON으로 저장. 시장 분析 페이지 무필터 조회 시 즉시 반환.",
+        "설명": "시장 집계 캐시. market_etl.py 완료 후 10개 집계를 JSON으로 저장.",
         "PK": "CACHE_KEY (TEXT)",
         "columns": [
-            ("CACHE_KEY",    "TEXT",      "집계 식별자 (kpi / monthly_counts / region_counts 등)"),
-            ("CACHE_DATA",   "TEXT",      "집계 결과 JSON (DataFrame rows)"),
-            ("COMPUTED_AT",  "TIMESTAMP", "마지막 계산 시각"),
+            ("CACHE_KEY",   "TEXT",      "집계 식별자"),
+            ("CACHE_DATA",  "TEXT",      "집계 결과 JSON"),
+            ("COMPUTED_AT", "TIMESTAMP", "마지막 계산 시각"),
         ],
     },
 }
 
+# 예시값 조회 대상 컬럼 (자유값/장문 제외)
+SAMPLE_COLS = {
+    "TB_MARKET_TREND":   ["TRAIN_TARGET", "WKEND_SE", "GRADE", "NCS_CD", "REGION", "TRAIN_TARGET_CD"],
+    "TB_TRAINEE_INFO":   ["TRNEE_STATUS", "TRNEE_TYPE"],
+    "TB_ATTENDANCE_LOG": ["ATEND_STATUS", "ATEND_STATUS_CD", "DAY_NM"],
+    "TB_COURSE_MASTER":  ["EI_EMPL_RATE_3", "EI_EMPL_RATE_6", "HRD_EMPL_RATE_6"],
+    "TB_MARKET_CACHE":   ["CACHE_KEY"],
+}
+
 
 # ==========================================
-# 데이터 통계 로드
+# 데이터 품질 로드 (테이블당 단일 쿼리)
 # ==========================================
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
-def load_db_stats():
-    s = {}
+def load_fill_rates():
+    """각 테이블의 컬럼별 채움률(%) 계산. 테이블당 쿼리 1개."""
+    out = {}
+    for tbl, info in SCHEMAS.items():
+        exprs = []
+        for col, dtype, _ in info["columns"]:
+            if dtype == "TEXT":
+                exprs.append(
+                    f"ROUND(SUM(CASE WHEN {col} IS NOT NULL AND {col} != '' THEN 1.0 ELSE 0 END) * 100.0 / COUNT(*), 1) AS \"{col}\""
+                )
+            else:
+                exprs.append(
+                    f"ROUND(SUM(CASE WHEN {col} IS NOT NULL THEN 1.0 ELSE 0 END) * 100.0 / COUNT(*), 1) AS \"{col}\""
+                )
+        sql = f"SELECT COUNT(*) AS _TOTAL, {', '.join(exprs)} FROM {tbl}"
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute(sql)
+            row = cur.fetchone()
+            desc = [d[0].upper() for d in cur.description]
+            conn.close()
+            if row:
+                total = int(row[0]) if row[0] else 0
+                rates = {desc[i]: (float(row[i]) if row[i] is not None else 0.0)
+                         for i in range(1, len(desc))}
+                out[tbl] = {"_total": total, **rates}
+        except Exception as e:
+            out[tbl] = {"_error": str(e)}
+    return out
 
-    # 테이블별 건수
+
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
+def load_sample_values():
+    """지정된 카테고리 컬럼의 실제 고유값 목록 조회."""
+    out = {}
+    conn = get_connection()
+    cur = conn.cursor()
+    for tbl, cols in SAMPLE_COLS.items():
+        out[tbl] = {}
+        for col in cols:
+            try:
+                cur.execute(
+                    f"SELECT DISTINCT {col} FROM {tbl} "
+                    f"WHERE {col} IS NOT NULL AND {col} != '' "
+                    f"ORDER BY {col} LIMIT 10"
+                )
+                out[tbl][col] = [str(r[0]) for r in cur.fetchall()]
+            except Exception:
+                out[tbl][col] = []
+    conn.close()
+    return out
+
+
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
+def load_db_counts():
+    s = {}
     for tbl in SCHEMAS:
         try:
             df = load_data(f"SELECT COUNT(*) as CNT FROM {tbl}")
-            s[f"cnt_{tbl}"] = int(df["CNT"].iloc[0]) if not df.empty else 0
+            s[tbl] = int(df["CNT"].iloc[0]) if not df.empty else 0
         except Exception:
-            s[f"cnt_{tbl}"] = None
+            s[tbl] = None
 
-    # TB_MARKET_TREND 분포
-    s["market_type"] = load_data("""
-        SELECT TRAIN_TARGET as 훈련유형, COUNT(*) as 건수
-        FROM TB_MARKET_TREND
-        WHERE TRAIN_TARGET IS NOT NULL AND TRAIN_TARGET != ''
-        GROUP BY TRAIN_TARGET ORDER BY 건수 DESC
-    """)
-    s["market_region"] = load_data("""
-        SELECT REGION as 지역, COUNT(*) as 건수
-        FROM TB_MARKET_TREND
-        WHERE REGION IS NOT NULL AND REGION != ''
-        GROUP BY REGION ORDER BY 건수 DESC
-    """)
-    s["market_year"] = load_data("""
-        SELECT SUBSTR(YEAR_MONTH, 1, 4) as 연도, COUNT(*) as 건수
-        FROM TB_MARKET_TREND
-        WHERE YEAR_MONTH IS NOT NULL
-        GROUP BY SUBSTR(YEAR_MONTH, 1, 4) ORDER BY 연도
-    """)
-
-    # TB_COURSE_MASTER 분포
-    s["course_year"] = load_data("""
-        SELECT SUBSTR(TR_STA_DT, 1, 4) as 연도, COUNT(*) as 기수
-        FROM TB_COURSE_MASTER
-        GROUP BY SUBSTR(TR_STA_DT, 1, 4) ORDER BY 연도
-    """)
-
-    # TB_ATTENDANCE_LOG 출결 상태별
-    s["attend_status"] = load_data("""
-        SELECT ATEND_STATUS as 출결상태, COUNT(*) as 건수
-        FROM TB_ATTENDANCE_LOG
-        GROUP BY ATEND_STATUS ORDER BY 건수 DESC
-    """)
-
-    # TB_TRAINEE_INFO 훈련생 상태별
-    s["trainee_status"] = load_data("""
-        SELECT TRNEE_STATUS as 훈련생상태, COUNT(*) as 건수
-        FROM TB_TRAINEE_INFO
-        GROUP BY TRNEE_STATUS ORDER BY 건수 DESC
-    """)
-
-    # TB_MARKET_CACHE 항목
-    s["cache_items"] = load_data("""
-        SELECT CACHE_KEY as 캐시키, COMPUTED_AT as 계산시각
-        FROM TB_MARKET_CACHE ORDER BY CACHE_KEY
-    """)
-
+    s["market_type"]   = load_data("SELECT TRAIN_TARGET as 훈련유형, COUNT(*) as 건수 FROM TB_MARKET_TREND WHERE TRAIN_TARGET IS NOT NULL AND TRAIN_TARGET != '' GROUP BY TRAIN_TARGET ORDER BY 건수 DESC")
+    s["market_region"] = load_data("SELECT REGION as 지역, COUNT(*) as 건수 FROM TB_MARKET_TREND WHERE REGION IS NOT NULL AND REGION != '' GROUP BY REGION ORDER BY 건수 DESC")
+    s["market_year"]   = load_data("SELECT SUBSTR(YEAR_MONTH,1,4) as 연도, COUNT(*) as 건수 FROM TB_MARKET_TREND WHERE YEAR_MONTH IS NOT NULL GROUP BY SUBSTR(YEAR_MONTH,1,4) ORDER BY 연도")
+    s["course_year"]   = load_data("SELECT SUBSTR(TR_STA_DT,1,4) as 연도, COUNT(*) as 기수 FROM TB_COURSE_MASTER GROUP BY SUBSTR(TR_STA_DT,1,4) ORDER BY 연도")
+    s["attend_status"] = load_data("SELECT ATEND_STATUS as 출결상태, COUNT(*) as 건수 FROM TB_ATTENDANCE_LOG GROUP BY ATEND_STATUS ORDER BY 건수 DESC")
+    s["trainee_status"]= load_data("SELECT TRNEE_STATUS as 훈련생상태, COUNT(*) as 건수 FROM TB_TRAINEE_INFO GROUP BY TRNEE_STATUS ORDER BY 건수 DESC")
+    s["cache_items"]   = load_data("SELECT CACHE_KEY as 캐시키, COMPUTED_AT as 계산시각 FROM TB_MARKET_CACHE ORDER BY CACHE_KEY")
     return s
 
 
 with st.spinner("DB 통계 로드 중..."):
-    stats = load_db_stats()
+    fill_rates  = load_fill_rates()
+    sample_vals = load_sample_values()
+    counts      = load_db_counts()
 
 
 # ==========================================
-# 테이블 개요 요약
+# 테이블 개요
 # ==========================================
 st.subheader("📊 테이블 개요")
-overview_rows = []
+overview = []
 for tbl, info in SCHEMAS.items():
-    cnt = stats.get(f"cnt_{tbl}")
-    cnt_str = f"{cnt:,}건" if cnt is not None else "오류"
-    overview_rows.append({"테이블": tbl, "용도": info["설명"].split(".")[0], "PK": info["PK"], "데이터 건수": cnt_str})
-
-st.dataframe(pd.DataFrame(overview_rows), hide_index=True, use_container_width=True)
+    cnt = counts.get(tbl)
+    tbl_fill = fill_rates.get(tbl, {})
+    col_total = len(info["columns"])
+    # 채움률 80% 이상 컬럼 수
+    good_cols = sum(1 for c, _, _ in info["columns"] if tbl_fill.get(c, 0) >= 80)
+    overview.append({
+        "테이블": tbl,
+        "용도": info["설명"].split(".")[0],
+        "PK": info["PK"],
+        "레코드 수": f"{cnt:,}건" if cnt is not None else "오류",
+        "컬럼 수": col_total,
+        "채움 양호(≥80%)": f"{good_cols}/{col_total}",
+    })
+st.dataframe(pd.DataFrame(overview), hide_index=True, use_container_width=True)
 st.divider()
 
 
 # ==========================================
 # 테이블별 상세
 # ==========================================
+def fill_indicator(pct):
+    if pct >= 95:   return "🟢"
+    elif pct >= 50: return "🟡"
+    elif pct > 0:   return "🔴"
+    else:           return "⚫"   # 완전 없음
+
+
 st.subheader("📋 테이블 상세")
 tabs = st.tabs(list(SCHEMAS.keys()))
 
 for tab, (tbl_name, info) in zip(tabs, SCHEMAS.items()):
     with tab:
-        cnt = stats.get(f"cnt_{tbl_name}")
-        cnt_str = f"{cnt:,}건" if cnt is not None else "조회 오류"
+        cnt = counts.get(tbl_name)
+        cnt_str = f"{cnt:,}건" if cnt is not None else "오류"
+        tbl_fill  = fill_rates.get(tbl_name, {})
+        tbl_samp  = sample_vals.get(tbl_name, {})
 
-        col_info, col_stat = st.columns([1, 1])
+        st.markdown(f"**{info['설명']}**")
+        st.markdown(f"PK: `{info['PK']}` · 총 레코드: **{cnt_str}**")
+        st.caption("🟢 ≥95%  🟡 50~94%  🔴 1~49%  ⚫ 0% (값 없음)")
 
-        with col_info:
-            st.markdown(f"**설명**: {info['설명']}")
-            st.markdown(f"**PK**: `{info['PK']}`")
-            st.metric("총 레코드", cnt_str)
-            st.markdown("**컬럼 목록**")
-            schema_df = pd.DataFrame(info["columns"], columns=["컬럼명", "타입", "설명"])
-            st.dataframe(schema_df, hide_index=True, use_container_width=True, height=350)
+        # 컬럼 상세 테이블
+        rows = []
+        for col, dtype, desc in info["columns"]:
+            pct = tbl_fill.get(col)
+            if pct is None:
+                indicator, pct_disp = "❓", None
+            else:
+                indicator = fill_indicator(pct)
+                pct_disp  = pct
 
-        with col_stat:
-            st.markdown("**데이터 분포**")
+            # 예시값
+            samp = tbl_samp.get(col, [])
+            if samp:
+                samp_str = " / ".join(samp[:6])
+            elif pct_disp == 0.0:
+                samp_str = "— API 미제공"
+            else:
+                samp_str = ""
 
-            if tbl_name == "TB_MARKET_TREND":
+            rows.append({
+                " ":         indicator,
+                "컬럼명":    col,
+                "타입":      dtype,
+                "설명":      desc,
+                "채움률(%)": pct_disp,
+                "예시값":    samp_str,
+            })
+
+        schema_df = pd.DataFrame(rows)
+        st.dataframe(
+            schema_df,
+            column_config={
+                " ":          st.column_config.TextColumn(" ", width="small"),
+                "채움률(%)":  st.column_config.ProgressColumn(
+                    "채움률(%)", format="%.1f%%", min_value=0, max_value=100
+                ),
+                "예시값":     st.column_config.TextColumn("예시값", width="large"),
+            },
+            hide_index=True,
+            use_container_width=True,
+            height=min(80 + len(rows) * 35, 550),
+        )
+
+        # 데이터 분포
+        st.divider()
+        st.markdown("**데이터 분포**")
+
+        if tbl_name == "TB_MARKET_TREND":
+            c1, c2, c3 = st.columns(3)
+            with c1:
                 st.markdown("*훈련 유형별*")
-                df_type = stats.get("market_type", pd.DataFrame())
-                if not df_type.empty:
-                    st.dataframe(df_type, hide_index=True, use_container_width=True)
-
+                df = counts.get("market_type", pd.DataFrame())
+                if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+            with c2:
                 st.markdown("*연도별 개설 수*")
-                df_year = stats.get("market_year", pd.DataFrame())
-                if not df_year.empty:
-                    st.dataframe(df_year, hide_index=True, use_container_width=True)
-
+                df = counts.get("market_year", pd.DataFrame())
+                if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+            with c3:
                 st.markdown("*지역별*")
-                df_reg = stats.get("market_region", pd.DataFrame())
-                if not df_reg.empty:
-                    st.dataframe(df_reg, hide_index=True, use_container_width=True)
+                df = counts.get("market_region", pd.DataFrame())
+                if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
 
-            elif tbl_name == "TB_COURSE_MASTER":
-                st.markdown("*연도별 기수*")
-                df_cy = stats.get("course_year", pd.DataFrame())
-                if not df_cy.empty:
-                    st.dataframe(df_cy, hide_index=True, use_container_width=True)
-                else:
-                    st.caption("데이터 없음")
+        elif tbl_name == "TB_COURSE_MASTER":
+            df = counts.get("course_year", pd.DataFrame())
+            st.markdown("*연도별 기수*")
+            if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+            else: st.caption("데이터 없음")
 
-            elif tbl_name == "TB_ATTENDANCE_LOG":
-                st.markdown("*출결 상태별*")
-                df_as = stats.get("attend_status", pd.DataFrame())
-                if not df_as.empty:
-                    st.dataframe(df_as, hide_index=True, use_container_width=True)
-                else:
-                    st.caption("데이터 없음")
+        elif tbl_name == "TB_ATTENDANCE_LOG":
+            df = counts.get("attend_status", pd.DataFrame())
+            st.markdown("*출결 상태별*")
+            if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+            else: st.caption("데이터 없음")
 
-            elif tbl_name == "TB_TRAINEE_INFO":
-                st.markdown("*훈련생 상태별*")
-                df_ts = stats.get("trainee_status", pd.DataFrame())
-                if not df_ts.empty:
-                    st.dataframe(df_ts, hide_index=True, use_container_width=True)
-                else:
-                    st.caption("데이터 없음")
+        elif tbl_name == "TB_TRAINEE_INFO":
+            df = counts.get("trainee_status", pd.DataFrame())
+            st.markdown("*훈련생 상태별*")
+            if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+            else: st.caption("데이터 없음")
 
-            elif tbl_name == "TB_MARKET_CACHE":
-                st.markdown("*캐시 항목 목록*")
-                df_ci = stats.get("cache_items", pd.DataFrame())
-                if not df_ci.empty:
-                    st.dataframe(df_ci, hide_index=True, use_container_width=True)
-                else:
-                    st.warning("캐시가 비어 있습니다. market_etl.py를 실행하세요.")
+        elif tbl_name == "TB_MARKET_CACHE":
+            df = counts.get("cache_items", pd.DataFrame())
+            st.markdown("*캐시 항목 목록*")
+            if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+            else: st.warning("캐시가 비어 있습니다. market_etl.py를 실행하세요.")
