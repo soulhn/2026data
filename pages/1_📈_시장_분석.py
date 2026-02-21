@@ -572,11 +572,11 @@ where, params = build_where_clause(
 # ==========================================
 # 3. 메인 대시보드
 # ==========================================
-with st.status("📊 시장 데이터 분析 중...", expanded=True) as _ld:
+with st.status("📊 시장 데이터 분석 중...", expanded=True) as _ld:
     _ld.write("🔢 기본 지표 집계 중 (30만건+ 대상)...")
     kpi_df = load_kpi_data(where, params)
     total_count = int(kpi_df['CNT'].iloc[0]) if not kpi_df.empty else 0
-    _ld.update(label=f"✅ {total_count:,}건 분析 완료", state="complete", expanded=False)
+    _ld.update(label=f"✅ {total_count:,}건 분석 완료", state="complete", expanded=False)
 
 st.title(f"📈 IT 훈련 시장 상세 분석 ({total_count:,}건)")
 st.markdown("---")
@@ -1319,7 +1319,7 @@ with tabs[11]:
     st.subheader("📍 지역별 수요-공급 갭")
     st.caption("좌상단(과정 적고 모집률 높음) = 공급 부족 지역 → 신규 진입 기회")
 
-    with st.spinner("📍 지역별 수요-공급 갭 분析 중..."):
+    with st.spinner("📍 지역별 수요-공급 갭 분석 중..."):
         region_opp = load_region_opp(where, params)
     if not region_opp.empty:
         for col in ['과정수', '총신청인원', '평균모집률', '평균취업률']:
@@ -1361,7 +1361,7 @@ with tabs[11]:
     st.subheader("📈 성장 중인 NCS 분야")
     st.caption("최근 6개월 개설 수 증가율 (이전 6개월 대비) — 빠르게 성장하는 분야 = 선제 진입 기회")
 
-    with st.spinner("📈 NCS 성장 분야 분析 중..."):
+    with st.spinner("📈 NCS 성장 분야 분석 중..."):
         ncs_growth = load_ncs_growth(where, params)
     if not ncs_growth.empty:
         col_g1, col_g2 = st.columns(2)
@@ -1399,7 +1399,7 @@ with tabs[11]:
     st.subheader("🎯 고성과·저경쟁 NCS 기회 매트릭스")
     st.caption("좌상단(경쟁 적고 취업률 높음) = 신규 진입 최적 영역. 버블 크기 = 모집률")
 
-    with st.spinner("🎯 NCS 기회 매트릭스 분析 중..."):
+    with st.spinner("🎯 NCS 기회 매트릭스 분석 중..."):
         ncs_mat = load_ncs_opp_matrix(where, params)
     if not ncs_mat.empty:
         for col in ['경쟁과정수', '평균취업률', '평균모집률']:
