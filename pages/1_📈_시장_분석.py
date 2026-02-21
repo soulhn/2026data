@@ -695,7 +695,7 @@ if not kpi_df.empty:
 
     avg_empl = kpi_df['AVG_EMPL'].iloc[0]
     if pd.isna(avg_empl):
-        c4.metric("평균 취업률", "-")
+        c4.metric("평균 취업률", "미제공", help="선택된 훈련 유형은 HRD-Net에서 취업률을 제공하지 않습니다.")
     else:
         c4.metric("평균 취업률", f"{avg_empl:.1f}%")
 
