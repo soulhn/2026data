@@ -60,7 +60,41 @@ def get_today_attendance():
     return load_data(query, params=[today_str])
 
 
+def _render_project_intro():
+    st.markdown("## HRD 교육성과 분석 시스템")
+    st.markdown("`Python` `Streamlit` `PostgreSQL` `GitHub Actions`")
+    st.caption("한화시스템 BEYOND SW캠프 | K-Digital Training B2G 교육사업 | 2023.07 ~ 현재")
+    st.divider()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**🔴 해결한 문제**")
+        st.markdown("""
+- 출결·수료 데이터 수작업 집계 → 보고 **반나절 소요**
+- 위험군(이탈 징후) 감지 **수일 지연**
+- 수강생 1명 탈락 시 최대 **1,742만원** 매출 손실
+        """)
+    with col2:
+        st.markdown("**🟢 구축한 것**")
+        st.markdown("""
+- HRD-Net API 자동 ETL (GitHub Actions, 평일 매시간)
+- 위험군 **당일 자동 감지** · 즉시 대응 체계
+- 전국 KDT **30만건+** 기반 시장 경쟁 분석
+        """)
+
+    st.divider()
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("총 운영 기수", "25기", "2023.07 ~ 현재")
+    m2.metric("전국 순위 (2024)", "14위", "611개 중 · 상위 2.3%")
+    m3.metric("전국 순위 (2025)", "22위", "561개 중 · 상위 3.9%")
+    m4.metric("부서 영업이익", "13.3억", "+325%")
+
+    st.divider()
+
+
 def render_dashboard():
+    _render_project_intro()
     check_password()
 
     try:
