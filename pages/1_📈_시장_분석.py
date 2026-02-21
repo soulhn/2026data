@@ -1163,7 +1163,7 @@ with tabs[3]:
             st.info("기관 분석 데이터가 없습니다.")
 
 # ─────────────────────────────────────────
-# [Tab 4] 📊 취업률 分析
+# [Tab 4] 📊 취업률 분석
 # ─────────────────────────────────────────
 with tabs[4]:
     if no_empl_data:
@@ -1213,7 +1213,7 @@ with tabs[4]:
         st.divider()
 
         # §3: 비용-취업률 산점도
-        st.subheader("💸 훈련비 vs 취업률 상관관계 分析")
+        st.subheader("💸 훈련비 vs 취업률 상관관계 분석")
         st.caption("원이 크면 정원이 많은 과정, 색상은 훈련 유형을 나타냅니다.")
         cost_sample_t5 = load_scatter_sample(where, params, limit=SCATTER_SAMPLE_LIMIT)
         if not cost_sample_t5.empty:
@@ -1230,7 +1230,7 @@ with tabs[4]:
         st.divider()
 
         # §4: 비용 대비 성과 (old Tab8)
-        st.subheader("🎯 비용 대비 성과 分析")
+        st.subheader("🎯 비용 대비 성과 분석")
         cost_sample = cost_sample_t5 if not cost_sample_t5.empty else load_scatter_sample(where, params, limit=SCATTER_SAMPLE_LIMIT)
         if not cost_sample.empty:
             cost_sample_clean = cost_sample.dropna(subset=['TOT_TRCO', 'EI_EMPL_RATE_3'])
@@ -1565,8 +1565,8 @@ with tabs[6]:
 
     st.divider()
 
-    # §2: 자격증 연계 分析 - 과정수 bar
-    st.subheader("🎓 자격증 연계 分析")
+    # §2: 자격증 연계 분석 - 과정수 bar
+    st.subheader("🎓 자격증 연계 분석")
     if not cert_stats_shared.empty:
         st.metric("연계 자격증 종류", f"{len(cert_stats_shared)}개", help="5건 이상 연계된 자격증만 표시")
         top20 = cert_stats_shared.head(TOP_CERTS_LIMIT)
