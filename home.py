@@ -35,30 +35,6 @@ def get_dashboard_data():
     return df_course
 
 
-@st.cache_data(ttl=CACHE_TTL_REALTIME)
-def get_today_attendance():
-    """진행 중 과정의 오늘 출결 현황 요약 (입실중 재분류 포함)"""
-    today_str = datetime.now().strftime('%Y-%m-%d')
-    # IN_TIME이 있는데 결석인 경우 → '입실중'으로 재분류
-    query = (
-        "WITH latest AS ("
-        "  SELECT TRPR_DEGR, MAX(ATEND_DT) AS MAX_DT"
-        "  FROM TB_ATTENDANCE_LOG GROUP BY TRPR_DEGR"
-        ") "
-        "SELECT a.TRPR_DEGR, "
-        "CASE WHEN a.ATEND_STATUS = '결석' AND a.IN_TIME IS NOT NULL AND a.IN_TIME != '' "
-        "THEN '입실중' ELSE a.ATEND_STATUS END as ATEND_STATUS, "
-        "COUNT(*) as CNT "
-        "FROM TB_ATTENDANCE_LOG a "
-        "INNER JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
-        "INNER JOIN latest ld ON a.TRPR_DEGR = ld.TRPR_DEGR AND a.ATEND_DT = ld.MAX_DT "
-        "WHERE c.TR_END_DT >= ? "
-        "GROUP BY a.TRPR_DEGR, "
-        "CASE WHEN a.ATEND_STATUS = '결석' AND a.IN_TIME IS NOT NULL AND a.IN_TIME != '' "
-        "THEN '입실중' ELSE a.ATEND_STATUS END"
-    )
-    return load_data(query, params=[today_str])
-
 
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def get_attendance_stats():
@@ -203,57 +179,7 @@ def render_dashboard():
     st.altair_chart((chart + text), use_container_width=True)
     st.divider()
 
-    # [Section 5] 오늘의 출결 현황
-    if active_courses > 0:
-        st.subheader("📡 오늘의 출결 현황")
-        try:
-            attend_df = get_today_attendance()
-            if not attend_df.empty:
-                total_logs = attend_df['CNT'].sum()
-                present = attend_df[attend_df['ATEND_STATUS'] == '출석']['CNT'].sum()
-                in_class = attend_df[attend_df['ATEND_STATUS'] == '입실중']['CNT'].sum()
-                absent = attend_df[attend_df['ATEND_STATUS'] == '결석']['CNT'].sum()
-                late = attend_df[attend_df['ATEND_STATUS'] == '지각']['CNT'].sum()
-                leave_early = attend_df[attend_df['ATEND_STATUS'] == '조퇴']['CNT'].sum()
-                # 출석률: 출석 + 입실중 + 지각을 출석으로 간주
-                effective_present = present + in_class + late
-                attendance_rate = (effective_present / total_logs * 100) if total_logs > 0 else 0
-
-                ac1, ac2, ac3, ac4, ac5, ac6 = st.columns(6)
-                ac1.metric("출석률", f"{attendance_rate:.1f}%", help="출석 + 입실중 + 지각 기준")
-                ac2.metric("출석", f"{int(present)}명")
-                ac3.metric("입실중", f"{int(in_class)}명", help="입실 완료, 퇴실 전 (수업 중)")
-                ac4.metric("결석", f"{int(absent)}명", delta_color="inverse")
-                ac5.metric("지각", f"{int(late)}명", delta_color="inverse")
-                ac6.metric("조퇴", f"{int(leave_early)}명", delta_color="inverse")
-
-                # 기수별 출석률 바차트 (입실중도 출석으로 간주)
-                degr_total = attend_df.groupby('TRPR_DEGR')['CNT'].sum().reset_index()
-                degr_total.columns = ['TRPR_DEGR', '총건수']
-                degr_present = attend_df[attend_df['ATEND_STATUS'].isin(['출석', '입실중', '지각'])].groupby('TRPR_DEGR')['CNT'].sum().reset_index()
-                degr_present.columns = ['TRPR_DEGR', '출석건수']
-                degr_rate = degr_total.merge(degr_present, on='TRPR_DEGR', how='left').fillna(0)
-                degr_rate['출석률'] = (degr_rate['출석건수'] / degr_rate['총건수'] * 100).round(1)
-                degr_rate['기수'] = degr_rate['TRPR_DEGR'].astype(str) + '회차'
-
-                chart = alt.Chart(degr_rate).mark_bar().encode(
-                    x=alt.X('기수:N', title='기수'),
-                    y=alt.Y('출석률:Q', title='출석률 (%)', scale=alt.Scale(domain=[0, 100])),
-                    color=alt.condition(
-                        alt.datum.출석률 < 80,
-                        alt.value('#e74c3c'),
-                        alt.value('#2ecc71'),
-                    ),
-                    tooltip=['기수', '출석률'],
-                ).properties(height=200)
-                st.altair_chart(chart, use_container_width=True)
-            else:
-                st.info("오늘 출결 데이터가 아직 수집되지 않았습니다.")
-        except Exception:
-            st.info("출결 데이터를 불러올 수 없습니다.")
-        st.divider()
-
-    # [Section 6] 차트와 상세 테이블
+    # [Section 5] 차트와 상세 테이블
     col_left, col_right = st.columns([1, 1])
 
     with col_left:
@@ -284,7 +210,7 @@ def render_dashboard():
             use_container_width=True,
         )
 
-    # [Section 7] 진행 중인 과정
+    # [Section 6] 진행 중인 과정
     st.subheader("🚨 현재 운영 중인 과정 현황")
     active_df = df[df['상태'] == '진행중'].copy()
     if not active_df.empty:
