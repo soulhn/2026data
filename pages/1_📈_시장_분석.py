@@ -696,17 +696,42 @@ tabs = st.tabs([
 
 # [Tab 1] 시장 개요
 with tabs[0]:
-    col1, col2 = st.columns([2, 1])
+    col1, col2 = st.columns([3, 2])
     with col1:
         st.subheader("월별 개설 추이")
         trend = load_monthly_counts(where, params)
         if not trend.empty:
-            st.plotly_chart(px.line(trend, x='YEAR_MONTH', y='COUNT', markers=True), use_container_width=True)
+            trend['YEAR_MONTH'] = pd.to_datetime(trend['YEAR_MONTH'])
+            full_range = pd.date_range(trend['YEAR_MONTH'].min(), trend['YEAR_MONTH'].max(), freq='MS')
+            trend = trend.set_index('YEAR_MONTH').reindex(full_range, fill_value=0).reset_index()
+            trend.columns = ['YEAR_MONTH', 'COUNT']
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Scatter(
+                x=trend['YEAR_MONTH'], y=trend['COUNT'],
+                mode='lines+markers',
+                fill='tozeroy',
+                fillcolor='rgba(49,130,189,0.15)',
+                line=dict(color='#3182bd', width=2),
+                marker=dict(size=5),
+                name='개설수',
+            ))
+            fig_trend.update_layout(
+                xaxis_title='월', yaxis_title='개설 수',
+                hovermode='x unified', height=320, margin=dict(t=20, b=40),
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
     with col2:
-        st.subheader("지역별 점유율")
+        st.subheader("지역별 개설 수")
         reg_cnt = load_region_counts(where, params)
         if not reg_cnt.empty:
-            st.plotly_chart(px.pie(reg_cnt, values='개수', names='지역', hole=0.4), use_container_width=True)
+            st.altair_chart(
+                alt.Chart(reg_cnt.head(15)).mark_bar(color='#5dade2').encode(
+                    x=alt.X('개수:Q', title='개설 수'),
+                    y=alt.Y('지역:N', sort='-x', title=''),
+                    tooltip=['지역', '개수'],
+                ).properties(height=320),
+                use_container_width=True,
+            )
 
 # [Tab 2] 🏆 순위 & 모집 분석
 with tabs[1]:
@@ -1049,7 +1074,17 @@ with tabs[5]:
         top5_regions = top5_reg.head(5)['지역'].tolist()
         region_trend = load_monthly_region_trend(where, params, top5_regions)
         if not region_trend.empty:
-            fig_reg = px.line(region_trend, x='YEAR_MONTH', y='개설수', color='REGION', markers=True, title='상위 5개 지역 월별 개설 추이')
+            region_trend['YEAR_MONTH'] = pd.to_datetime(region_trend['YEAR_MONTH'])
+            all_months = pd.date_range(region_trend['YEAR_MONTH'].min(), region_trend['YEAR_MONTH'].max(), freq='MS')
+            regions_list = region_trend['REGION'].unique()
+            idx_full = pd.MultiIndex.from_product([all_months, regions_list], names=['YEAR_MONTH', 'REGION'])
+            region_trend = region_trend.set_index(['YEAR_MONTH', 'REGION']).reindex(idx_full, fill_value=0).reset_index()
+            fig_reg = px.line(
+                region_trend, x='YEAR_MONTH', y='개설수', color='REGION',
+                markers=True, title='상위 5개 지역 월별 개설 추이',
+            )
+            fig_reg.update_traces(mode='lines+markers', marker=dict(size=5))
+            fig_reg.update_layout(hovermode='x unified', height=380)
             st.plotly_chart(fig_reg, use_container_width=True)
 
 # [Tab 7] ⚔️ 경쟁 심화도
