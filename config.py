@@ -13,7 +13,7 @@ RISK_EARLY_LEAVE = 5             # 조퇴 N회 이상
 # ── 캐시 TTL (초) ──
 CACHE_TTL_DEFAULT = 600          # 일반 페이지 (10분)
 CACHE_TTL_REALTIME = 300         # 실시간 출결 (5분)
-CACHE_TTL_MARKET = 3600          # 시장 동향 (1시간)
+CACHE_TTL_MARKET = 86400         # 시장 동향 (24시간 — ETL 주기와 동기화)
 
 # ── ETL 파라미터 ──
 ETL_ARCHIVE_START = dt.date(2023, 1, 1)
