@@ -162,11 +162,11 @@ def load_filter_options():
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_kpi_data(where, params):
+    """KPI 섹션용 집계 쿼리."""
     if where == "":
         _c = get_market_cache("kpi")
         if _c is not None:
             return _c
-    """KPI 섹션용 집계 쿼리."""
     return _sql_query(f"""
         SELECT COUNT(*) as CNT,
                AVG(CASE WHEN TOT_TRCO > 0 THEN TOT_TRCO END) as AVG_TRCO,
@@ -192,11 +192,11 @@ def load_course_avg_score(where, params):
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_monthly_counts(where, params):
+    """Tab 1, 6: 월별 개설 수."""
     if where == "":
         _c = get_market_cache("monthly_counts")
         if _c is not None:
             return _c
-    """Tab 1, 6: 월별 개설 수."""
     return _sql_query(f"""
         SELECT YEAR_MONTH, COUNT(*) as COUNT
         FROM TB_MARKET_TREND {where}
@@ -206,11 +206,11 @@ def load_monthly_counts(where, params):
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_region_counts(where, params):
+    """Tab 1: 지역별 과정 수."""
     if where == "":
         _c = get_market_cache("region_counts")
         if _c is not None:
             return _c
-    """Tab 1: 지역별 과정 수."""
     return _sql_query(f"""
         SELECT REGION as 지역, COUNT(*) as 개수
         FROM TB_MARKET_TREND {where}
@@ -220,11 +220,11 @@ def load_region_counts(where, params):
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_inst_stats(where, params):
+    """Tab 2, 9: 기관별 집계."""
     if where == "":
         _c = get_market_cache("inst_stats")
         if _c is not None:
             return _c
-    """Tab 2, 9: 기관별 집계."""
     return _sql_query(f"""
         SELECT TRAINST_NM,
                COUNT(*) as TRPR_CNT,
@@ -267,11 +267,11 @@ def load_type_agg(where, params):
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_ncs_agg(where, params, min_courses=5):
+    """Tab 2, 7: NCS별 집계."""
     if where == "" and min_courses == 5:
         _c = get_market_cache("ncs_agg")
         if _c is not None:
             return _c
-    """Tab 2, 7: NCS별 집계."""
     return _sql_query(f"""
         SELECT NCS_CD,
                COUNT(*) as CNT,
@@ -287,11 +287,11 @@ def load_ncs_agg(where, params, min_courses=5):
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_monthly_empl(where, params):
+    """Tab 6: 월별 평균 취업률."""
     if where == "":
         _c = get_market_cache("monthly_empl")
         if _c is not None:
             return _c
-    """Tab 6: 월별 평균 취업률."""
     return _sql_query(f"""
         SELECT YEAR_MONTH as 월, AVG(EI_EMPL_RATE_3) as 평균취업률
         FROM TB_MARKET_TREND {where}
@@ -340,11 +340,11 @@ def load_competition_monthly(where, params, ncs_codes):
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_monthly_recruit(where, params):
+    """Tab 7: 월별 평균 모집률."""
     if where == "":
         _c = get_market_cache("monthly_recruit")
         if _c is not None:
             return _c
-    """Tab 7: 월별 평균 모집률."""
     return _sql_query(f"""
         SELECT YEAR_MONTH,
                AVG(CASE WHEN TOT_FXNUM > 0
@@ -398,11 +398,11 @@ def load_keyword_names(where, params):
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_region_opp(where, params):
+    """사업기회 탭: 지역별 수요(모집률)·공급(과정수)·성과(취업률)"""
     if where == "":
         _c = get_market_cache("region_opp")
         if _c is not None:
             return _c
-    """사업기회 탭: 지역별 수요(모집률)·공급(과정수)·성과(취업률)"""
     return _sql_query(f"""
         SELECT REGION,
                COUNT(*) as 과정수,
@@ -418,11 +418,11 @@ def load_region_opp(where, params):
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_ncs_growth(where, params):
+    """사업기회 탭: NCS별 최근 6개월 vs 이전 6개월 개설 증가율"""
     if where == "":
         _c = get_market_cache("ncs_growth")
         if _c is not None:
             return _c
-    """사업기회 탭: NCS별 최근 6개월 vs 이전 6개월 개설 증가율"""
     max_ym_df = _sql_query(f"""
         SELECT MAX(YEAR_MONTH) as MAX_YM FROM TB_MARKET_TREND {where}
     """, params=params)
@@ -464,11 +464,11 @@ def load_ncs_growth(where, params):
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_ncs_opp_matrix(where, params):
+    """사업기회 탭: NCS별 취업률·모집률·경쟁도 (기회 매트릭스용)"""
     if where == "":
         _c = get_market_cache("ncs_opp_matrix")
         if _c is not None:
             return _c
-    """사업기회 탭: NCS별 취업률·모집률·경쟁도 (기회 매트릭스용)"""
     return _sql_query(f"""
         SELECT NCS_CD,
                COUNT(*) as 경쟁과정수,
