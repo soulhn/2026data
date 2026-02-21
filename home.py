@@ -3,7 +3,7 @@ import pandas as pd
 import altair as alt
 from datetime import datetime
 from utils import load_data, check_password
-from config import CACHE_TTL_DEFAULT, CACHE_TTL_REALTIME
+from config import CACHE_TTL_DEFAULT, CACHE_TTL_REALTIME, DAILY_TRAINING_FEE
 
 st.set_page_config(
     page_title="HRD 교육성과 대시보드",
@@ -58,6 +58,23 @@ def get_today_attendance():
         "THEN '입실중' ELSE a.ATEND_STATUS END"
     )
     return load_data(query, params=[today_str])
+
+
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
+def get_attendance_stats():
+    """종료된 기수별 출결 통계 집계"""
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    return load_data(
+        "SELECT a.TRPR_DEGR, COUNT(*) AS total_days, "
+        "SUM(CASE WHEN a.ATEND_STATUS IN ('출석', '지각') THEN 1 ELSE 0 END) AS present_days, "
+        "CAST(SUM(CASE WHEN a.ATEND_STATUS IN ('출석', '지각') THEN 1 ELSE 0 END) AS FLOAT) "
+        "/ NULLIF(COUNT(*), 0) * 100 AS att_rate "
+        "FROM TB_ATTENDANCE_LOG a "
+        "INNER JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
+        "WHERE c.TR_END_DT < ? "
+        "GROUP BY a.TRPR_DEGR",
+        params=[today_str]
+    )
 
 
 def _render_project_intro():
@@ -125,7 +142,39 @@ def render_dashboard():
     kpi5.metric("평균 취업률(6개월)", f"{avg_rate_6:.1f}%", help="6개월 고용보험 + HRD자체취업 합산")
     st.divider()
 
-    # [Section 2] 시장 포지셔닝
+    # [Section 2] 운영 평균 성과 (종료 기수 기준)
+    att_stats = get_attendance_stats()
+    df_ended = df[df['상태'] == '종료']
+    avg_att = att_stats['att_rate'].mean() if not att_stats.empty else 0.0
+
+    st.subheader("📊 운영 평균 성과")
+    st.caption("종료된 전체 기수 기준 평균값입니다.")
+    s2c1, s2c2, s2c3, s2c4 = st.columns(4)
+    s2c1.metric("평균 수료율", f"{avg_completion:.1f}%", help="수료인원 / 수강인원")
+    s2c2.metric("평균 출석률", f"{avg_att:.1f}%", help="출석+지각 / 전체 출결일 (종료 기수)")
+    s2c3.metric("평균 취업률 (3개월)", f"{avg_rate_3:.1f}%", help="고용보험 기준")
+    s2c4.metric("평균 취업률 (6개월)", f"{avg_rate_6:.1f}%", help="고용보험 + HRD자체취업 합산")
+    st.divider()
+
+    # [Section 3] 기수 기록
+    st.subheader("🏅 기수 기록")
+    st.caption("각 지표별 역대 최고 기록입니다.")
+    s3c1, s3c2, s3c3, s3c4 = st.columns(4)
+    if not df_ended.empty:
+        best_comp = df_ended.loc[df_ended['수료율'].idxmax()]
+        best_empl = df_ended.loc[df_ended['TOTAL_RATE_6'].idxmax()]
+        s3c1.metric("최고 수료율", f"{best_comp['수료율']:.1f}%", f"{int(best_comp['TRPR_DEGR'])}회차")
+        s3c2.metric("최고 취업률 (6개월)", f"{best_empl['TOTAL_RATE_6']:.1f}%", f"{int(best_empl['TRPR_DEGR'])}회차")
+    if not att_stats.empty:
+        best_att = att_stats.loc[att_stats['att_rate'].idxmax()]
+        s3c3.metric("최고 출석률", f"{best_att['att_rate']:.1f}%", f"{int(best_att['TRPR_DEGR'])}회차")
+        att_stats['revenue'] = att_stats['present_days'] * DAILY_TRAINING_FEE
+        best_rev = att_stats.loc[att_stats['revenue'].idxmax()]
+        s3c4.metric("단일기수 최고 매출", f"{best_rev['revenue'] / 1e8:.2f}억원",
+                    f"{int(best_rev['TRPR_DEGR'])}회차", help="출석+지각 일수 × 일 훈련비 단가 기준")
+    st.divider()
+
+    # [Section 4] 시장 포지셔닝
     st.subheader("📍 전국 KDT 시장 포지셔닝")
     st.caption("직업능력심사평가원 KDT 훈련과정 성과평가 기준 | 전국 동일 NCS(정보통신) 과정 대상")
 
@@ -154,7 +203,7 @@ def render_dashboard():
     st.altair_chart((chart + text), use_container_width=True)
     st.divider()
 
-    # [Section 3] 오늘의 출결 현황 (신규)
+    # [Section 5] 오늘의 출결 현황
     if active_courses > 0:
         st.subheader("📡 오늘의 출결 현황")
         try:
@@ -204,7 +253,7 @@ def render_dashboard():
             st.info("출결 데이터를 불러올 수 없습니다.")
         st.divider()
 
-    # [Section 4] 차트와 상세 테이블
+    # [Section 6] 차트와 상세 테이블
     col_left, col_right = st.columns([1, 1])
 
     with col_left:
@@ -235,7 +284,7 @@ def render_dashboard():
             use_container_width=True,
         )
 
-    # [Section 5] 진행 중인 과정
+    # [Section 7] 진행 중인 과정
     st.subheader("🚨 현재 운영 중인 과정 현황")
     active_df = df[df['상태'] == '진행중'].copy()
     if not active_df.empty:
