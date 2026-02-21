@@ -1155,6 +1155,8 @@ with tabs[4]:
     st.subheader("🏅 등급별 평균 성과 비교")
     grade_grp = load_grade_stats(where, params)
     if not grade_grp.empty:
+        grade_grp['EI_EMPL_RATE_3'] = pd.to_numeric(grade_grp['EI_EMPL_RATE_3'], errors='coerce')
+        grade_grp['STDG_SCOR'] = pd.to_numeric(grade_grp['STDG_SCOR'], errors='coerce')
         fig_bar = px.bar(grade_grp, x='GRADE', y=['EI_EMPL_RATE_3', 'STDG_SCOR'], barmode='group')
         st.plotly_chart(fig_bar, use_container_width=True)
     else:
