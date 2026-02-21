@@ -768,7 +768,7 @@ else:
 tabs = st.tabs([
     "📊 시장 개요", "🏆 순위 & 모집",
     "🎨 유형 & 일정", "📈 시계열 & 경쟁",
-    "📊 취업률 분析", "💎 우리 과정 vs 시장",
+    "📊 취업률 분석", "💎 우리 과정 vs 시장",
     "☁️ 키워드 & 자격증", "🔭 사업기회 발굴", "📑 데이터 조회"
 ])
 
@@ -1397,7 +1397,7 @@ with tabs[5]:
                 our_avg_empl = our_empl_valid.mean()
                 k1.metric("취업률 (3개월)", f"{our_avg_empl:.1f}%", delta=f"{our_avg_empl - mkt_avg_empl:+.1f}%p vs 시장")
             else:
-                k1.metric("취업률 (3개월)", "-")
+                k1.metric("취업률 (3개월)", "미제공", help="선택된 훈련 유형은 HRD-Net에서 취업률을 제공하지 않습니다.")
 
             if not our_trco.empty and pd.notna(mkt_avg_trco):
                 our_avg_trco = our_trco.mean()
@@ -1426,19 +1426,19 @@ with tabs[5]:
             # 간단한 백분위: SQL percentile 대신 비율 계산
             p1, p2, p3 = st.columns(3)
 
-            if not our_empl_valid.empty:
+            if no_empl_data or our_empl_valid.empty:
+                p1.metric("취업률 백분위", "미제공", help="선택된 훈련 유형은 HRD-Net에서 취업률을 제공하지 않습니다.")
+            else:
                 below_cnt = _sql_query(f"""
                     SELECT COUNT(*) as CNT FROM TB_MARKET_TREND {where}
                     {"AND" if where else "WHERE"} EI_EMPL_RATE_3 > 0 AND EI_EMPL_RATE_3 < ?
                 """, params=list(params) + [float(our_empl_valid.mean())])
                 total_empl = pct_df['EMPL_CNT'].iloc[0]
                 if total_empl > 0:
-                    pct = below_cnt['CNT'].iloc[0] / total_empl * 100
+                    pct = min(100, below_cnt['CNT'].iloc[0] / total_empl * 100)
                     p1.metric("취업률 백분위", f"상위 {100 - pct:.0f}%")
                 else:
                     p1.metric("취업률 백분위", "-")
-            else:
-                p1.metric("취업률 백분위", "-")
 
             if not our_trco.empty:
                 below_trco = _sql_query(f"""
@@ -1462,7 +1462,7 @@ with tabs[5]:
                 """, params=list(params) + [float(our_recruit.mean())])
                 total_rec = pct_df['RECRUIT_CNT'].iloc[0]
                 if total_rec > 0:
-                    pct_rec = below_rec['CNT'].iloc[0] / total_rec * 100
+                    pct_rec = min(100, below_rec['CNT'].iloc[0] / total_rec * 100)
                     p3.metric("모집률 백분위", f"상위 {100 - pct_rec:.0f}%")
                 else:
                     p3.metric("모집률 백분위", "-")
@@ -1502,10 +1502,15 @@ with tabs[5]:
             o_t = max(0, (1 - o_t_raw / max_trco) * 100)
             m_t = max(0, (1 - m_trco / max_trco) * 100)
 
-            our_vals = [o_e, o_r, o_t, min(o_fx, 100)]
-            mkt_avg_vals = [m_e, m_r, m_t, min(m_fx, 100)]
-            # Top 10% approximation
-            mkt_top10_vals = [m_e * 1.3, m_r * 1.3, m_t * 0.7, min(m_fx * 1.3, 100)]
+            if no_empl_data:
+                radar_metrics = ['모집률', '훈련비(역순)', '정원']
+                our_vals = [o_r, o_t, min(o_fx, 100)]
+                mkt_avg_vals = [m_r, m_t, min(m_fx, 100)]
+                mkt_top10_vals = [m_r * 1.3, m_t * 0.7, min(m_fx * 1.3, 100)]
+            else:
+                our_vals = [o_e, o_r, o_t, min(o_fx, 100)]
+                mkt_avg_vals = [m_e, m_r, m_t, min(m_fx, 100)]
+                mkt_top10_vals = [m_e * 1.3, m_r * 1.3, m_t * 0.7, min(m_fx * 1.3, 100)]
 
             fig_radar = go.Figure()
             fig_radar.add_trace(go.Scatterpolar(r=our_vals + [our_vals[0]], theta=radar_metrics + [radar_metrics[0]], fill='toself', name='우리 과정'))
@@ -1521,9 +1526,18 @@ with tabs[5]:
             detail = internal_df[['TRPR_DEGR', 'TRPR_NM', 'TR_STA_DT', 'TOT_TRCO', 'TOT_FXNUM', 'TOT_TRP_CNT', 'FINI_CNT', '수료율', 'EI_EMPL_RATE_3']].copy()
             detail.columns = ['회차', '과정명', '시작일', '훈련비', '정원', '수강신청인원', '수료인원', '수료율(%)', '취업률(%)']
             detail['시작일'] = detail['시작일'].dt.strftime('%Y-%m-%d')
+            detail['취업률(%)'] = detail['취업률(%)'].apply(lambda x: x if pd.notna(x) and x > 0 else None)
             st.dataframe(
-                detail.style.format({'훈련비': '{:,.0f}원', '정원': '{:,.0f}명', '수강신청인원': '{:,.0f}명', '수료인원': '{:,.0f}명', '수료율(%)': '{:.1f}%', '취업률(%)': '{:.1f}%'}),
-                use_container_width=True, hide_index=True
+                detail,
+                use_container_width=True, hide_index=True,
+                column_config={
+                    '훈련비': st.column_config.NumberColumn(format="%,.0f원"),
+                    '정원': st.column_config.NumberColumn(format="%d명"),
+                    '수강신청인원': st.column_config.NumberColumn(format="%d명"),
+                    '수료인원': st.column_config.NumberColumn(format="%d명"),
+                    '수료율(%)': st.column_config.NumberColumn(format="%.1f%%"),
+                    '취업률(%)': st.column_config.NumberColumn("취업률(%)", format="%.1f%%", help="미제공인 경우 빈칸으로 표시"),
+                }
             )
 
 # ─────────────────────────────────────────
