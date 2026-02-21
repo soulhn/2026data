@@ -140,6 +140,7 @@ def load_filter_options():
     """)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_kpi_data(where, params):
     """KPI 섹션용 집계 쿼리."""
     return _sql_query(f"""
@@ -152,6 +153,7 @@ def load_kpi_data(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_course_avg_score(where, params):
     """과정 평균 만족도 (과정별 평균의 평균)."""
     return _sql_query(f"""
@@ -164,6 +166,7 @@ def load_course_avg_score(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_monthly_counts(where, params):
     """Tab 1, 6: 월별 개설 수."""
     return _sql_query(f"""
@@ -173,6 +176,7 @@ def load_monthly_counts(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_region_counts(where, params):
     """Tab 1: 지역별 과정 수."""
     return _sql_query(f"""
@@ -182,6 +186,7 @@ def load_region_counts(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_inst_stats(where, params):
     """Tab 2, 9: 기관별 집계."""
     return _sql_query(f"""
@@ -196,6 +201,7 @@ def load_inst_stats(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_course_agg(where, params):
     """Tab 2: 과정별 집계."""
     return _sql_query(f"""
@@ -210,6 +216,7 @@ def load_course_agg(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_type_agg(where, params):
     """Tab 2: 훈련유형별 집계."""
     return _sql_query(f"""
@@ -222,6 +229,7 @@ def load_type_agg(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_ncs_agg(where, params, min_courses=5):
     """Tab 2, 7: NCS별 집계."""
     return _sql_query(f"""
@@ -237,6 +245,7 @@ def load_ncs_agg(where, params, min_courses=5):
     """, params=list(params) + [min_courses])
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_monthly_empl(where, params):
     """Tab 6: 월별 평균 취업률."""
     return _sql_query(f"""
@@ -247,6 +256,7 @@ def load_monthly_empl(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_monthly_trco_stats(where, params):
     """Tab 6: 월별 훈련비 통계 (중앙값은 SQL에서 어려우므로 최소한의 데이터만 로드)."""
     return _sql_query(f"""
@@ -256,6 +266,7 @@ def load_monthly_trco_stats(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_monthly_region_trend(where, params, top_regions):
     """Tab 6: 지역별 월별 개설 추이."""
     if not top_regions:
@@ -269,6 +280,7 @@ def load_monthly_region_trend(where, params, top_regions):
     """, params=list(params) + top_regions)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_competition_monthly(where, params, ncs_codes):
     """Tab 7: NCS 코드별 월별 경쟁 과정 수."""
     if not ncs_codes:
@@ -282,6 +294,7 @@ def load_competition_monthly(where, params, ncs_codes):
     """, params=list(params) + list(ncs_codes))
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_monthly_recruit(where, params):
     """Tab 7: 월별 평균 모집률."""
     return _sql_query(f"""
@@ -293,6 +306,7 @@ def load_monthly_recruit(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_scatter_sample(where, params, limit=3000):
     """Tab 5, 8: 산점도용 샘플 데이터."""
     # SQLite와 PG 모두 지원하는 랜덤 샘플링
@@ -305,6 +319,7 @@ def load_scatter_sample(where, params, limit=3000):
     """, params=list(params) + [limit])
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_grade_stats(where, params):
     """Tab 5: 등급별 평균 성과."""
     return _sql_query(f"""
@@ -315,6 +330,7 @@ def load_grade_stats(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_type_counts(where, params):
     """Tab 4: 훈련유형별/주말구분별 건수."""
     return _sql_query(f"""
@@ -324,6 +340,7 @@ def load_type_counts(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_keyword_names(where, params):
     """Tab 10: 과정명만 로드."""
     return _sql_query(f"""
@@ -331,6 +348,7 @@ def load_keyword_names(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_region_opp(where, params):
     """사업기회 탭: 지역별 수요(모집률)·공급(과정수)·성과(취업률)"""
     return _sql_query(f"""
@@ -346,6 +364,7 @@ def load_region_opp(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_ncs_growth(where, params):
     """사업기회 탭: NCS별 최근 6개월 vs 이전 6개월 개설 증가율"""
     max_ym_df = _sql_query(f"""
@@ -387,6 +406,7 @@ def load_ncs_growth(where, params):
     return merged.sort_values('증가율(%)', ascending=False)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_ncs_opp_matrix(where, params):
     """사업기회 탭: NCS별 취업률·모집률·경쟁도 (기회 매트릭스용)"""
     return _sql_query(f"""
@@ -401,6 +421,7 @@ def load_ncs_opp_matrix(where, params):
     """, params=params)
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_data_preview(where, params, limit=1000):
     """Tab 12: 데이터 조회용."""
     return _sql_query(f"""
@@ -416,6 +437,7 @@ def load_data_preview(where, params, limit=1000):
     """, params=list(params) + [limit])
 
 
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_data_full_csv(where, params):
     """Tab 12: CSV 다운로드용 전체 데이터."""
     return _sql_query(f"""
@@ -550,8 +572,11 @@ where, params = build_where_clause(
 # ==========================================
 # 3. 메인 대시보드
 # ==========================================
-kpi_df = load_kpi_data(where, params)
-total_count = int(kpi_df['CNT'].iloc[0]) if not kpi_df.empty else 0
+with st.status("📊 시장 데이터 분析 중...", expanded=True) as _ld:
+    _ld.write("🔢 기본 지표 집계 중 (30만건+ 대상)...")
+    kpi_df = load_kpi_data(where, params)
+    total_count = int(kpi_df['CNT'].iloc[0]) if not kpi_df.empty else 0
+    _ld.update(label=f"✅ {total_count:,}건 분析 완료", state="complete", expanded=False)
 
 st.title(f"📈 IT 훈련 시장 상세 분석 ({total_count:,}건)")
 st.markdown("---")
@@ -1294,7 +1319,8 @@ with tabs[11]:
     st.subheader("📍 지역별 수요-공급 갭")
     st.caption("좌상단(과정 적고 모집률 높음) = 공급 부족 지역 → 신규 진입 기회")
 
-    region_opp = load_region_opp(where, params)
+    with st.spinner("📍 지역별 수요-공급 갭 분析 중..."):
+        region_opp = load_region_opp(where, params)
     if not region_opp.empty:
         for col in ['과정수', '총신청인원', '평균모집률', '평균취업률']:
             region_opp[col] = pd.to_numeric(region_opp[col], errors='coerce').fillna(0)
@@ -1335,7 +1361,8 @@ with tabs[11]:
     st.subheader("📈 성장 중인 NCS 분야")
     st.caption("최근 6개월 개설 수 증가율 (이전 6개월 대비) — 빠르게 성장하는 분야 = 선제 진입 기회")
 
-    ncs_growth = load_ncs_growth(where, params)
+    with st.spinner("📈 NCS 성장 분야 분析 중..."):
+        ncs_growth = load_ncs_growth(where, params)
     if not ncs_growth.empty:
         col_g1, col_g2 = st.columns(2)
         with col_g1:
@@ -1372,7 +1399,8 @@ with tabs[11]:
     st.subheader("🎯 고성과·저경쟁 NCS 기회 매트릭스")
     st.caption("좌상단(경쟁 적고 취업률 높음) = 신규 진입 최적 영역. 버블 크기 = 모집률")
 
-    ncs_mat = load_ncs_opp_matrix(where, params)
+    with st.spinner("🎯 NCS 기회 매트릭스 분析 중..."):
+        ncs_mat = load_ncs_opp_matrix(where, params)
     if not ncs_mat.empty:
         for col in ['경쟁과정수', '평균취업률', '평균모집률']:
             ncs_mat[col] = pd.to_numeric(ncs_mat[col], errors='coerce')
