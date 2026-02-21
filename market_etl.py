@@ -60,10 +60,13 @@ def get_collect_range():
     conn = get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM TB_MARKET_TREND")
-        count = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*), MIN(TR_STA_DT) FROM TB_MARKET_TREND")
+        row = cursor.fetchone()
+        count = row[0] if row else 0
+        min_dt_str = str(row[1]) if row and row[1] else None
     except Exception:
         count = 0
+        min_dt_str = None
     finally:
         conn.close()
 
@@ -72,9 +75,15 @@ def get_collect_range():
         start = ARCHIVE_START
         print(f"[모드] 첫 실행 - 전체 수집 ({start} ~ {today})")
     else:
-        # 이후 실행: 갱신 구간만
-        start = refresh_start
-        print(f"[모드] 증분 수집 - 최근 {REFRESH_MONTHS}개월 ({start} ~ {today})")
+        # 아카이브 기준 연도 데이터가 없으면 전체 재수집 (Supabase 누락 데이터 복구)
+        has_archive = min_dt_str and min_dt_str[:4] <= str(ARCHIVE_START.year)
+        if not has_archive:
+            start = ARCHIVE_START
+            print(f"[모드] 아카이브 보완 - 전체 수집 ({start} ~ {today})")
+            print(f"       (DB 최초 데이터: {min_dt_str}, 기준: {ARCHIVE_START})")
+        else:
+            start = refresh_start
+            print(f"[모드] 증분 수집 - 최근 {REFRESH_MONTHS}개월 ({start} ~ {today})")
         print(f"       (DB 기존 데이터: {count:,}건)")
 
     return start, today
@@ -91,7 +100,12 @@ def parse_rows_xml(soup: BeautifulSoup):
 
         sta_dt = g("traStartDate")
         address = g("address")
-        year_month = f"{sta_dt[:4]}-{sta_dt[4:6]}" if len(sta_dt) >= 6 else None
+        if len(sta_dt) >= 7 and sta_dt[4] == '-':
+            year_month = sta_dt[:7]          # YYYY-MM-DD → YYYY-MM
+        elif len(sta_dt) >= 6:
+            year_month = f"{sta_dt[:4]}-{sta_dt[4:6]}"  # YYYYMMDD → YYYY-MM
+        else:
+            year_month = None
         region = address.split()[0] if address and address.strip() else None
 
         out.append((
