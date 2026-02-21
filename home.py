@@ -65,10 +65,10 @@ def get_attendance_stats():
     """종료된 기수별 출결 통계 집계"""
     today_str = datetime.now().strftime('%Y-%m-%d')
     return load_data(
-        "SELECT a.TRPR_DEGR, COUNT(*) AS total_days, "
-        "SUM(CASE WHEN a.ATEND_STATUS IN ('출석', '지각') THEN 1 ELSE 0 END) AS present_days, "
+        "SELECT a.TRPR_DEGR, COUNT(*) AS TOTAL_DAYS, "
+        "SUM(CASE WHEN a.ATEND_STATUS IN ('출석', '지각') THEN 1 ELSE 0 END) AS PRESENT_DAYS, "
         "CAST(SUM(CASE WHEN a.ATEND_STATUS IN ('출석', '지각') THEN 1 ELSE 0 END) AS FLOAT) "
-        "/ NULLIF(COUNT(*), 0) * 100 AS att_rate "
+        "/ NULLIF(COUNT(*), 0) * 100 AS ATT_RATE "
         "FROM TB_ATTENDANCE_LOG a "
         "INNER JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
         "WHERE c.TR_END_DT < ? "
@@ -145,7 +145,7 @@ def render_dashboard():
     # [Section 2] 운영 평균 성과 (종료 기수 기준)
     att_stats = get_attendance_stats()
     df_ended = df[df['상태'] == '종료']
-    avg_att = att_stats['att_rate'].mean() if not att_stats.empty else 0.0
+    avg_att = att_stats['ATT_RATE'].mean() if not att_stats.empty else 0.0
 
     st.subheader("📊 운영 평균 성과")
     st.caption("종료된 전체 기수 기준 평균값입니다.")
@@ -166,9 +166,9 @@ def render_dashboard():
         s3c1.metric("최고 수료율", f"{best_comp['수료율']:.1f}%", f"{int(best_comp['TRPR_DEGR'])}회차")
         s3c2.metric("최고 취업률 (6개월)", f"{best_empl['TOTAL_RATE_6']:.1f}%", f"{int(best_empl['TRPR_DEGR'])}회차")
     if not att_stats.empty:
-        best_att = att_stats.loc[att_stats['att_rate'].idxmax()]
-        s3c3.metric("최고 출석률", f"{best_att['att_rate']:.1f}%", f"{int(best_att['TRPR_DEGR'])}회차")
-        att_stats['revenue'] = att_stats['present_days'] * DAILY_TRAINING_FEE
+        best_att = att_stats.loc[att_stats['ATT_RATE'].idxmax()]
+        s3c3.metric("최고 출석률", f"{best_att['ATT_RATE']:.1f}%", f"{int(best_att['TRPR_DEGR'])}회차")
+        att_stats['revenue'] = att_stats['PRESENT_DAYS'] * DAILY_TRAINING_FEE
         best_rev = att_stats.loc[att_stats['revenue'].idxmax()]
         s3c4.metric("단일기수 최고 매출", f"{best_rev['revenue'] / 1e8:.2f}억원",
                     f"{int(best_rev['TRPR_DEGR'])}회차", help="출석+지각 일수 × 일 훈련비 단가 기준")
