@@ -23,10 +23,15 @@ def get_dashboard_data():
     """)
     df_course['TR_STA_DT'] = pd.to_datetime(df_course['TR_STA_DT'])
     df_course['TR_END_DT'] = pd.to_datetime(df_course['TR_END_DT'])
-    numeric_cols = ['TOT_FXNUM', 'TOT_PAR_MKS', 'EI_EMPL_RATE_3', 'EI_EMPL_RATE_6', 'HRD_EMPL_RATE_6', 'REAL_EMPL_RATE']
-    for col in numeric_cols:
+    for col in ['TOT_FXNUM', 'TOT_PAR_MKS']:
         df_course[col] = pd.to_numeric(df_course[col], errors='coerce').fillna(0)
-    df_course['TOTAL_RATE_6'] = df_course['EI_EMPL_RATE_6'] + df_course['HRD_EMPL_RATE_6']
+    # 취업률: NaN 유지 (상태코드 'A'=개설예정 'B'=집계중 'C'=미실시 'D'=수료자없음 → 0과 구분)
+    for col in ['EI_EMPL_RATE_3', 'EI_EMPL_RATE_6', 'HRD_EMPL_RATE_6', 'REAL_EMPL_RATE']:
+        df_course[col] = pd.to_numeric(df_course[col], errors='coerce')
+    df_course['TOTAL_RATE_6'] = df_course['EI_EMPL_RATE_6'].fillna(0) + df_course['HRD_EMPL_RATE_6'].fillna(0)
+    # 둘 다 NaN이면 취업률 미집계로 간주
+    no_empl = df_course['EI_EMPL_RATE_6'].isna() & df_course['HRD_EMPL_RATE_6'].isna()
+    df_course.loc[no_empl, 'TOTAL_RATE_6'] = pd.NA
     df_course['FINI_CNT'] = pd.to_numeric(df_course['FINI_CNT'], errors='coerce').fillna(0)
     df_course['TOT_TRP_CNT'] = pd.to_numeric(df_course['TOT_TRP_CNT'], errors='coerce').fillna(0)
     df_course['수료율'] = (df_course['FINI_CNT'] / df_course['TOT_PAR_MKS'].replace(0, pd.NA) * 100).fillna(0)
@@ -119,8 +124,8 @@ def render_dashboard():
     kpi2.metric("누적 수강생", f"{total_trainees:,}명")
     kpi3.metric("평균 출석률", f"{avg_att:.1f}%", help="출석+지각 / 전체 출결일 (종료 기수)")
     kpi4.metric("평균 수료율", f"{avg_completion:.1f}%", help="수료인원 / 수강인원 기준")
-    kpi5.metric("평균 취업률(3개월)", f"{avg_rate_3:.1f}%", help="수료 후 3개월 고용보험 가입 기준")
-    kpi6.metric("평균 취업률(6개월)", f"{avg_rate_6:.1f}%", help="6개월 고용보험 + HRD자체취업 합산")
+    kpi5.metric("평균 취업률(3개월)", f"{avg_rate_3:.1f}%" if pd.notna(avg_rate_3) else "-", help="수료 후 3개월 고용보험 가입 기준 (집계 전 기수 제외)")
+    kpi6.metric("평균 취업률(6개월)", f"{avg_rate_6:.1f}%" if pd.notna(avg_rate_6) else "-", help="6개월 고용보험 + HRD자체취업 합산 (집계 전 기수 제외)")
     st.divider()
 
     # [Section 3] 기수 기록
@@ -129,9 +134,12 @@ def render_dashboard():
     s3c1, s3c2, s3c3, s3c4 = st.columns(4)
     if not df_ended.empty:
         best_comp = df_ended.loc[df_ended['수료율'].idxmax()]
-        best_empl = df_ended.loc[df_ended['TOTAL_RATE_6'].idxmax()]
         s3c1.metric("최고 수료율", f"{best_comp['수료율']:.1f}%", f"{int(best_comp['TRPR_DEGR'])}회차")
-        s3c2.metric("최고 취업률 (6개월)", f"{best_empl['TOTAL_RATE_6']:.1f}%", f"{int(best_empl['TRPR_DEGR'])}회차")
+        df_ended_empl = df_ended.dropna(subset=['TOTAL_RATE_6'])
+        df_ended_empl = df_ended_empl[df_ended_empl['TOTAL_RATE_6'] > 0]
+        if not df_ended_empl.empty:
+            best_empl = df_ended_empl.loc[df_ended_empl['TOTAL_RATE_6'].idxmax()]
+            s3c2.metric("최고 취업률 (6개월)", f"{best_empl['TOTAL_RATE_6']:.1f}%", f"{int(best_empl['TRPR_DEGR'])}회차")
     if not att_stats.empty:
         best_att = att_stats.loc[att_stats['ATT_RATE'].idxmax()]
         s3c3.metric("최고 출석률", f"{best_att['ATT_RATE']:.1f}%", f"{int(best_att['TRPR_DEGR'])}회차")
