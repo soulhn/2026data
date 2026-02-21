@@ -96,10 +96,10 @@ def build_where_clause(start_dt, end_dt, region, ncs, types, wkends, grades, key
     clauses, params = [], []
     if start_dt:
         clauses.append("TR_STA_DT >= ?")
-        params.append(start_dt.strftime('%Y%m%d'))
+        params.append(start_dt.strftime('%Y-%m-%d'))
     if end_dt:
         clauses.append("TR_STA_DT <= ?")
-        params.append(end_dt.strftime('%Y%m%d'))
+        params.append(end_dt.strftime('%Y-%m-%d'))
     if region and region != '전체':
         clauses.append("REGION = ?")
         params.append(region)
