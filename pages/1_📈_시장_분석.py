@@ -1472,11 +1472,11 @@ with tabs[9]:
 with tabs[10]:
     st.subheader("🎓 자격증 연계 분석")
 
-    cert_df = _load_data("""
+    cert_df = _load_data(f"""
         SELECT CERTIFICATE, EI_EMPL_RATE_3, TOT_TRCO, TRAIN_TARGET, NCS_CD
-        FROM TB_MARKET_TREND
-        WHERE CERTIFICATE IS NOT NULL AND CERTIFICATE != ''
-    """)
+        FROM TB_MARKET_TREND {where}
+        {"AND" if where else "WHERE"} CERTIFICATE IS NOT NULL AND CERTIFICATE != ''
+    """, params=params)
 
     if cert_df.empty:
         st.info("자격증 데이터가 없습니다.")
@@ -1513,25 +1513,46 @@ with tabs[10]:
             with cc1:
                 st.markdown(f"##### Top {TOP_CERTS_LIMIT} 자격증 (과정수 기준)")
                 top20 = cert_stats.head(TOP_CERTS_LIMIT)
-                fig = px.bar(
-                    top20, x='과정수', y='자격증', orientation='h',
-                    color='평균_취업률', color_continuous_scale='RdYlGn',
-                    hover_data=['평균_취업률', '평균_훈련비'],
-                )
+                if no_empl_data:
+                    fig = px.bar(
+                        top20, x='과정수', y='자격증', orientation='h',
+                        color='평균_훈련비', color_continuous_scale='Blues',
+                        hover_data=['평균_훈련비'],
+                    )
+                else:
+                    fig = px.bar(
+                        top20, x='과정수', y='자격증', orientation='h',
+                        color='평균_취업률', color_continuous_scale='RdYlGn',
+                        hover_data=['평균_취업률', '평균_훈련비'],
+                    )
                 fig.update_layout(height=500, yaxis={'categoryorder': 'total ascending'})
                 st.plotly_chart(fig, use_container_width=True)
 
             with cc2:
-                st.markdown(f"##### 자격증별 평균 취업률 Top {TOP_CERTS_LIMIT}")
-                top_empl = cert_stats[cert_stats['과정수'] >= CERT_EMPL_MIN_COURSES].sort_values('평균_취업률', ascending=False).head(TOP_CERTS_LIMIT)
-                if not top_empl.empty:
-                    fig2 = px.bar(
-                        top_empl, x='평균_취업률', y='자격증', orientation='h',
-                        color='과정수', color_continuous_scale='Blues',
-                        hover_data=['과정수', '평균_훈련비'],
-                    )
-                    fig2.update_layout(height=500, yaxis={'categoryorder': 'total ascending'})
-                    st.plotly_chart(fig2, use_container_width=True)
+                if no_empl_data:
+                    st.markdown(f"##### 자격증별 평균 훈련비 Top {TOP_CERTS_LIMIT}")
+                    st.caption("ℹ️ 취업률 데이터 미제공 — 훈련비 기준으로 대체 표시합니다.")
+                    top_trco = cert_stats[cert_stats['과정수'] >= CERT_EMPL_MIN_COURSES].sort_values('평균_훈련비', ascending=False).head(TOP_CERTS_LIMIT)
+                    if not top_trco.empty:
+                        fig2 = px.bar(
+                            top_trco, x='평균_훈련비', y='자격증', orientation='h',
+                            color='과정수', color_continuous_scale='Blues',
+                            hover_data=['과정수'],
+                            labels={'평균_훈련비': '평균 훈련비(원)'},
+                        )
+                        fig2.update_layout(height=500, yaxis={'categoryorder': 'total ascending'})
+                        st.plotly_chart(fig2, use_container_width=True)
+                else:
+                    st.markdown(f"##### 자격증별 평균 취업률 Top {TOP_CERTS_LIMIT}")
+                    top_empl = cert_stats[cert_stats['과정수'] >= CERT_EMPL_MIN_COURSES].sort_values('평균_취업률', ascending=False).head(TOP_CERTS_LIMIT)
+                    if not top_empl.empty:
+                        fig2 = px.bar(
+                            top_empl, x='평균_취업률', y='자격증', orientation='h',
+                            color='과정수', color_continuous_scale='Blues',
+                            hover_data=['과정수', '평균_훈련비'],
+                        )
+                        fig2.update_layout(height=500, yaxis={'categoryorder': 'total ascending'})
+                        st.plotly_chart(fig2, use_container_width=True)
 
             st.markdown("##### 전체 자격증 데이터")
             st.dataframe(
