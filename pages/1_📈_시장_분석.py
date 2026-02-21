@@ -586,7 +586,7 @@ st.sidebar.header("🔍 상세 분석 필터")
 
 from datetime import datetime
 
-# 날짜 범위
+# 날짜 범위 옵션 (form 밖에서 계산)
 all_dates = filter_opts['MIN_DT'].dropna().tolist() + filter_opts['MAX_DT'].dropna().tolist()
 if all_dates:
     min_date = pd.to_datetime(min(all_dates)).date()
@@ -594,45 +594,50 @@ if all_dates:
 else:
     min_date = max_date = datetime.now().date()
 
-date_range = st.sidebar.date_input(
-    "조회 기간",
-    value=[min_date, max_date],
-    min_value=min_date,
-    max_value=max_date
-)
+region_opts = ['전체'] + sorted(filter_opts['REGION'].dropna().unique().tolist())
+type_opts = sorted(filter_opts['TRAIN_TARGET'].dropna().unique().tolist())
+_kdt = "K-디지털 트레이닝"
+kdt_default = [_kdt] if _kdt in type_opts else []
+wk_codes = filter_opts['WKEND_SE'].dropna().unique().tolist()
+wk_opts = sorted(set(WK_MAP.get(str(c), '기타') for c in wk_codes))
+grade_opts = sorted([g for g in filter_opts['GRADE'].dropna().unique().tolist() if g and str(g).strip()])
+ncs_opts = ['전체'] + sorted(filter_opts['NCS_CD'].dropna().unique().tolist())
+
+# 필터 위젯을 form으로 묶음 → 조회 버튼 클릭 시에만 쿼리 실행
+with st.sidebar.form("market_filter_form"):
+    date_range = st.date_input(
+        "조회 기간",
+        value=[min_date, max_date],
+        min_value=min_date,
+        max_value=max_date
+    )
+    sel_region = st.selectbox("📍 지역", region_opts)
+    sel_types = st.multiselect("🎓 훈련 유형 (다중선택)", type_opts, default=kdt_default)
+    sel_wkend = st.multiselect("📅 주말/주중 (다중선택)", wk_opts, default=[])
+    if grade_opts:
+        sel_grade = st.multiselect("🏅 기관 등급 (다중선택)", grade_opts, default=[])
+    else:
+        sel_grade = []
+    sel_ncs = st.selectbox("NCS 코드", ncs_opts)
+    search_kwd = st.text_input("🔍 과정명 검색")
+    submitted = st.form_submit_button("🔍 조회", type="primary", use_container_width=True)
 
 if len(date_range) == 2:
     start_date, end_date = date_range
 else:
     start_date, end_date = date_range[0], date_range[0]
 
-region_opts = ['전체'] + sorted(filter_opts['REGION'].dropna().unique().tolist())
-sel_region = st.sidebar.selectbox("📍 지역", region_opts)
+# WHERE 절 생성: 조회 클릭 시 또는 첫 방문(KDT 기본값 자동 적용) 시에만 갱신
+if submitted or 'mkt_where' not in st.session_state:
+    where, params = build_where_clause(
+        start_date, end_date, sel_region, sel_ncs,
+        sel_types, sel_wkend, sel_grade, search_kwd
+    )
+    st.session_state['mkt_where'] = where
+    st.session_state['mkt_params'] = list(params)
 
-type_opts = sorted(filter_opts['TRAIN_TARGET'].dropna().unique().tolist())
-_kdt = "K-디지털 트레이닝"
-kdt_default = [_kdt] if _kdt in type_opts else []
-sel_types = st.sidebar.multiselect("🎓 훈련 유형 (다중선택)", type_opts, default=kdt_default)
-
-wk_codes = filter_opts['WKEND_SE'].dropna().unique().tolist()
-wk_opts = sorted(set(WK_MAP.get(str(c), '기타') for c in wk_codes))
-sel_wkend = st.sidebar.multiselect("📅 주말/주중 (다중선택)", wk_opts, default=[])
-
-grade_opts = sorted([g for g in filter_opts['GRADE'].dropna().unique().tolist() if g and str(g).strip()])
-if grade_opts:
-    sel_grade = st.sidebar.multiselect("🏅 기관 등급 (다중선택)", grade_opts, default=[])
-else:
-    sel_grade = []
-
-ncs_opts = ['전체'] + sorted(filter_opts['NCS_CD'].dropna().unique().tolist())
-sel_ncs = st.sidebar.selectbox("NCS 코드", ncs_opts)
-search_kwd = st.sidebar.text_input("🔍 과정명 검색")
-
-# WHERE 절 생성
-where, params = build_where_clause(
-    start_date, end_date, sel_region, sel_ncs,
-    sel_types, sel_wkend, sel_grade, search_kwd
-)
+where = st.session_state['mkt_where']
+params = st.session_state['mkt_params']
 
 # ==========================================
 # 3. 메인 대시보드
