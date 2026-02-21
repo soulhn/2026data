@@ -2,7 +2,7 @@
 
 > **DB 엔진:** Supabase PostgreSQL (운영) / SQLite (로컬 개발)
 > **스키마 정의:** `init_db.py`
-> **최종 갱신:** 2026-02-13
+> **최종 갱신:** 2026-02-21
 
 ---
 
@@ -107,7 +107,7 @@
 | `TRPR_DEGR` | INTEGER | 훈련과정 순차 | `trprDegr` | **PK** |
 | `TRPR_NM` | TEXT | 과정명 | `title` | |
 | `TRAINST_NM` | TEXT | 훈련기관명 | `subTitle` | |
-| `TR_STA_DT` | TEXT | 훈련 시작일 | `traStartDate` | YYYYMMDD |
+| `TR_STA_DT` | TEXT | 훈련 시작일 | `traStartDate` | **YYYY-MM-DD** (WHERE절 파라미터도 반드시 이 형식 사용) |
 | `TR_END_DT` | TEXT | 훈련 종료일 | `traEndDate` | YYYYMMDD |
 | `NCS_CD` | TEXT | NCS 코드 | `ncsCd` | 20=정보통신 |
 | `TRNG_AREA_CD` | TEXT | 지역코드 (중분류) | `trngAreaCd` | |

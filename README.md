@@ -67,10 +67,11 @@ market_etl.py (매일 21시)        →               ←
  ┃ ┣ 📜 hrd_etl.yml              # GitHub Actions: 내부 ETL (평일 매시간)
  ┃ ┗ 📜 market_etl.yml           # GitHub Actions: 시장 ETL (매일 저녁)
  ┣ 📂 pages
- ┃ ┣ 📜 1_📊_기수별_분석.py      # [내부] 기수별 심층 분석 6탭 + 전체 기수 비교 모드
- ┃ ┣ 📜 2_🚨_진행과정_관리.py    # [내부] 출석률 게이지, 출결추이, 누적 위험지표
- ┃ ┣ 📜 3_🔎_데이터_감사.py      # [공통] DB 원본 데이터 조회 4탭 (과정/훈련생/출결/시장동향)
- ┃ ┗ 📜 4_📈_시장_동향_분석.py    # [외부] 시장 분석 12탭 (헬퍼 함수 3개로 중복 제거)
+ ┃ ┣ 📜 1_📈_시장_분석.py        # [외부] 시장 분석 & 기회 발굴 13탭 (헬퍼 함수 2개)
+ ┃ ┣ 📜 2_📊_과정_성과_분석.py   # [내부] 기수별 심층 분석 6탭 + 전체 기수 비교 모드
+ ┃ ┣ 📜 3_📋_운영_현황.py        # [내부] 출석률 게이지, 출결추이, 누적 위험지표
+ ┃ ┣ 📜 4_💰_매출_분석.py        # [내부] 단위기간별 훈련비 매출 4탭 + 전체 기수 비교
+ ┃ ┗ 📜 5_🔎_데이터_조회.py      # [공통] DB 원본 데이터 조회 4탭 (과정/훈련생/출결/시장동향)
  ┣ 📂 tests                     # pytest 테스트 (56개)
  ┃ ┣ 📜 conftest.py              # 인메모리 SQLite fixture
  ┃ ┣ 📜 test_utils.py            # adapt_query, safe_float, safe_int, calculate_age
@@ -78,7 +79,7 @@ market_etl.py (매일 21시)        →               ←
  ┃ ┣ 📜 test_init_db.py          # 테이블 생성, 멱등성, 인덱스
  ┃ ┣ 📜 test_hrd_etl.py          # clean_time, get_month_list, batch_execute
  ┃ ┗ 📜 test_market_etl.py       # parse_rows_xml, ymd, shards
- ┣ 📜 home.py                   # 메인 대시보드 (KPI 요약 + 수료율 + 오늘의 출결 현황(입실중 재분류))
+ ┣ 📜 home.py                   # 메인 대시보드 (프로젝트 소개 블록, 시장 포지셔닝, KPI 요약, 오늘의 출결 현황)
  ┣ 📜 hrd_etl.py                # [수집] 내부 과정/훈련생/출결 (배치 에러 폴백 + Summary)
  ┣ 📜 market_etl.py             # [수집] 외부 시장 전체 데이터 (32만건, ThreadPool 에러 핸들링)
  ┣ 📜 init_db.py                # [DB] 테이블 DDL + 인덱스 10개 + 마이그레이션
