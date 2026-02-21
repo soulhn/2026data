@@ -177,7 +177,7 @@ with tab_indiv:
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "👥 인구통계 분석",
         "📅 요일별 출결 패턴",
-        "⏰ 시간대별 지각 분포",
+        "⏰ 시간대별 지각·조퇴",
         "🕐 체류시간 분석",
         "📉 출결/이탈 분석",
         "📋 학생별 출결 현황",
@@ -187,14 +187,16 @@ with tab_indiv:
     with tab1:
         left, right = st.columns(2)
         with left:
-            st.markdown("##### 🎂 연령대별 분포")
+            st.markdown("##### 🎂 연령대별 인원 분포")
             if '연령대' in students_df.columns:
+                age_cnt = students_df['연령대'].value_counts().reset_index()
+                age_cnt.columns = ['연령대', '인원']
                 st.altair_chart(
-                    alt.Chart(students_df).mark_arc(innerRadius=50).encode(
-                        theta=alt.Theta("count()", stack=True),
-                        color=alt.Color("연령대", scale=alt.Scale(scheme='category20')),
-                        tooltip=["연령대", "count()"],
-                    ).properties(height=300),
+                    alt.Chart(age_cnt).mark_bar(color='#5dade2').encode(
+                        x=alt.X('연령대:N', sort='-y', title='연령대'),
+                        y=alt.Y('인원:Q', title='인원'),
+                        tooltip=['연령대', '인원'],
+                    ).properties(height=280),
                     use_container_width=True,
                 )
         with right:
@@ -208,7 +210,7 @@ with tab_indiv:
                         y=alt.Y('유형:N', sort='-x'),
                         color=alt.value('orange'),
                         tooltip=['유형', '인원'],
-                    ).properties(height=300),
+                    ).properties(height=280),
                     use_container_width=True,
                 )
 
