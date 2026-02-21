@@ -2,6 +2,7 @@ import sqlite3
 import requests
 import os
 import math
+import json
 import datetime as dt
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
@@ -248,7 +249,186 @@ def save_rows(rows):
         conn.close()
 
 # ==========================================
-# 5. 메인 실행
+# 5. 집계 캐시 (ETL 완료 후 자동 실행)
+# ==========================================
+def compute_and_cache_aggregations():
+    """ETL 완료 후 주요 집계를 TB_MARKET_CACHE에 저장합니다."""
+    print("\n[집계 캐시] 시장 데이터 집계 시작...")
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    upsert_sql = adapt_query("""
+        INSERT INTO TB_MARKET_CACHE (CACHE_KEY, CACHE_DATA, COMPUTED_AT)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(CACHE_KEY) DO UPDATE SET
+            CACHE_DATA=excluded.CACHE_DATA,
+            COMPUTED_AT=excluded.COMPUTED_AT
+    """)
+
+    def run_agg(key, sql, params=()):
+        try:
+            if params:
+                cursor.execute(sql, params)
+            else:
+                cursor.execute(sql)
+            cols = [d[0].upper() for d in cursor.description]
+            rows = [dict(zip(cols, row)) for row in cursor.fetchall()]
+            data_json = json.dumps(rows, ensure_ascii=False, default=str)
+            cursor.execute(upsert_sql, (key, data_json))
+            conn.commit()
+            print(f"  [캐시] {key}: {len(rows)}행 저장")
+            return True
+        except Exception as e:
+            print(f"  [캐시] {key} 실패: {e}")
+            if is_pg():
+                conn.rollback()
+            return False
+
+    aggs = [
+        ("kpi", adapt_query("""
+            SELECT COUNT(*) as CNT,
+                   AVG(CASE WHEN TOT_TRCO > 0 THEN TOT_TRCO END) as AVG_TRCO,
+                   AVG(TOT_FXNUM) as AVG_FXNUM,
+                   AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as AVG_EMPL,
+                   AVG(CASE WHEN STDG_SCOR > 0 THEN STDG_SCOR END) as AVG_SCORE
+            FROM TB_MARKET_TREND
+        """), ()),
+        ("monthly_counts", adapt_query("""
+            SELECT YEAR_MONTH, COUNT(*) as COUNT
+            FROM TB_MARKET_TREND WHERE YEAR_MONTH IS NOT NULL
+            GROUP BY YEAR_MONTH ORDER BY YEAR_MONTH
+        """), ()),
+        ("region_counts", adapt_query("""
+            SELECT REGION as 지역, COUNT(*) as 개수
+            FROM TB_MARKET_TREND WHERE REGION IS NOT NULL
+            GROUP BY REGION ORDER BY 개수 DESC
+        """), ()),
+        ("inst_stats", adapt_query("""
+            SELECT TRAINST_NM,
+                   COUNT(*) as TRPR_CNT,
+                   COALESCE(SUM(TOT_FXNUM), 0) as TOT_FXNUM,
+                   COALESCE(SUM(REG_COURSE_MAN), 0) as REG_COURSE_MAN,
+                   AVG(EI_EMPL_RATE_3) as AVG_EMPL,
+                   AVG(STDG_SCOR) as AVG_SCORE
+            FROM TB_MARKET_TREND
+            GROUP BY TRAINST_NM ORDER BY TRPR_CNT DESC
+        """), ()),
+        ("ncs_agg", adapt_query("""
+            SELECT NCS_CD,
+                   COUNT(*) as CNT,
+                   COALESCE(SUM(TOT_FXNUM), 0) as TOT_FXNUM,
+                   COALESCE(SUM(REG_COURSE_MAN), 0) as REG_COURSE_MAN,
+                   AVG(CASE WHEN REG_COURSE_MAN > 0 AND TOT_FXNUM > 0
+                       THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as AVG_RECRUIT
+            FROM TB_MARKET_TREND
+            GROUP BY NCS_CD HAVING COUNT(*) >= 5
+            ORDER BY CNT DESC
+        """), ()),
+        ("monthly_empl", adapt_query("""
+            SELECT YEAR_MONTH as 월, AVG(EI_EMPL_RATE_3) as 평균취업률
+            FROM TB_MARKET_TREND
+            WHERE EI_EMPL_RATE_3 > 0 AND YEAR_MONTH IS NOT NULL
+            GROUP BY YEAR_MONTH ORDER BY YEAR_MONTH
+        """), ()),
+        ("monthly_recruit", adapt_query("""
+            SELECT YEAR_MONTH,
+                   AVG(CASE WHEN TOT_FXNUM > 0
+                       THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as 모집률
+            FROM TB_MARKET_TREND WHERE YEAR_MONTH IS NOT NULL
+            GROUP BY YEAR_MONTH ORDER BY YEAR_MONTH
+        """), ()),
+        ("region_opp", adapt_query("""
+            SELECT REGION,
+                   COUNT(*) as 과정수,
+                   SUM(COALESCE(TOT_FXNUM, 0)) as 총신청인원,
+                   AVG(CASE WHEN TOT_FXNUM > 0
+                       THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as 평균모집률,
+                   AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as 평균취업률
+            FROM TB_MARKET_TREND
+            WHERE REGION IS NOT NULL
+            GROUP BY REGION HAVING COUNT(*) >= 5
+        """), ()),
+        ("ncs_opp_matrix", adapt_query("""
+            SELECT NCS_CD,
+                   COUNT(*) as 경쟁과정수,
+                   AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as 평균취업률,
+                   AVG(CASE WHEN TOT_FXNUM > 0
+                       THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as 평균모집률
+            FROM TB_MARKET_TREND
+            GROUP BY NCS_CD HAVING COUNT(*) >= 3
+        """), ()),
+    ]
+
+    saved_count = sum(run_agg(key, sql, params) for key, sql, params in aggs)
+
+    # ncs_growth: 최근 6개월 vs 이전 6개월 비교 (동적 날짜 계산)
+    try:
+        cursor.execute(adapt_query(
+            "SELECT MAX(YEAR_MONTH) as MAX_YM FROM TB_MARKET_TREND WHERE YEAR_MONTH IS NOT NULL"
+        ))
+        row = cursor.fetchone()
+        max_ym_str = str(row[0])[:7] if row and row[0] else None
+    except Exception:
+        max_ym_str = None
+
+    if max_ym_str:
+        try:
+            max_y, max_m = int(max_ym_str[:4]), int(max_ym_str[5:7])
+            mid_m = max_m - 6
+            mid_y = max_y
+            if mid_m <= 0:
+                mid_m += 12
+                mid_y -= 1
+            start_m = max_m - 12
+            start_y = max_y
+            if start_m <= 0:
+                start_m += 12
+                start_y -= 1
+            mid_ym = f"{mid_y:04d}-{mid_m:02d}"
+            start_ym = f"{start_y:04d}-{start_m:02d}"
+
+            period_sql = adapt_query("""
+                SELECT NCS_CD, COUNT(*) as cnt
+                FROM TB_MARKET_TREND
+                WHERE YEAR_MONTH > ? AND YEAR_MONTH <= ? AND YEAR_MONTH IS NOT NULL
+                GROUP BY NCS_CD HAVING COUNT(*) >= 3
+            """)
+            cursor.execute(period_sql, [start_ym, mid_ym])
+            prev_dict = {str(r[0]): int(r[1]) for r in cursor.fetchall()}
+
+            cursor.execute(period_sql, [mid_ym, max_ym_str])
+            growth_rows = []
+            for r in cursor.fetchall():
+                ncs = str(r[0])
+                recent_cnt = int(r[1])
+                prev_cnt = prev_dict.get(ncs, 0)
+                growth_rate = round(
+                    (recent_cnt - prev_cnt) / (prev_cnt if prev_cnt > 0 else 1) * 100, 1
+                )
+                growth_rows.append({
+                    'NCS_CD': ncs,
+                    '최근6개월': recent_cnt,
+                    '이전6개월': prev_cnt,
+                    '증가율(%)': growth_rate,
+                })
+            growth_rows.sort(key=lambda x: x['증가율(%)'], reverse=True)
+
+            data_json = json.dumps(growth_rows, ensure_ascii=False, default=str)
+            cursor.execute(upsert_sql, ('ncs_growth', data_json))
+            conn.commit()
+            print(f"  [캐시] ncs_growth: {len(growth_rows)}행 저장")
+            saved_count += 1
+        except Exception as e:
+            print(f"  [캐시] ncs_growth 실패: {e}")
+            if is_pg():
+                conn.rollback()
+
+    conn.close()
+    print(f"[집계 캐시] {saved_count}개 집계 완료")
+
+
+# ==========================================
+# 6. 메인 실행
 # ==========================================
 def main():
     init_all_tables()
@@ -281,6 +461,8 @@ def main():
         print("수집된 데이터가 없습니다.")
     else:
         print(f"[Success] 총 {total_saved:,}건 저장 완료!")
+
+    compute_and_cache_aggregations()
 
 if __name__ == "__main__":
     main()
