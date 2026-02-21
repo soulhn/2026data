@@ -715,6 +715,10 @@ if not kpi_df.empty:
 
 st.markdown("###")
 
+# 취업률 데이터 가용 여부 사전 체크 (필터 적용 후)
+_kpi_pre = load_summary_kpi(where, params)
+no_empl_data = _kpi_pre.empty or pd.isna(_kpi_pre.iloc[0].get('평균취업률'))
+
 # 3.2 탭 구성
 tabs = st.tabs([
     "📊 시장 개요", "🏆 순위 & 모집 분석", "💎 우리 과정 vs 시장",
@@ -725,14 +729,16 @@ tabs = st.tabs([
 
 # [Tab 1] 시장 개요
 with tabs[0]:
-    kpi_data = load_summary_kpi(where, params)
+    kpi_data = _kpi_pre  # 이미 위에서 로드함
     if not kpi_data.empty:
         row = kpi_data.iloc[0]
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("총 과정수", f"{int(row['총과정수']):,}개")
-        k2.metric("평균 취업률(3개월)", f"{row['평균취업률']:.1f}%" if row['평균취업률'] else "-")
-        k3.metric("평균 모집률", f"{row['평균모집률']:.1f}%" if row['평균모집률'] else "-")
-        k4.metric("평균 훈련비", f"{int(row['평균훈련비'])//10000:,}만원" if row['평균훈련비'] else "-")
+        k2.metric("평균 취업률(3개월)", f"{row['평균취업률']:.1f}%" if pd.notna(row['평균취업률']) else "N/A")
+        k3.metric("평균 모집률", f"{row['평균모집률']:.1f}%" if pd.notna(row['평균모집률']) else "-")
+        k4.metric("평균 훈련비", f"{int(row['평균훈련비'])//10000:,}만원" if pd.notna(row['평균훈련비']) else "-")
+        if no_empl_data:
+            st.info("ℹ️ 선택된 훈련 유형은 HRD-Net API에서 취업률을 제공하지 않습니다. 취업률 기반 분석 탭이 일부 제한됩니다.")
         st.divider()
     col1, col2 = st.columns([3, 2])
     with col1:
@@ -1284,7 +1290,10 @@ with tabs[7]:
 
         st.caption(f"회귀 계수: 훈련비 100만원 증가 시 취업률 {model.coef_[0] * 1_000_000:.2f}%p 변화 / 절편: {model.intercept_:.1f}%")
     else:
-        st.info("시뮬레이션에 필요한 데이터가 부족합니다 (최소 10건).")
+        if no_empl_data:
+            st.info("선택된 훈련 유형은 취업률 데이터가 제공되지 않아 비용-취업률 시뮬레이션이 불가합니다.")
+        else:
+            st.info("시뮬레이션에 필요한 데이터가 부족합니다 (최소 10건).")
 
 # [Tab 4] 유형/일정 분석
 with tabs[3]:
@@ -1352,7 +1361,7 @@ with tabs[4]:
         )
         st.plotly_chart(fig_scatter, use_container_width=True)
     else:
-        st.info("분석할 유효 데이터가 없습니다.")
+        st.info("취업률 데이터가 없어 비용-취업률 분석이 불가합니다. (해당 훈련 유형은 HRD-Net에서 취업률을 제공하지 않습니다.)" if no_empl_data else "분석할 유효 데이터가 없습니다.")
 
 
 # [Tab 9] 경쟁 현황
@@ -1390,6 +1399,30 @@ with tabs[8]:
                     '평균모집률': st.column_config.NumberColumn(format="%.1f%%"),
                     '평균취업률': st.column_config.NumberColumn(format="%.1f%%"),
                 })
+    else:
+        if no_empl_data:
+            st.info("ℹ️ 선택된 훈련 유형은 취업률 데이터가 없습니다. 대신 만족도-모집률 기준으로 기관 경쟁력을 분석합니다.")
+            inst_all2 = inst_all.copy()
+            inst_all2['평균모집률'] = (inst_all2['REG_COURSE_MAN'] / inst_all2['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
+            inst_all2['평균만족도'] = (pd.to_numeric(inst_all2['AVG_SCORE'], errors='coerce').fillna(0) / 100).round(1)
+            inst_alt = inst_all2[inst_all2['평균만족도'] > 0].rename(columns={'TRAINST_NM': '기관명', 'TRPR_CNT': '개설수'})
+            inst_alt = inst_alt.nlargest(50, '개설수')
+            if not inst_alt.empty:
+                fig_alt = px.scatter(
+                    inst_alt, x='평균모집률', y='평균만족도', size='개설수',
+                    hover_name='기관명', size_max=40,
+                    color='평균만족도', color_continuous_scale='RdYlGn',
+                    labels={'평균모집률': '평균 모집률 (%)', '평균만족도': '평균 만족도 (100점)'},
+                )
+                med_r = inst_alt['평균모집률'].median()
+                med_s = inst_alt['평균만족도'].median()
+                fig_alt.add_hline(y=med_s, line_dash='dash', line_color='gray', line_width=1)
+                fig_alt.add_vline(x=med_r, line_dash='dash', line_color='gray', line_width=1)
+                fig_alt.update_layout(height=480, coloraxis_showscale=False)
+                st.plotly_chart(fig_alt, use_container_width=True)
+                st.caption("📌 기준선: 중앙값 기준 — 우상단(고모집·고만족도), 좌하단(저모집·저만족도)")
+        else:
+            st.info("기관 분석 데이터가 없습니다.")
 
 # [Tab 10] 키워드
 with tabs[9]:
