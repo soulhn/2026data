@@ -434,7 +434,7 @@ def load_data_full_csv(where, params):
 # ==========================================
 # 1. 설정 및 데이터 로드
 # ==========================================
-st.set_page_config(page_title="시장 동향 분석", page_icon="📈", layout="wide")
+st.set_page_config(page_title="시장 분석 & 기회 발굴", page_icon="📈", layout="wide")
 
 check_password()
 
