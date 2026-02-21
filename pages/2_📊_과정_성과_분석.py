@@ -9,9 +9,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import load_data, calculate_age_at_training, safe_float, check_password
 from config import CACHE_TTL_DEFAULT, RISK_ABSENT
 
-st.set_page_config(page_title="기수별 성과 분석", page_icon="📊", layout="wide")
+st.set_page_config(page_title="과정 성과 분석", page_icon="📊", layout="wide")
 check_password()
-st.title("📊 기수별 성과 심층 분석")
+st.title("📊 과정 성과 분석")
 st.markdown("종료된 과정의 **수료율, 취업률, 출석 패턴**을 다각도로 분석합니다.")
 
 

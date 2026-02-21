@@ -13,7 +13,7 @@ except ImportError:
     def run_etl(): st.error("❌ 'hrd_etl.py'를 찾을 수 없습니다.")
     DB_FILE = "hrd_analysis.db"
 
-st.set_page_config(page_title="HRD 데이터 감사 시스템", page_icon="🔎", layout="wide")
+st.set_page_config(page_title="데이터 조회", page_icon="🔎", layout="wide")
 check_password()
 
 COLUMN_MAP = {

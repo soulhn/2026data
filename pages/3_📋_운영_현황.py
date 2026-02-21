@@ -12,9 +12,9 @@ from config import (
     RISK_ABSENT, RISK_LATE, RISK_EARLY_LEAVE, RECENT_TREND_DAYS,
 )
 
-st.set_page_config(page_title="진행 과정 관리", page_icon="🚨", layout="wide")
+st.set_page_config(page_title="운영 현황", page_icon="📋", layout="wide")
 check_password()
-st.title("🚨 진행 과정 실시간 관리")
+st.title("📋 운영 현황")
 st.markdown("현재 운영 중인 과정의 **실시간 출결 현황** (입/퇴실)과 **특이사항**을 집중 모니터링합니다.")
 
 
