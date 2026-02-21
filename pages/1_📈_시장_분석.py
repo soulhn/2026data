@@ -725,14 +725,13 @@ with tabs[0]:
         st.subheader("지역별 개설 수")
         reg_cnt = load_region_counts(where, params)
         if not reg_cnt.empty:
-            st.altair_chart(
-                alt.Chart(reg_cnt.head(15)).mark_bar(color='#5dade2').encode(
-                    x=alt.X('개수:Q', title='개설 수'),
-                    y=alt.Y('지역:N', sort='-x', title=''),
-                    tooltip=['지역', '개수'],
-                ).properties(height=320),
-                use_container_width=True,
+            fig_reg_bar = px.bar(
+                reg_cnt.head(15).sort_values('개수'),
+                x='개수', y='지역', orientation='h',
+                color_discrete_sequence=['#5dade2'],
             )
+            fig_reg_bar.update_layout(height=320, margin=dict(t=10, b=30), xaxis_title='개설 수', yaxis_title='')
+            st.plotly_chart(fig_reg_bar, use_container_width=True)
 
 # [Tab 2] 🏆 순위 & 모집 분석
 with tabs[1]:
