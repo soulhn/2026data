@@ -610,14 +610,19 @@ region_opts = ['전체'] + sorted(filter_opts['REGION'].dropna().unique().tolist
 sel_region = st.sidebar.selectbox("📍 지역", region_opts)
 
 type_opts = sorted(filter_opts['TRAIN_TARGET'].dropna().unique().tolist())
-sel_types = st.sidebar.multiselect("🎓 훈련 유형 (다중선택)", type_opts, default=[])
+_kdt = "K-디지털 트레이닝"
+kdt_default = [_kdt] if _kdt in type_opts else []
+sel_types = st.sidebar.multiselect("🎓 훈련 유형 (다중선택)", type_opts, default=kdt_default)
 
 wk_codes = filter_opts['WKEND_SE'].dropna().unique().tolist()
 wk_opts = sorted(set(WK_MAP.get(str(c), '기타') for c in wk_codes))
 sel_wkend = st.sidebar.multiselect("📅 주말/주중 (다중선택)", wk_opts, default=[])
 
-grade_opts = sorted(filter_opts['GRADE'].dropna().unique().tolist())
-sel_grade = st.sidebar.multiselect("🏅 기관 등급 (다중선택)", grade_opts, default=[])
+grade_opts = sorted([g for g in filter_opts['GRADE'].dropna().unique().tolist() if g and str(g).strip()])
+if grade_opts:
+    sel_grade = st.sidebar.multiselect("🏅 기관 등급 (다중선택)", grade_opts, default=[])
+else:
+    sel_grade = []
 
 ncs_opts = ['전체'] + sorted(filter_opts['NCS_CD'].dropna().unique().tolist())
 sel_ncs = st.sidebar.selectbox("NCS 코드", ncs_opts)
