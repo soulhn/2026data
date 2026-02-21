@@ -331,6 +331,76 @@ def load_keyword_names(where, params):
     """, params=params)
 
 
+def load_region_opp(where, params):
+    """사업기회 탭: 지역별 수요(모집률)·공급(과정수)·성과(취업률)"""
+    return _sql_query(f"""
+        SELECT REGION,
+               COUNT(*) as 과정수,
+               SUM(COALESCE(TOT_FXNUM, 0)) as 총신청인원,
+               AVG(CASE WHEN TOT_FXNUM > 0
+                   THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as 평균모집률,
+               AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as 평균취업률
+        FROM TB_MARKET_TREND {where}
+        GROUP BY REGION
+        HAVING COUNT(*) >= 5
+    """, params=params)
+
+
+def load_ncs_growth(where, params):
+    """사업기회 탭: NCS별 최근 6개월 vs 이전 6개월 개설 증가율"""
+    max_ym_df = _sql_query(f"""
+        SELECT MAX(YEAR_MONTH) as MAX_YM FROM TB_MARKET_TREND {where}
+    """, params=params)
+    if max_ym_df.empty or pd.isna(max_ym_df['MAX_YM'].iloc[0]):
+        return pd.DataFrame()
+    try:
+        max_dt = pd.to_datetime(str(max_ym_df['MAX_YM'].iloc[0])[:7] + '-01')
+        mid_dt = max_dt - pd.DateOffset(months=6)
+        start_dt = max_dt - pd.DateOffset(months=12)
+        mid_ym = mid_dt.strftime('%Y-%m')
+        start_ym = start_dt.strftime('%Y-%m')
+        max_ym = max_dt.strftime('%Y-%m')
+    except Exception:
+        return pd.DataFrame()
+    and_or = "AND" if where else "WHERE"
+    recent_df = _sql_query(f"""
+        SELECT NCS_CD, COUNT(*) as 최근6개월
+        FROM TB_MARKET_TREND {where}
+          {and_or} YEAR_MONTH > ? AND YEAR_MONTH <= ?
+        GROUP BY NCS_CD HAVING COUNT(*) >= 3
+    """, params=list(params) + [mid_ym, max_ym])
+    prev_df = _sql_query(f"""
+        SELECT NCS_CD, COUNT(*) as 이전6개월
+        FROM TB_MARKET_TREND {where}
+          {and_or} YEAR_MONTH > ? AND YEAR_MONTH <= ?
+        GROUP BY NCS_CD HAVING COUNT(*) >= 3
+    """, params=list(params) + [start_ym, mid_ym])
+    if recent_df.empty:
+        return pd.DataFrame()
+    merged = recent_df.merge(
+        prev_df if not prev_df.empty else pd.DataFrame(columns=['NCS_CD', '이전6개월']),
+        on='NCS_CD', how='left'
+    ).fillna(0)
+    merged['증가율(%)'] = (
+        (merged['최근6개월'] - merged['이전6개월']) / merged['이전6개월'].replace(0, 1) * 100
+    ).round(1)
+    return merged.sort_values('증가율(%)', ascending=False)
+
+
+def load_ncs_opp_matrix(where, params):
+    """사업기회 탭: NCS별 취업률·모집률·경쟁도 (기회 매트릭스용)"""
+    return _sql_query(f"""
+        SELECT NCS_CD,
+               COUNT(*) as 경쟁과정수,
+               AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as 평균취업률,
+               AVG(CASE WHEN TOT_FXNUM > 0
+                   THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as 평균모집률
+        FROM TB_MARKET_TREND {where}
+        GROUP BY NCS_CD
+        HAVING COUNT(*) >= 3
+    """, params=params)
+
+
 def load_data_preview(where, params, limit=1000):
     """Tab 12: 데이터 조회용."""
     return _sql_query(f"""
@@ -526,7 +596,7 @@ tabs = st.tabs([
     "📊 시장 개요", "🏆 순위 & 모집 분석", "💎 우리 과정 vs 시장",
     "🎨 유형/일정 분석", "💰 비용/성과 분석",
     "📈 시계열 트렌드", "⚔️ 경쟁 심화도", "🎯 비용 대비 성과",
-    "🏢 경쟁 현황", "☁️ 키워드", "🎓 자격증 분석", "📑 데이터 조회"
+    "🏢 경쟁 현황", "☁️ 키워드", "🎓 자격증 분석", "🔭 사업기회 발굴", "📑 데이터 조회"
 ])
 
 # [Tab 1] 시장 개요
@@ -1202,8 +1272,183 @@ with tabs[10]:
             st.info("파싱 가능한 자격증 데이터가 없습니다.")
 
 
-# [Tab 12] 데이터 조회
+# [Tab 12] 🔭 사업기회 발굴
 with tabs[11]:
+    st.caption("수요(모집률)가 높고 공급(경쟁 과정 수)이 낮은 영역을 찾아 신규 교육사업 진입 기회를 도출합니다.")
+
+    # 우리 NCS 코드 (한 번만 조회)
+    _our_ncs_opp = []
+    if internal_df is not None:
+        _ids_opp = internal_df['TRPR_ID'].unique().tolist()
+        if _ids_opp:
+            _ph = ','.join('?' * len(_ids_opp))
+            _m = _sql_query(
+                f"SELECT DISTINCT NCS_CD FROM TB_MARKET_TREND WHERE TRPR_ID IN ({_ph}) AND NCS_CD IS NOT NULL",
+                params=_ids_opp
+            )
+            _our_ncs_opp = _m['NCS_CD'].dropna().unique().tolist() if not _m.empty else []
+
+    # ── 섹션 1: 지역별 수요-공급 갭 ──
+    st.subheader("📍 지역별 수요-공급 갭")
+    st.caption("좌상단(과정 적고 모집률 높음) = 공급 부족 지역 → 신규 진입 기회")
+
+    region_opp = load_region_opp(where, params)
+    if not region_opp.empty:
+        for col in ['과정수', '총신청인원', '평균모집률', '평균취업률']:
+            region_opp[col] = pd.to_numeric(region_opp[col], errors='coerce').fillna(0)
+        avg_c = region_opp['과정수'].mean()
+        avg_r = region_opp['평균모집률'].mean()
+
+        fig_reg = px.scatter(
+            region_opp, x='과정수', y='평균모집률',
+            size='총신청인원', text='REGION',
+            color='평균취업률', color_continuous_scale='RdYlGn',
+            labels={'REGION': '지역', '과정수': '공급(과정 수)', '평균모집률': '수요(모집률 %)'},
+            title='지역별 공급(과정 수) vs 수요(모집률)'
+        )
+        fig_reg.add_hline(y=avg_r, line_dash="dash", line_color="gray", opacity=0.5)
+        fig_reg.add_vline(x=avg_c, line_dash="dash", line_color="gray", opacity=0.5)
+        fig_reg.add_annotation(
+            x=region_opp['과정수'].quantile(0.1), y=region_opp['평균모집률'].quantile(0.85),
+            text="🟢 고수요·저공급 (진입 기회)", showarrow=False, font=dict(color='green', size=11)
+        )
+        fig_reg.add_annotation(
+            x=region_opp['과정수'].quantile(0.85), y=region_opp['평균모집률'].quantile(0.1),
+            text="🔴 과잉공급 (경쟁 심화)", showarrow=False, font=dict(color='red', size=11)
+        )
+        fig_reg.update_traces(textposition='top center')
+        st.plotly_chart(fig_reg, use_container_width=True)
+
+        opp_regions = region_opp[
+            (region_opp['과정수'] < avg_c) & (region_opp['평균모집률'] > avg_r)
+        ].sort_values('평균모집률', ascending=False)
+        if not opp_regions.empty:
+            st.success("🎯 **진입 기회 지역**: " + ", ".join(opp_regions['REGION'].tolist()))
+    else:
+        st.info("지역 데이터가 부족합니다.")
+
+    st.divider()
+
+    # ── 섹션 2: 성장 중인 NCS 분야 ──
+    st.subheader("📈 성장 중인 NCS 분야")
+    st.caption("최근 6개월 개설 수 증가율 (이전 6개월 대비) — 빠르게 성장하는 분야 = 선제 진입 기회")
+
+    ncs_growth = load_ncs_growth(where, params)
+    if not ncs_growth.empty:
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            top_up = ncs_growth[ncs_growth['증가율(%)'] > 0].head(10)
+            if not top_up.empty:
+                fig_up = px.bar(
+                    top_up, x='증가율(%)', y='NCS_CD', orientation='h',
+                    color='증가율(%)', color_continuous_scale='Greens',
+                    text='증가율(%)', title='🚀 급성장 NCS Top 10',
+                    labels={'NCS_CD': 'NCS 분야'}
+                )
+                fig_up.update_layout(yaxis={'categoryorder': 'total ascending'}, height=350)
+                st.plotly_chart(fig_up, use_container_width=True)
+        with col_g2:
+            top_dn = ncs_growth[ncs_growth['증가율(%)'] < 0].tail(10)
+            if not top_dn.empty:
+                fig_dn = px.bar(
+                    top_dn, x='증가율(%)', y='NCS_CD', orientation='h',
+                    color='증가율(%)', color_continuous_scale='Reds_r',
+                    text='증가율(%)', title='📉 수요 감소 NCS Top 10',
+                    labels={'NCS_CD': 'NCS 분야'}
+                )
+                fig_dn.update_layout(yaxis={'categoryorder': 'total descending'}, height=350)
+                st.plotly_chart(fig_dn, use_container_width=True)
+        with st.expander("전체 NCS 성장률 데이터"):
+            st.dataframe(ncs_growth, use_container_width=True, hide_index=True,
+                         column_config={'증가율(%)': st.column_config.NumberColumn(format="%.1f%%")})
+    else:
+        st.info("NCS 성장 분석 데이터가 부족합니다.")
+
+    st.divider()
+
+    # ── 섹션 3: 고성과·저경쟁 NCS 매트릭스 ──
+    st.subheader("🎯 고성과·저경쟁 NCS 기회 매트릭스")
+    st.caption("좌상단(경쟁 적고 취업률 높음) = 신규 진입 최적 영역. 버블 크기 = 모집률")
+
+    ncs_mat = load_ncs_opp_matrix(where, params)
+    if not ncs_mat.empty:
+        for col in ['경쟁과정수', '평균취업률', '평균모집률']:
+            ncs_mat[col] = pd.to_numeric(ncs_mat[col], errors='coerce')
+        ncs_mat = ncs_mat.dropna(subset=['평균취업률', '평균모집률'])
+
+        if not ncs_mat.empty:
+            ncs_mat = ncs_mat.copy()
+            ncs_mat['분류'] = ncs_mat['NCS_CD'].apply(
+                lambda x: '우리 분야' if x in _our_ncs_opp else '시장'
+            )
+            fig_mat = px.scatter(
+                ncs_mat, x='경쟁과정수', y='평균취업률',
+                size='평균모집률', text='NCS_CD',
+                color='분류', color_discrete_map={'우리 분야': 'red', '시장': 'steelblue'},
+                labels={'경쟁과정수': '경쟁 강도 (과정 수)', '평균취업률': '성과 (취업률 %)'},
+                title='NCS별 경쟁강도 vs 취업률 (버블 크기 = 모집률)'
+            )
+            med_comp = ncs_mat['경쟁과정수'].median()
+            med_empl = ncs_mat['평균취업률'].median()
+            fig_mat.add_hline(y=med_empl, line_dash="dash", line_color="gray", opacity=0.5)
+            fig_mat.add_vline(x=med_comp, line_dash="dash", line_color="gray", opacity=0.5)
+            fig_mat.add_annotation(
+                x=ncs_mat['경쟁과정수'].quantile(0.1), y=ncs_mat['평균취업률'].quantile(0.9),
+                text="🌟 최적 진입 영역", showarrow=False, font=dict(color='green', size=12)
+            )
+            fig_mat.update_traces(textposition='top center')
+            st.plotly_chart(fig_mat, use_container_width=True)
+
+            best_ncs = ncs_mat[
+                (ncs_mat['경쟁과정수'] < med_comp) & (ncs_mat['평균취업률'] > med_empl)
+            ].sort_values('평균취업률', ascending=False)
+            if not best_ncs.empty:
+                st.success("🌟 **최적 진입 영역 NCS**: " + ", ".join(best_ncs['NCS_CD'].head(8).tolist()))
+    else:
+        st.info("기회 매트릭스 데이터가 부족합니다.")
+
+    st.divider()
+
+    # ── 섹션 4: 종합 기회 지수 ──
+    st.subheader("🏆 종합 사업기회 지수 Top 15")
+    st.caption("취업률(40점) + 모집률(40점) − 경쟁도(20점) 기준 정규화 합산")
+
+    if not ncs_mat.empty and len(ncs_mat) >= 3:
+        score_df = ncs_mat.copy()
+
+        def _minmax(s):
+            lo, hi = s.min(), s.max()
+            return (s - lo) / (hi - lo) if hi > lo else pd.Series(0.5, index=s.index)
+
+        score_df['기회지수'] = (
+            _minmax(score_df['평균취업률']) * 40
+            + _minmax(score_df['평균모집률']) * 40
+            - _minmax(score_df['경쟁과정수']) * 20
+        ).round(1)
+        top15 = score_df.nlargest(15, '기회지수').copy()
+        top15['순위'] = range(1, len(top15) + 1)
+        if _our_ncs_opp:
+            top15['비고'] = top15['NCS_CD'].apply(lambda x: '⭐ 우리 분야' if x in _our_ncs_opp else '')
+
+        disp_cols = ['순위', 'NCS_CD', '기회지수', '평균취업률', '평균모집률', '경쟁과정수']
+        if '비고' in top15.columns:
+            disp_cols.append('비고')
+        st.dataframe(
+            top15[disp_cols].reset_index(drop=True),
+            use_container_width=True, hide_index=True,
+            column_config={
+                '기회지수': st.column_config.ProgressColumn('기회지수 (80점 만점)', min_value=0, max_value=80, format="%.1f"),
+                '평균취업률': st.column_config.NumberColumn(format="%.1f%%"),
+                '평균모집률': st.column_config.NumberColumn(format="%.1f%%"),
+                '경쟁과정수': st.column_config.NumberColumn(format="%d개"),
+            }
+        )
+    else:
+        st.info("종합 기회지수 산출에 데이터가 부족합니다.")
+
+
+# [Tab 13] 데이터 조회
+with tabs[12]:
     st.subheader(f"📄 상세 데이터 ({total_count:,}건)")
 
     preview_df = load_data_preview(where, params, limit=1000)
