@@ -149,7 +149,7 @@ def load_db_stats():
         SELECT REGION as 지역, COUNT(*) as 건수
         FROM TB_MARKET_TREND
         WHERE REGION IS NOT NULL AND REGION != ''
-        GROUP BY REGION ORDER BY 건수 DESC LIMIT 15
+        GROUP BY REGION ORDER BY 건수 DESC
     """)
     s["market_year"] = load_data("""
         SELECT SUBSTR(YEAR_MONTH, 1, 4) as 연도, COUNT(*) as 건수
@@ -241,7 +241,7 @@ for tab, (tbl_name, info) in zip(tabs, SCHEMAS.items()):
                 if not df_year.empty:
                     st.dataframe(df_year, hide_index=True, use_container_width=True)
 
-                st.markdown("*지역별 (상위 15)*")
+                st.markdown("*지역별*")
                 df_reg = stats.get("market_region", pd.DataFrame())
                 if not df_reg.empty:
                     st.dataframe(df_reg, hide_index=True, use_container_width=True)
