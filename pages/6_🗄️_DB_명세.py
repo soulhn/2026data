@@ -270,7 +270,7 @@ for tab, (tbl_name, info) in zip(tabs, SCHEMAS.items()):
 
         st.markdown(f"**{info['설명']}**")
         st.markdown(f"PK: `{info['PK']}` · 총 레코드: **{cnt_str}**")
-        st.caption("🟢 ≥95%  🟡 50~94%  🔴 1~49%  ⚫ 0% (값 없음)")
+        st.caption("🟢 ≥95%  🟡 50\u223294%  🔴 1\u223249%  ⚫ 0% (값 없음)")
 
         # 컬럼 상세 테이블
         rows = []

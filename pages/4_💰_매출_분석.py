@@ -331,6 +331,34 @@ with tab_indiv:
         )
         st.plotly_chart(fig_line, use_container_width=True)
 
+        # 단위기간별 출석률 추이 차트
+        period_att = rev_df.groupby('period_num')['rate'].mean().reset_index()
+        period_att.columns = ['period_num', 'avg_rate']
+        period_att['avg_rate_pct'] = (period_att['avg_rate'] * 100).round(1)
+        period_att_sorted = period_att.sort_values('period_num')
+        att_x = [labels.get(p, str(p)) for p in period_att_sorted['period_num']]
+
+        fig_att = go.Figure()
+        fig_att.add_trace(go.Scatter(
+            name='평균 출석률', x=att_x,
+            y=period_att_sorted['avg_rate_pct'].tolist(),
+            mode='lines+markers',
+            line=dict(color='#9b59b6', width=2),
+            marker=dict(size=8),
+        ))
+        fig_att.add_hline(
+            y=80, line_dash='dash', line_color='red', line_width=1.5,
+            annotation_text='전액 기준 80%', annotation_position='top right',
+        )
+        fig_att.update_layout(
+            title='단위기간별 평균 출석률 추이',
+            xaxis_title='단위기간', yaxis_title='평균 출석률 (%)',
+            yaxis=dict(range=[0, 105]),
+            legend=dict(orientation='h', yanchor='bottom', y=1.02),
+            height=280,
+        )
+        st.plotly_chart(fig_att, use_container_width=True)
+
         # 요약 테이블
         st.subheader("단위기간 요약")
         summary_display = period_summary[['period_label', 'period_status', 'training_days',

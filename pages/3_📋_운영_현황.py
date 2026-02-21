@@ -357,6 +357,45 @@ with tab_detail:
             st.success("현재 출결 위험군이 없습니다. 👍")
         st.divider()
 
+    # ── [4-2] 개강 초반 이탈 예측 ─────────────────────────────────────
+    if not this_logs.empty:
+        st.markdown("##### 🔮 개강 초반 출석 패턴 (이탈 선행 지표)")
+        st.caption(
+            "개강 후 처음 14일간 출석률이 낮은 수강생은 중도탈락 위험이 높습니다. "
+            "(기준: 첫 14일 출석률 70% 미만)"
+        )
+        all_dates = sorted(this_logs['ATEND_DT'].unique())
+        early_dates = all_dates[:14]
+
+        if len(early_dates) >= 3:
+            early_logs = this_logs[this_logs['ATEND_DT'].isin(early_dates)]
+            early_agg = early_logs.groupby('TRNEE_ID').agg(
+                초반_출석=('ATEND_STATUS', lambda x: x.isin(['출석', '지각']).sum()),
+                초반_기록=('ATEND_DT', 'count'),
+            ).reset_index()
+            early_agg['초반_출석률(%)'] = (early_agg['초반_출석'] / early_agg['초반_기록'] * 100).round(1)
+            early_agg = early_agg.merge(active_students[['TRNEE_ID', 'TRNEE_NM', 'TRNEE_STATUS']], on='TRNEE_ID', how='inner')
+
+            early_risk = early_agg[early_agg['초반_출석률(%)'] < 70].sort_values('초반_출석률(%)')
+            if not early_risk.empty:
+                st.warning(f"⚠️ 개강 초반 위험군: **{len(early_risk)}명** (첫 {len(early_dates)}일 기준)")
+                st.dataframe(
+                    early_risk[['TRNEE_NM', '초반_출석', '초반_기록', '초반_출석률(%)', 'TRNEE_STATUS']].rename(
+                        columns={'TRNEE_NM': '이름', '초반_출석': '출석일', '초반_기록': '기록일', 'TRNEE_STATUS': '현재상태'}
+                    ),
+                    column_config={
+                        '초반_출석률(%)': st.column_config.ProgressColumn(
+                            '초반 출석률', min_value=0, max_value=100, format="%.1f%%"
+                        ),
+                    },
+                    use_container_width=True, hide_index=True,
+                )
+            else:
+                st.success(f"개강 초반({len(early_dates)}일) 위험군이 없습니다. 👍")
+        else:
+            st.info(f"초반 분석을 위해 최소 3일 이상의 출결 데이터가 필요합니다. (현재 {len(early_dates)}일)")
+        st.divider()
+
     # ── [5] 상세 탭 ──────────────────────────────────────────────────
     dt1, dt2, dt3 = st.tabs(["🚨 미퇴실/특이사항", "❌ 결석자", "📋 전체 출석부"])
 
