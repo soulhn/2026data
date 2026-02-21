@@ -96,6 +96,17 @@ def init_all_tables():
     ''')
 
     # ==========================================
+    # [캐시] 시장 동향 집계 캐시 (ETL 후 pre-compute)
+    # ==========================================
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS TB_MARKET_CACHE (
+            CACHE_KEY TEXT PRIMARY KEY,
+            CACHE_DATA TEXT,
+            COMPUTED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # ==========================================
     # 마이그레이션 (기존 DB 호환) — 인덱스보다 먼저 실행
     # ==========================================
     migrations = [
