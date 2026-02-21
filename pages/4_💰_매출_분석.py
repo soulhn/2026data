@@ -183,7 +183,7 @@ if course_list.empty:
     st.stop()
 
 with st.sidebar:
-    st.header("🔍 분析 대상 선택")
+    st.header("🔍 분석 대상 선택")
     selected_degr = st.selectbox(
         "회차(기수)를 선택하세요",
         course_list['TRPR_DEGR'].unique(),
@@ -195,7 +195,7 @@ with st.sidebar:
         f"**기간:** {sel_row['TR_STA_DT']} ~ {sel_row['TR_END_DT']}"
     )
 
-tab_all, tab_indiv = st.tabs(["🌐 전체 기수 비교", "📌 개별 기수 분析"])
+tab_all, tab_indiv = st.tabs(["🌐 전체 기수 비교", "📌 개별 기수 분석"])
 
 
 with tab_indiv:
