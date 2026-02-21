@@ -968,10 +968,16 @@ with tabs[3]:
         monthly_trco.columns = ['월', '중앙값', 'Q1', 'Q3']
         monthly_trco = monthly_trco.sort_values('월')
 
+        monthly_trco['월'] = pd.to_datetime(monthly_trco['월'], format='%Y-%m', errors='coerce')
+        monthly_trco = monthly_trco.dropna(subset=['월'])
+        full_range_trco = pd.date_range(monthly_trco['월'].min(), monthly_trco['월'].max(), freq='MS')
+        monthly_trco = monthly_trco.set_index('월').reindex(full_range_trco).reset_index()
+        monthly_trco.columns = ['월', '중앙값', 'Q1', 'Q3']
+
         fig_trco = go.Figure()
-        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['Q3'], mode='lines', name='75%', line=dict(width=0), showlegend=False))
-        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['Q1'], mode='lines', name='25~75% 범위', fill='tonexty', fillcolor='rgba(68,114,196,0.2)', line=dict(width=0)))
-        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['중앙값'], mode='lines+markers', name='중앙값', line=dict(color='#4472C4', width=3)))
+        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['Q3'], mode='lines', name='75%', line=dict(width=0), showlegend=False, connectgaps=False))
+        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['Q1'], mode='lines', name='25~75% 범위', fill='tonexty', fillcolor='rgba(68,114,196,0.2)', line=dict(width=0), connectgaps=False))
+        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['중앙값'], mode='lines+markers', name='중앙값', line=dict(color='#4472C4', width=3), connectgaps=False))
         fig_trco.update_layout(xaxis_title='월', yaxis_title='훈련비(원)', title='월별 훈련비 분포 (중앙값 + 사분위)')
         st.plotly_chart(fig_trco, use_container_width=True)
     else:
@@ -1045,6 +1051,7 @@ with tabs[3]:
         if not comp_monthly.empty:
             comp_monthly = comp_monthly.sort_values('YEAR_MONTH')
             fig_comp = px.line(comp_monthly, x='YEAR_MONTH', y='경쟁과정수', color='NCS_CD', markers=True, title='우리 NCS 분야 월별 경쟁 과정 수')
+            fig_comp.update_xaxes(type='category')
             st.plotly_chart(fig_comp, use_container_width=True)
         st.divider()
 
@@ -1090,6 +1097,7 @@ with tabs[3]:
         else:
             st.success(f"최근 3개월 모집률 안정/상승: {recent_3[0]:.1f}% → {recent_3[-1]:.1f}%")
         fig_rec_trend = px.line(recruit_trend, x='YEAR_MONTH', y='모집률', markers=True, title='월별 평균 모집률 추이')
+        fig_rec_trend.update_xaxes(type='category')
         st.plotly_chart(fig_rec_trend, use_container_width=True)
 
     st.divider()
@@ -1182,6 +1190,7 @@ with tabs[4]:
                         fig_empl_trend.add_annotation(x=ym, y=1, yref="paper", text=f"{int(row['TRPR_DEGR'])}기", showarrow=False, yshift=10, font=dict(color="red", size=10))
 
             fig_empl_trend.update_layout(xaxis_title='월', yaxis_title='취업률(%)', title='시장 전체 월별 취업률 추이')
+            fig_empl_trend.update_xaxes(type='category')
             st.plotly_chart(fig_empl_trend, use_container_width=True)
         else:
             st.info("취업률 데이터가 없습니다.")
