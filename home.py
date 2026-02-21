@@ -124,7 +124,35 @@ def render_dashboard():
     kpi5.metric("평균 취업률(6개월)", f"{avg_rate_6:.1f}%", help="6개월 고용보험 + HRD자체취업 합산")
     st.divider()
 
-    # [Section 1.5] 오늘의 출결 현황 (신규)
+    # [Section 2] 시장 포지셔닝
+    st.subheader("📍 전국 KDT 시장 포지셔닝")
+    st.caption("직업능력심사평가원 KDT 훈련과정 성과평가 기준 | 전국 동일 NCS(정보통신) 과정 대상")
+
+    r1, r2, r3 = st.columns(3)
+    with r1:
+        st.metric("2023년", "집계 중", help="데이터 확인 필요")
+    with r2:
+        st.metric("2024년 전국 순위", "14위 / 611개", "상위 2.3%", delta_color="off")
+    with r3:
+        st.metric("2025년 전국 순위", "22위 / 561개", "상위 3.9%", delta_color="off")
+
+    rank_df = pd.DataFrame([
+        {"연도": "2024", "상위(%)": 2.3, "label": "14위"},
+        {"연도": "2025", "상위(%)": 3.9, "label": "22위"},
+    ])
+    chart = alt.Chart(rank_df).mark_bar(width=60).encode(
+        x=alt.X("연도:N", title="연도", axis=alt.Axis(labelFontSize=13)),
+        y=alt.Y("상위(%):Q", title="상위 % (낮을수록 우수)", scale=alt.Scale(domain=[0, 10])),
+        color=alt.value("#2ecc71"),
+        tooltip=[alt.Tooltip("연도:N"), alt.Tooltip("label:N", title="순위"), alt.Tooltip("상위(%):Q", title="상위 %", format=".1f")],
+    ).properties(height=180)
+    text = chart.mark_text(align="center", dy=-10, fontSize=13, fontWeight="bold").encode(
+        text=alt.Text("label:N")
+    )
+    st.altair_chart((chart + text), use_container_width=True)
+    st.divider()
+
+    # [Section 3] 오늘의 출결 현황 (신규)
     if active_courses > 0:
         st.subheader("📡 오늘의 출결 현황")
         try:
@@ -174,7 +202,7 @@ def render_dashboard():
             st.info("출결 데이터를 불러올 수 없습니다.")
         st.divider()
 
-    # [Section 2] 차트와 상세 테이블
+    # [Section 4] 차트와 상세 테이블
     col_left, col_right = st.columns([1, 1])
 
     with col_left:
@@ -205,7 +233,7 @@ def render_dashboard():
             use_container_width=True,
         )
 
-    # [Section 3] 진행 중인 과정
+    # [Section 5] 진행 중인 과정
     st.subheader("🚨 현재 운영 중인 과정 현황")
     active_df = df[df['상태'] == '진행중'].copy()
     if not active_df.empty:
