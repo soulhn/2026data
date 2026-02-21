@@ -84,11 +84,12 @@ def _render_project_intro():
 
     st.divider()
 
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("총 운영 기수", "25기", "2023.07 ~ 현재")
-    m2.metric("전국 순위 (2024)", "14위", "611개 중 · 상위 2.3%")
-    m3.metric("전국 순위 (2025)", "22위", "561개 중 · 상위 3.9%")
-    m4.metric("부서 영업이익", "13.3억", "+325%")
+    m2.metric("전국 순위 (2023)", "10위", "300개 중 · 상위 3.3%")
+    m3.metric("전국 순위 (2024)", "14위", "611개 중 · 상위 2.3%")
+    m4.metric("전국 순위 (2025)", "22위", "561개 중 · 상위 3.9%")
+    m5.metric("부서 영업이익", "13.3억", "+325%")
 
     st.divider()
 
@@ -130,13 +131,14 @@ def render_dashboard():
 
     r1, r2, r3 = st.columns(3)
     with r1:
-        st.metric("2023년", "집계 중", help="데이터 확인 필요")
+        st.metric("2023년 전국 순위", "10위 / 300개", "상위 3.3%", delta_color="off")
     with r2:
         st.metric("2024년 전국 순위", "14위 / 611개", "상위 2.3%", delta_color="off")
     with r3:
         st.metric("2025년 전국 순위", "22위 / 561개", "상위 3.9%", delta_color="off")
 
     rank_df = pd.DataFrame([
+        {"연도": "2023", "상위(%)": round(10/300*100, 1), "label": "10위"},
         {"연도": "2024", "상위(%)": 2.3, "label": "14위"},
         {"연도": "2025", "상위(%)": 3.9, "label": "22위"},
     ])
