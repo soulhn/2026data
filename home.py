@@ -210,42 +210,6 @@ def render_dashboard():
             use_container_width=True,
         )
 
-    # [Section 6] 진행 중인 과정
-    st.subheader("🚨 현재 운영 중인 과정 현황")
-    active_df = df[df['상태'] == '진행중'].copy()
-    if not active_df.empty:
-        # 제적/중도탈락 인원 집계
-        trainee_stats = load_data("""
-            SELECT TRPR_ID, TRPR_DEGR,
-                   SUM(CASE WHEN TRNEE_STATUS = '제적' THEN 1 ELSE 0 END) AS EXPEL_CNT,
-                   SUM(CASE WHEN TRNEE_STATUS = '중도탈락' THEN 1 ELSE 0 END) AS DROP_CNT
-            FROM TB_TRAINEE_INFO
-            GROUP BY TRPR_ID, TRPR_DEGR
-        """)
-        active_df = active_df.merge(trainee_stats, on=['TRPR_ID', 'TRPR_DEGR'], how='left')
-        for c in ['EXPEL_CNT', 'DROP_CNT']:
-            active_df[c] = pd.to_numeric(active_df[c], errors='coerce').fillna(0).astype(int)
-        active_df['CURRENT_CNT'] = (active_df['TOT_PAR_MKS'] - active_df['EXPEL_CNT'] - active_df['DROP_CNT']).astype(int)
-        active_df['잔여율'] = (active_df['CURRENT_CNT'] / active_df['TOT_PAR_MKS'].replace(0, pd.NA) * 100).fillna(0)
-        st.dataframe(
-            active_df[['TRPR_DEGR', 'TRPR_NM', 'TR_END_DT', 'TOT_TRP_CNT', 'TOT_PAR_MKS', 'EXPEL_CNT', 'DROP_CNT', 'CURRENT_CNT', '잔여율']],
-            column_config={
-                "TRPR_DEGR": "회차",
-                "TRPR_NM": "과정명",
-                "TR_END_DT": st.column_config.DateColumn("종료예정일"),
-                "TOT_TRP_CNT": st.column_config.NumberColumn("수강신청", format="%d명"),
-                "TOT_PAR_MKS": st.column_config.NumberColumn("개강인원", format="%d명"),
-                "EXPEL_CNT": st.column_config.NumberColumn("제적", format="%d명"),
-                "DROP_CNT": st.column_config.NumberColumn("중도탈락", format="%d명"),
-                "CURRENT_CNT": st.column_config.NumberColumn("현재인원", format="%d명"),
-                "잔여율": st.column_config.ProgressColumn("잔여율", format="%.1f%%", min_value=0, max_value=100),
-            },
-            hide_index=True,
-            use_container_width=True,
-        )
-    else:
-        st.info("현재 진행 중인 과정이 없습니다. 모든 과정이 종료되었습니다.")
-
     with st.sidebar:
         st.info("좌측 메뉴를 선택하여 상세 분석 페이지로 이동하세요.")
         st.markdown("""
