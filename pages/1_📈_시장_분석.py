@@ -1028,7 +1028,7 @@ with tabs[3]:
     st.divider()
 
     # §4: 경쟁 심화도 (old Tab7)
-    st.subheader("⚔️ 경쟁 심화도 분析")
+    st.subheader("⚔️ 경쟁 심화도 분석")
     if internal_df is None:
         st.info("HANWHA_COURSE_ID가 설정되지 않았습니다. 시장 전체 경쟁 분석만 표시합니다.")
         our_ncs_codes_comp = []
