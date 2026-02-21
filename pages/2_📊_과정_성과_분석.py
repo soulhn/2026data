@@ -80,6 +80,15 @@ def get_late_times(degr):
 
 
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
+def get_early_leave_times(degr):
+    return load_data(
+        "SELECT OUT_TIME FROM TB_ATTENDANCE_LOG "
+        "WHERE TRPR_DEGR = ? AND ATEND_STATUS = '조퇴'",
+        params=[degr],
+    )
+
+
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def get_stay_duration(degr):
     """체류시간 분석용 데이터"""
     return load_data(
@@ -203,6 +212,37 @@ with tab_indiv:
                     use_container_width=True,
                 )
 
+        # 연령대별 수료율 & 결석 분석
+        if '연령대' in students_df.columns and '결석_횟수' in students_df.columns:
+            st.divider()
+            st.markdown("##### 📊 연령대별 수료율 & 평균 결석")
+            age_grp = students_df.groupby('연령대').agg(
+                인원=('TRNEE_ID', 'count'),
+                수료=('TRNEE_STATUS', lambda x: (x == '수료').sum()),
+                평균_결석=('결석_횟수', 'mean'),
+            ).reset_index()
+            age_grp['수료율(%)'] = (age_grp['수료'] / age_grp['인원'] * 100).round(1)
+            age_grp['평균_결석'] = age_grp['평균_결석'].round(1)
+            ag1, ag2 = st.columns(2)
+            with ag1:
+                st.altair_chart(
+                    alt.Chart(age_grp).mark_bar(color='#8e44ad').encode(
+                        x=alt.X('연령대:N', sort='-y', title='연령대'),
+                        y=alt.Y('수료율(%):Q', title='수료율 (%)'),
+                        tooltip=['연령대', '수료율(%)', '인원'],
+                    ).properties(height=250, title='연령대별 수료율'),
+                    use_container_width=True,
+                )
+            with ag2:
+                st.altair_chart(
+                    alt.Chart(age_grp).mark_bar(color='#c0392b').encode(
+                        x=alt.X('연령대:N', sort='-y', title='연령대'),
+                        y=alt.Y('평균_결석:Q', title='평균 결석일'),
+                        tooltip=['연령대', '평균_결석', '인원'],
+                    ).properties(height=250, title='연령대별 평균 결석'),
+                    use_container_width=True,
+                )
+
         # 유형별 성과 분석 (신규)
         if 'TRNEE_TYPE' in students_df.columns and '결석_횟수' in students_df.columns:
             st.divider()
@@ -315,6 +355,40 @@ with tab_indiv:
                         latest_row = late_df.loc[late_df['입실시각_분'].idxmax()]
                         st.metric("가장 늦은 입실", latest_row['IN_TIME'])
 
+    # [Tab 3 하단] 조퇴 시간대 분포
+    with tab3:
+        st.divider()
+        st.markdown("##### 🏃 조퇴 퇴실 시간 분포")
+        st.caption("조퇴로 기록된 훈련생의 퇴실 시간 분포입니다.")
+        leave_df = get_early_leave_times(selected_degr)
+        if leave_df.empty:
+            st.info("조퇴 기록이 없습니다.")
+        else:
+            leave_df = leave_df[leave_df['OUT_TIME'].notna() & (leave_df['OUT_TIME'] != '')]
+            leave_df['퇴실시각_분'] = leave_df['OUT_TIME'].apply(parse_time_to_minutes)
+            leave_df = leave_df[leave_df['퇴실시각_분'].notna()].copy()
+            if leave_df.empty:
+                st.info("조퇴 기록에 퇴실 시간이 기록되지 않았습니다.")
+            else:
+                lc1, lc2 = st.columns(2)
+                with lc1:
+                    st.altair_chart(
+                        alt.Chart(leave_df).mark_bar(color='#16a085').encode(
+                            x=alt.X('OUT_TIME:N', sort='ascending', title='퇴실 시간'),
+                            y=alt.Y('count()', title='건수'),
+                            tooltip=['OUT_TIME', 'count()'],
+                        ).properties(height=300, title='조퇴 퇴실 시간별 건수'),
+                        use_container_width=True,
+                    )
+                with lc2:
+                    st.markdown("##### 조퇴 통계")
+                    avg_min = leave_df['퇴실시각_분'].mean()
+                    avg_h, avg_m = divmod(int(avg_min), 60)
+                    st.metric("평균 퇴실 시간", f"{avg_h:02d}:{avg_m:02d}")
+                    st.metric("총 조퇴 건수", f"{len(leave_df)}건")
+                    earliest = leave_df.loc[leave_df['퇴실시각_분'].idxmin()]
+                    st.metric("가장 이른 조퇴", earliest['OUT_TIME'])
+
     # [Tab 4] 체류시간 분석 (신규)
     with tab4:
         st.markdown("##### 🕐 일일 체류시간 분석")
@@ -411,7 +485,7 @@ with tab_indiv:
         st.markdown("##### 📋 학생별 상세 출결 현황")
         st.caption("각 열 헤더를 클릭하여 정렬할 수 있습니다.")
         display_cols = ['TRNEE_NM', '나이', '연령대', 'TRNEE_STATUS']
-        stat_cols = ['출석_횟수', '결석_횟수', '지각_횟수', '조퇴_횟수', '외출_횟수', '총_로그_수']
+        stat_cols = ['출석_횟수', '결석_횟수', '지각_횟수', '조퇴_횟수', '외출_횟수', '총_로그_수', 'OFLHD_CNT', 'VCATN_CNT']
         avail = display_cols + [c for c in stat_cols if c in students_df.columns]
         if 'TRNEE_TYPE' in students_df.columns:
             avail.insert(4, 'TRNEE_TYPE')
@@ -429,6 +503,8 @@ with tab_indiv:
                 "조퇴_횟수": st.column_config.NumberColumn("조퇴(일)", format="%d"),
                 "외출_횟수": st.column_config.NumberColumn("외출(일)", format="%d"),
                 "총_로그_수": st.column_config.NumberColumn("훈련일수", format="%d"),
+                "OFLHD_CNT": st.column_config.NumberColumn("공가(일)", format="%d"),
+                "VCATN_CNT": st.column_config.NumberColumn("휴가(일)", format="%d"),
                 "출석률(%)": st.column_config.ProgressColumn(
                     "출석률", min_value=0, max_value=100, format="%.1f%%"
                 ),
