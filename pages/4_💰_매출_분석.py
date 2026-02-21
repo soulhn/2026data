@@ -182,28 +182,23 @@ if course_list.empty:
     st.warning("과정 데이터가 없습니다. ETL을 먼저 실행하세요.")
     st.stop()
 
-mode = st.radio("분석 모드", ["개별 기수 분석", "전체 기수 비교"], horizontal=True)
-st.divider()
+with st.sidebar:
+    st.header("🔍 분析 대상 선택")
+    selected_degr = st.selectbox(
+        "회차(기수)를 선택하세요",
+        course_list['TRPR_DEGR'].unique(),
+        format_func=lambda x: f"{x}회차",
+    )
+    sel_row = course_list[course_list['TRPR_DEGR'] == selected_degr].iloc[0]
+    st.info(
+        f"**과정명:** {sel_row['TRPR_NM']}\n\n"
+        f"**기간:** {sel_row['TR_STA_DT']} ~ {sel_row['TR_END_DT']}"
+    )
+
+tab_all, tab_indiv = st.tabs(["🌐 전체 기수 비교", "📌 개별 기수 분析"])
 
 
-# ══════════════════════════════════════════════
-#  개별 기수 분석
-# ══════════════════════════════════════════════
-if mode == "개별 기수 분석":
-
-    with st.sidebar:
-        st.header("🔍 분석 대상 선택")
-        selected_degr = st.selectbox(
-            "회차(기수)를 선택하세요",
-            course_list['TRPR_DEGR'].unique(),
-            format_func=lambda x: f"{x}회차",
-        )
-        sel_row = course_list[course_list['TRPR_DEGR'] == selected_degr].iloc[0]
-        st.info(
-            f"**과정명:** {sel_row['TRPR_NM']}\n\n"
-            f"**기간:** {sel_row['TR_STA_DT']} ~ {sel_row['TR_END_DT']}"
-        )
-
+with tab_indiv:
     trpr_id = str(sel_row['TRPR_ID'])
     trpr_degr = int(sel_row['TRPR_DEGR'])
     start_dt = str(sel_row['TR_STA_DT'])
@@ -557,10 +552,7 @@ if mode == "개별 기수 분석":
                 st.dataframe(done_display, use_container_width=True, hide_index=True)
 
 
-# ══════════════════════════════════════════════
-#  전체 기수 비교
-# ══════════════════════════════════════════════
-else:
+with tab_all:
     st.subheader("📊 전체 기수 매출 비교")
 
     with st.spinner("전체 기수 매출 집계 중..."):

@@ -125,24 +125,23 @@ if course_list.empty:
     st.warning("분석할 수 있는 종료된 과정 데이터가 없습니다.")
     st.stop()
 
-mode = st.radio("분석 모드", ["개별 기수 분석", "전체 기수 비교"], horizontal=True)
-st.divider()
+with st.sidebar:
+    st.header("🔍 분석 대상 선택")
+    selected_degr = st.selectbox(
+        "회차(기수)를 선택하세요",
+        course_list['TRPR_DEGR'].unique(),
+        format_func=lambda x: f"{x}회차",
+    )
+    sel_info = course_list[course_list['TRPR_DEGR'] == selected_degr].iloc[0]
+    st.info(
+        f"**과정명:** {sel_info['TRPR_NM']}\n\n"
+        f"**기간:** {sel_info['TR_STA_DT']} ~ {sel_info['TR_END_DT']}"
+    )
+
+tab_all, tab_indiv = st.tabs(["🌐 전체 기수 비교", "📌 개별 기수 분석"])
 
 
-if mode == "개별 기수 분석":
-    with st.sidebar:
-        st.header("🔍 분석 대상 선택")
-        selected_degr = st.selectbox(
-            "회차(기수)를 선택하세요",
-            course_list['TRPR_DEGR'].unique(),
-            format_func=lambda x: f"{x}회차",
-        )
-        sel_info = course_list[course_list['TRPR_DEGR'] == selected_degr].iloc[0]
-        st.info(
-            f"**과정명:** {sel_info['TRPR_NM']}\n\n"
-            f"**기간:** {sel_info['TR_STA_DT']} ~ {sel_info['TR_END_DT']}"
-        )
-
+with tab_indiv:
     master_df, students_df = get_analysis_data(selected_degr)
     if master_df.empty:
         st.error("해당 회차의 마스터 데이터가 없습니다.")
@@ -439,10 +438,7 @@ if mode == "개별 기수 분석":
         )
 
 
-# ==========================================
-# 모드 2: 전체 기수 비교
-# ==========================================
-else:
+with tab_all:
     st.subheader("📊 전체 기수 비교 분석")
     st.caption("수료된 전체 기수의 성과를 한눈에 비교합니다.")
     all_master = get_all_course_master()
