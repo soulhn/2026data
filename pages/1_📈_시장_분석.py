@@ -701,7 +701,8 @@ with tabs[0]:
         st.subheader("월별 개설 추이")
         trend = load_monthly_counts(where, params)
         if not trend.empty:
-            trend['YEAR_MONTH'] = pd.to_datetime(trend['YEAR_MONTH'])
+            trend['YEAR_MONTH'] = pd.to_datetime(trend['YEAR_MONTH'], format='%Y-%m', errors='coerce')
+            trend = trend.dropna(subset=['YEAR_MONTH'])
             full_range = pd.date_range(trend['YEAR_MONTH'].min(), trend['YEAR_MONTH'].max(), freq='MS')
             trend = trend.set_index('YEAR_MONTH').reindex(full_range, fill_value=0).reset_index()
             trend.columns = ['YEAR_MONTH', 'COUNT']
@@ -1074,7 +1075,8 @@ with tabs[5]:
         top5_regions = top5_reg.head(5)['지역'].tolist()
         region_trend = load_monthly_region_trend(where, params, top5_regions)
         if not region_trend.empty:
-            region_trend['YEAR_MONTH'] = pd.to_datetime(region_trend['YEAR_MONTH'])
+            region_trend['YEAR_MONTH'] = pd.to_datetime(region_trend['YEAR_MONTH'], format='%Y-%m', errors='coerce')
+            region_trend = region_trend.dropna(subset=['YEAR_MONTH'])
             all_months = pd.date_range(region_trend['YEAR_MONTH'].min(), region_trend['YEAR_MONTH'].max(), freq='MS')
             regions_list = region_trend['REGION'].unique()
             idx_full = pd.MultiIndex.from_product([all_months, regions_list], names=['YEAR_MONTH', 'REGION'])
