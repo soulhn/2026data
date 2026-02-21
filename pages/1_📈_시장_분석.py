@@ -230,8 +230,8 @@ def load_inst_stats(where, params):
                COUNT(*) as TRPR_CNT,
                COALESCE(SUM(TOT_FXNUM), 0) as TOT_FXNUM,
                COALESCE(SUM(REG_COURSE_MAN), 0) as REG_COURSE_MAN,
-               AVG(EI_EMPL_RATE_3) as AVG_EMPL,
-               AVG(STDG_SCOR) as AVG_SCORE
+               AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as AVG_EMPL,
+               AVG(CASE WHEN STDG_SCOR > 0 THEN STDG_SCOR END) as AVG_SCORE
         FROM TB_MARKET_TREND {where}
         GROUP BY TRAINST_NM
     """, params=params)
@@ -245,8 +245,8 @@ def load_course_agg(where, params):
                COUNT(*) as TRPR_CNT,
                COALESCE(SUM(TOT_FXNUM), 0) as TOT_FXNUM,
                COALESCE(SUM(REG_COURSE_MAN), 0) as REG_COURSE_MAN,
-               AVG(EI_EMPL_RATE_3) as AVG_EMPL,
-               AVG(STDG_SCOR) as AVG_SCORE
+               AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as AVG_EMPL,
+               AVG(CASE WHEN STDG_SCOR > 0 THEN STDG_SCOR END) as AVG_SCORE
         FROM TB_MARKET_TREND {where}
         GROUP BY TRPR_NM, TRAINST_NM
     """, params=params)
