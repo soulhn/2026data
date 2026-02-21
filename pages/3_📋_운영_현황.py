@@ -51,6 +51,67 @@ if courses_df is None:
     st.info("현재 진행 중인 과정이 없습니다. 꿀 같은 휴식 시간입니다! ☕")
     st.stop()
 
+# ==========================================
+# [0] 전체 기수 오늘의 출결 현황
+# ==========================================
+st.subheader("📡 전체 기수 오늘의 출결 현황")
+st.caption("운영 중인 모든 기수의 최근 출결 기준 합산 현황입니다. (입실 후 미퇴실 → 입실중 재분류)")
+
+all_today_rows = []
+for degr in courses_df['TRPR_DEGR'].unique():
+    degr_logs = logs_df[logs_df['TRPR_DEGR'] == degr]
+    if degr_logs.empty:
+        continue
+    latest_date = degr_logs['ATEND_DT'].max()
+    day = degr_logs[degr_logs['ATEND_DT'] == latest_date].copy()
+    day['DISPLAY_STATUS'] = day.apply(
+        lambda r: '입실중'
+        if r['ATEND_STATUS'] == '결석' and pd.notna(r['IN_TIME']) and str(r['IN_TIME']).strip() != ''
+        else r['ATEND_STATUS'],
+        axis=1,
+    )
+    day['TRPR_DEGR_KEY'] = degr
+    all_today_rows.append(day[['TRPR_DEGR_KEY', 'TRNEE_ID', 'DISPLAY_STATUS']])
+
+if all_today_rows:
+    all_df = pd.concat(all_today_rows, ignore_index=True)
+    total_logs = len(all_df)
+    present   = (all_df['DISPLAY_STATUS'] == '출석').sum()
+    in_class  = (all_df['DISPLAY_STATUS'] == '입실중').sum()
+    absent    = (all_df['DISPLAY_STATUS'] == '결석').sum()
+    late      = (all_df['DISPLAY_STATUS'] == '지각').sum()
+    leave_early = (all_df['DISPLAY_STATUS'] == '조퇴').sum()
+    att_rate  = (present + in_class + late) / total_logs * 100 if total_logs > 0 else 0
+
+    ac1, ac2, ac3, ac4, ac5, ac6 = st.columns(6)
+    ac1.metric("출석률", f"{att_rate:.1f}%", help="출석 + 입실중 + 지각 기준")
+    ac2.metric("출석", f"{int(present)}명")
+    ac3.metric("입실중", f"{int(in_class)}명", help="입실 완료, 퇴실 전 (수업 중)")
+    ac4.metric("결석", f"{int(absent)}명", delta_color="inverse")
+    ac5.metric("지각", f"{int(late)}명", delta_color="inverse")
+    ac6.metric("조퇴", f"{int(leave_early)}명", delta_color="inverse")
+
+    degr_stats = all_df.groupby('TRPR_DEGR_KEY').apply(
+        lambda g: pd.Series({
+            '총건수': len(g),
+            '출석건수': g['DISPLAY_STATUS'].isin(['출석', '입실중', '지각']).sum(),
+        })
+    ).reset_index()
+    degr_stats['출석률'] = (degr_stats['출석건수'] / degr_stats['총건수'] * 100).round(1)
+    degr_stats['기수'] = degr_stats['TRPR_DEGR_KEY'].astype(str) + '회차'
+    chart = alt.Chart(degr_stats).mark_bar().encode(
+        x=alt.X('기수:N', title='기수'),
+        y=alt.Y('출석률:Q', title='출석률 (%)', scale=alt.Scale(domain=[0, 100])),
+        color=alt.condition(alt.datum.출석률 < 80, alt.value('#e74c3c'), alt.value('#2ecc71')),
+        tooltip=['기수', '출석률'],
+    ).properties(height=180)
+    st.altair_chart(chart, use_container_width=True)
+else:
+    st.info("오늘 출결 데이터가 아직 수집되지 않았습니다.")
+
+st.divider()
+st.subheader("📌 기수별 상세 현황")
+
 with st.sidebar:
     st.header("🎯 관리 대상 선택")
     selected_degr = st.selectbox(
