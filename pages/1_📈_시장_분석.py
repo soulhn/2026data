@@ -384,10 +384,10 @@ def load_summary_kpi(where, params):
     return _sql_query(f"""
         SELECT
             COUNT(*) as 총과정수,
-            ROUND(AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END), 1) as 평균취업률,
-            ROUND(AVG(CASE WHEN TOT_FXNUM > 0 AND REG_COURSE_MAN > 0
-                THEN CAST(REG_COURSE_MAN AS FLOAT) / TOT_FXNUM * 100 END), 1) as 평균모집률,
-            ROUND(AVG(CASE WHEN TOT_TRCO > 0 THEN TOT_TRCO END), 0) as 평균훈련비
+            ROUND(CAST(AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) AS NUMERIC), 1) as 평균취업률,
+            ROUND(CAST(AVG(CASE WHEN TOT_FXNUM > 0 AND REG_COURSE_MAN > 0
+                THEN CAST(REG_COURSE_MAN AS FLOAT) / TOT_FXNUM * 100 END) AS NUMERIC), 1) as 평균모집률,
+            ROUND(CAST(AVG(CASE WHEN TOT_TRCO > 0 THEN TOT_TRCO END) AS NUMERIC), 0) as 평균훈련비
         FROM TB_MARKET_TREND {where}
     """, params=params)
 
@@ -397,9 +397,9 @@ def load_type_performance(where, params):
     """Tab 4: 훈련 유형별 평균 취업률·모집률."""
     return _sql_query(f"""
         SELECT TRAIN_TARGET as 유형, COUNT(*) as 과정수,
-            ROUND(AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END), 1) as 평균취업률,
-            ROUND(AVG(CASE WHEN TOT_FXNUM > 0 AND REG_COURSE_MAN > 0
-                THEN CAST(REG_COURSE_MAN AS FLOAT) / TOT_FXNUM * 100 END), 1) as 평균모집률
+            ROUND(CAST(AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) AS NUMERIC), 1) as 평균취업률,
+            ROUND(CAST(AVG(CASE WHEN TOT_FXNUM > 0 AND REG_COURSE_MAN > 0
+                THEN CAST(REG_COURSE_MAN AS FLOAT) / TOT_FXNUM * 100 END) AS NUMERIC), 1) as 평균모집률
         FROM TB_MARKET_TREND
         {"WHERE" if not where else where.replace("WHERE","WHERE") + " AND"} TRAIN_TARGET IS NOT NULL AND TRAIN_TARGET != ''
         GROUP BY TRAIN_TARGET ORDER BY 과정수 DESC
