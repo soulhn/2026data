@@ -77,12 +77,10 @@ def _render_project_intro():
 
     st.divider()
 
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("총 운영 기수", "25기", "2023.07 ~ 현재")
-    m2.metric("전국 순위 (2023)", "10위", "300개 중 · 상위 3.3%")
-    m3.metric("전국 순위 (2024)", "14위", "611개 중 · 상위 2.3%")
-    m4.metric("전국 순위 (2025)", "22위", "561개 중 · 상위 3.9%")
-    m5.metric("누적 훈련비 매출", "100억+", "1~25기 합산")
+    mi1, mi2 = st.columns(2)
+    mi1.metric("총 운영 기수", "25기", "2023.07 ~ 현재")
+    mi2.metric("누적 훈련비 매출", "100억+", "1~25기 합산")
+    st.caption("📍 연도별 전국 순위는 아래 시장 포지셔닝 섹션에서 확인하세요.")
 
     st.divider()
 
@@ -109,27 +107,20 @@ def render_dashboard():
     avg_rate_6 = df[df['상태'] == '종료']['TOTAL_RATE_6'].mean()
     active_courses = len(df[df['상태'] == '진행중'])
 
-    kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
-    kpi1.metric("총 운영 과정", f"{total_courses}개", delta=f"진행중 {active_courses}개")
-    kpi2.metric("누적 수강생", f"{total_trainees:,}명")
-    avg_completion = df[df['상태'] == '종료']['수료율'].mean()
-    kpi3.metric("평균 수료율", f"{avg_completion:.1f}%", help="수료인원 / 수강인원 기준")
-    kpi4.metric("평균 취업률(3개월)", f"{avg_rate_3:.1f}%", help="수료 후 3개월 고용보험 가입 기준")
-    kpi5.metric("평균 취업률(6개월)", f"{avg_rate_6:.1f}%", help="6개월 고용보험 + HRD자체취업 합산")
-    st.divider()
-
-    # [Section 2] 운영 평균 성과 (종료 기수 기준)
     att_stats = get_attendance_stats()
     df_ended = df[df['상태'] == '종료']
+    avg_completion = df_ended['수료율'].mean()
     avg_att = att_stats['ATT_RATE'].mean() if not att_stats.empty else 0.0
 
-    st.subheader("📊 운영 평균 성과")
+    st.subheader("📊 핵심 성과 지표")
     st.caption("종료된 전체 기수 기준 평균값입니다.")
-    s2c1, s2c2, s2c3, s2c4 = st.columns(4)
-    s2c1.metric("평균 수료율", f"{avg_completion:.1f}%", help="수료인원 / 수강인원")
-    s2c2.metric("평균 출석률", f"{avg_att:.1f}%", help="출석+지각 / 전체 출결일 (종료 기수)")
-    s2c3.metric("평균 취업률 (3개월)", f"{avg_rate_3:.1f}%", help="고용보험 기준")
-    s2c4.metric("평균 취업률 (6개월)", f"{avg_rate_6:.1f}%", help="고용보험 + HRD자체취업 합산")
+    kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
+    kpi1.metric("총 운영 과정", f"{total_courses}개", delta=f"진행중 {active_courses}개")
+    kpi2.metric("누적 수강생", f"{total_trainees:,}명")
+    kpi3.metric("평균 출석률", f"{avg_att:.1f}%", help="출석+지각 / 전체 출결일 (종료 기수)")
+    kpi4.metric("평균 수료율", f"{avg_completion:.1f}%", help="수료인원 / 수강인원 기준")
+    kpi5.metric("평균 취업률(3개월)", f"{avg_rate_3:.1f}%", help="수료 후 3개월 고용보험 가입 기준")
+    kpi6.metric("평균 취업률(6개월)", f"{avg_rate_6:.1f}%", help="6개월 고용보험 + HRD자체취업 합산")
     st.divider()
 
     # [Section 3] 기수 기록
