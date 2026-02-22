@@ -7,7 +7,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import load_data, calculate_age_at_training, safe_float, check_password
-from config import CACHE_TTL_DEFAULT, RISK_ABSENT
+from config import CACHE_TTL_DEFAULT, EMPL_CODE_MAP, RISK_ABSENT
 
 st.set_page_config(page_title="과정 성과 분석", page_icon="📊", layout="wide")
 check_password()
@@ -162,7 +162,7 @@ with tab_indiv:
     total_std = row['TOT_PAR_MKS'] if row.get('TOT_PAR_MKS', 0) > 0 else len(students_df)
     fini_std = row['FINI_CNT'] if row.get('FINI_CNT') else 0
     dropout_std = total_std - fini_std
-    _EMPL_STATUS = {'A': '개설예정', 'B': '집계중(3개월 미경과)', 'C': '미실시', 'D': '수료자없음'}
+    _EMPL_STATUS = EMPL_CODE_MAP
     raw_ei6 = str(row.get('EI_EMPL_RATE_6') or '').strip()
     raw_hrd6 = str(row.get('HRD_EMPL_RATE_6') or '').strip()
     if raw_ei6 in _EMPL_STATUS:
@@ -173,7 +173,7 @@ with tab_indiv:
 
     mc1, mc2, mc3, mc4 = st.columns(4)
     mc1.metric("수료율", f"{(fini_std / total_std * 100):.1f}%" if total_std > 0 else "0%", f"{fini_std}/{total_std}명")
-    mc2.metric("총 취업률 (6개월)", empl_label, help="고용보험 + HRD 합산 | A=개설예정 B=집계중 C=미실시 D=수료자없음")
+    mc2.metric("총 취업률 (6개월)", empl_label, help="고용보험 + HRD 합산 | A=개설예정 B=진행중 C=미실시 D=수료자없음")
     mc3.metric("중도 탈락", f"{dropout_std}명", delta_color="inverse")
     mc4.metric("평균 결석일", f"{students_df['결석_횟수'].mean():.1f}일" if '결석_횟수' in students_df.columns else "-")
     st.divider()
