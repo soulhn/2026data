@@ -14,6 +14,7 @@ from config import (
     CACHE_TTL_MARKET, COST_BINS, COST_BIN_LABELS,
     SCATTER_SAMPLE_LIMIT, REGRESSION_SAMPLE_LIMIT,
     NCS_MIN_COURSES, CERT_MIN_COURSES, CERT_EMPL_MIN_COURSES, TOP_CERTS_LIMIT,
+    EMPL_CODE_MAP,
 )
 
 # ==========================================
@@ -597,6 +598,9 @@ def load_internal_courses():
     for c in ['TOT_TRCO', 'TOT_FXNUM', 'TOT_PAR_MKS', 'TOT_TRP_CNT', 'FINI_CNT']:
         internal[c] = pd.to_numeric(internal[c], errors='coerce').fillna(0)
     for c in ['EI_EMPL_RATE_3', 'EI_EMPL_RATE_6']:
+        internal[f'{c}_LABEL'] = internal[c].astype(str).str.strip().map(
+            lambda v: EMPL_CODE_MAP.get(v, '')
+        )
         internal[c] = pd.to_numeric(internal[c], errors='coerce')
     internal['모집률'] = (internal['TOT_TRP_CNT'] / internal['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0)
     internal['FINI_CNT'] = pd.to_numeric(internal['FINI_CNT'], errors='coerce').fillna(0)
@@ -1531,11 +1535,16 @@ with tabs[5]:
 
             # 회차별 상세 비교 테이블
             st.subheader("회차별 상세 비교")
-            detail = internal_df[['TRPR_DEGR', 'TRPR_NM', 'TR_STA_DT', 'TOT_TRCO', 'TOT_FXNUM', 'TOT_TRP_CNT', 'FINI_CNT', '수료율', 'EI_EMPL_RATE_3']].copy()
-            detail.columns = ['회차', '과정명', '시작일', '훈련비', '정원', '수강신청인원', '수료인원', '수료율(%)', '취업률(%)']
+            detail = internal_df[['TRPR_DEGR', 'TRPR_NM', 'TR_STA_DT', 'TOT_TRCO', 'TOT_FXNUM', 'TOT_TRP_CNT', 'FINI_CNT', '수료율', 'EI_EMPL_RATE_3', 'EI_EMPL_RATE_3_LABEL']].copy()
+            detail.columns = ['회차', '과정명', '시작일', '훈련비', '정원', '수강신청인원', '수료인원', '수료율(%)', '취업률_num', '취업률(%)']
             detail = detail.sort_values('회차', key=lambda x: pd.to_numeric(x, errors='coerce')).reset_index(drop=True)
             detail['시작일'] = detail['시작일'].dt.strftime('%Y-%m-%d')
-            detail['취업률(%)'] = detail['취업률(%)'].apply(lambda x: x if pd.notna(x) and x > 0 else None)
+            detail['취업률(%)'] = detail.apply(
+                lambda r: r['취업률(%)'] if r['취업률(%)'] else (
+                    f"{r['취업률_num']:.1f}%" if pd.notna(r['취업률_num']) and r['취업률_num'] > 0 else ''
+                ), axis=1
+            )
+            detail = detail.drop(columns=['취업률_num'])
             st.dataframe(
                 detail,
                 use_container_width=True, hide_index=True,
@@ -1545,7 +1554,7 @@ with tabs[5]:
                     '수강신청인원': st.column_config.NumberColumn(format="%d명"),
                     '수료인원': st.column_config.NumberColumn(format="%d명"),
                     '수료율(%)': st.column_config.NumberColumn(format="%.1f%%"),
-                    '취업률(%)': st.column_config.NumberColumn("취업률(%)", format="%.1f%%", help="미제공인 경우 빈칸으로 표시"),
+                    '취업률(%)': st.column_config.TextColumn("취업률(%)", help="숫자=취업률(%) / 개설예정·진행중·미실시·수료자없음"),
                 }
             )
 

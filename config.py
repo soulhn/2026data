@@ -39,3 +39,12 @@ RECENT_TREND_DAYS = 10
 # ── 매출 분석 상수 ──
 DAILY_TRAINING_FEE = 145_200        # 일 훈련비 단가 (원)
 REVENUE_FULL_THRESHOLD = 0.80       # 전액 청구 최소 출석률
+
+# ── 취업률 특수값 코드 매핑 ──
+# EI_EMPL_RATE_3 / EI_EMPL_RATE_6 / HRD_EMPL_RATE_6 (TB_COURSE_MASTER TEXT 컬럼)
+EMPL_CODE_MAP = {
+    'A': '개설예정',
+    'B': '진행중',
+    'C': '미실시',
+    'D': '수료자없음',
+}
