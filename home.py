@@ -222,7 +222,7 @@ def render_dashboard():
 
 pg = st.navigation([
     st.Page(render_dashboard, title="성과 대시보드", icon="🏠"),
-    st.Page("pages/1_📈_시장_분석.py", title="시장 분석 & 기회 발굴", icon="📈"),
+    st.Page("pages/1_📈_시장.py", title="시장 분석 & 기회 발굴", icon="📈"),
     st.Page("pages/2_📊_과정_성과_분석.py", title="종료 과정 성과 분석", icon="📊"),
     st.Page("pages/3_📋_운영_현황.py", title="현재 운영 현황", icon="📋"),
     st.Page("pages/4_💰_매출_분석.py", title="매출 분석", icon="💰"),
