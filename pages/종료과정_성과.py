@@ -7,7 +7,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import load_data, calculate_age_at_training, safe_float, check_password
-from config import CACHE_TTL_DEFAULT, EMPL_CODE_MAP, RISK_ABSENT
+from config import CACHE_TTL_DEFAULT, EMPL_CODE_MAP, RISK_ABSENT, TRNEE_TYPE_MAP
 
 st.set_page_config(page_title="과정 성과 분석", page_icon="📊", layout="wide")
 check_password()
@@ -35,6 +35,7 @@ def get_analysis_data(degr):
         "SELECT * FROM TB_TRAINEE_INFO WHERE TRPR_DEGR = ?", params=[degr]
     )
     if not course_df.empty and not trainee_df.empty:
+        trainee_df['TRNEE_TYPE'] = trainee_df['TRNEE_TYPE'].map(TRNEE_TYPE_MAP).fillna(trainee_df['TRNEE_TYPE'])
         start_date = course_df.iloc[0]['TR_STA_DT']
         trainee_df['나이'] = trainee_df['BIRTH_DATE'].apply(
             lambda x: calculate_age_at_training(x, start_date)
