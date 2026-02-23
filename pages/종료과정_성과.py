@@ -583,7 +583,7 @@ with tab_indiv:
                     do_heat["학생"] = do_heat["TRNEE_NM"].fillna(do_heat["TRNEE_ID"].astype(str))
                     heat = alt.Chart(do_heat).mark_rect().encode(
                         x=alt.X("주차:N", sort=week_order, title="기준 주차", axis=alt.Axis(labelAngle=0)),
-                        y=alt.Y("학생:N", title="이탈자"),
+                        y=alt.Y("학생:N", title="이탈자", axis=alt.Axis(labelAngle=0, labelLimit=200)),
                         color=alt.Color("출석률:Q",
                                         scale=alt.Scale(range=["#e74c3c", "#f39c12", "#2ecc71"]),
                                         title="출석률(%)"),
@@ -591,7 +591,7 @@ with tab_indiv:
                     ).properties(height=max(150, len(dropout_ids) * 50))
                     text_layer = alt.Chart(do_heat).mark_text(fontSize=11).encode(
                         x=alt.X("주차:N", sort=week_order),
-                        y=alt.Y("학생:N"),
+                        y=alt.Y("학생:N", axis=alt.Axis(labelAngle=0)),
                         text=alt.Text("출석률:Q", format=".0f"),
                         color=alt.condition(alt.datum.출석률 < 50, alt.value("white"), alt.value("black")),
                     )
