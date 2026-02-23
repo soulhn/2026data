@@ -940,57 +940,37 @@ with tabs[0]:
 
     # ── 기관 경쟁력 매트릭스 ──
     st.subheader("🏢 훈련기관 경쟁력 매트릭스")
-    st.caption("버블 크기: 개설 과정 수 | X축: 평균 모집률 | Y축: 평균 취업률. 우측 상단이 고성과·고수요 기관입니다.")
+    st.caption("버블 크기: 개설 과정 수 | X축: 평균 모집률 | Y축: 평균 만족도. 우측 상단이 고만족·고수요 기관입니다.")
     inst_all = load_inst_stats(where, params)
     if not inst_all.empty:
         inst_all['평균모집률'] = (inst_all['REG_COURSE_MAN'] / inst_all['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
-        inst_all['AVG_EMPL'] = pd.to_numeric(inst_all['AVG_EMPL'], errors='coerce').fillna(0)
-        inst_plot = inst_all[inst_all['AVG_EMPL'] > 0].copy()
-        inst_plot = inst_plot.rename(columns={'TRAINST_NM': '기관명', 'TRPR_CNT': '개설수', 'AVG_EMPL': '평균취업률'})
-        inst_plot = inst_plot.nlargest(50, '개설수')
-        if not inst_plot.empty:
-            fig_scatter_inst = px.scatter(
-                inst_plot, x='평균모집률', y='평균취업률', size='개설수',
+        inst_all['평균만족도'] = (pd.to_numeric(inst_all['AVG_SCORE'], errors='coerce').fillna(0) / 100).round(1)
+        inst_alt = inst_all[inst_all['평균만족도'] > 0].rename(columns={'TRAINST_NM': '기관명', 'TRPR_CNT': '개설수'})
+        inst_alt = inst_alt.nlargest(50, '개설수')
+        if not inst_alt.empty:
+            fig_alt = px.scatter(
+                inst_alt, x='평균모집률', y='평균만족도', size='개설수',
                 hover_name='기관명', size_max=40,
-                color='평균취업률', color_continuous_scale='RdYlGn',
-                labels={'평균모집률': '평균 모집률 (%)', '평균취업률': '평균 취업률 (%)'},
+                color='평균만족도', color_continuous_scale='RdYlGn',
+                labels={'평균모집률': '평균 모집률 (%)', '평균만족도': '평균 만족도 (100점)'},
             )
-            med_fill_inst = inst_plot['평균모집률'].median()
-            med_empl_inst = inst_plot['평균취업률'].median()
-            fig_scatter_inst.add_hline(y=med_empl_inst, line_dash='dash', line_color='gray', line_width=1)
-            fig_scatter_inst.add_vline(x=med_fill_inst, line_dash='dash', line_color='gray', line_width=1)
-            fig_scatter_inst.update_layout(height=480, coloraxis_showscale=False)
-            st.plotly_chart(fig_scatter_inst, use_container_width=True)
-            st.caption("📌 기준선: 중앙값 기준 — 우상단(고모집·고취업), 좌하단(저모집·저취업)")
+            med_r = inst_alt['평균모집률'].median()
+            med_s = inst_alt['평균만족도'].median()
+            fig_alt.add_hline(y=med_s, line_dash='dash', line_color='gray', line_width=1)
+            fig_alt.add_vline(x=med_r, line_dash='dash', line_color='gray', line_width=1)
+            fig_alt.update_layout(height=480, coloraxis_showscale=False)
+            st.plotly_chart(fig_alt, use_container_width=True)
+            st.caption("📌 기준선: 중앙값 기준 — 우상단(고모집·고만족도), 좌하단(저모집·저만족도)")
             with st.expander("📄 기관 상세 데이터 보기"):
-                show_inst = inst_plot[['기관명', '개설수', '평균모집률', '평균취업률']].sort_values('평균취업률', ascending=False)
+                show_inst = inst_alt[['기관명', '개설수', '평균모집률', '평균만족도']].sort_values('평균만족도', ascending=False)
                 st.dataframe(show_inst, hide_index=True, use_container_width=True,
                     column_config={
                         '개설수': st.column_config.NumberColumn(format="%d개"),
                         '평균모집률': st.column_config.NumberColumn(format="%.1f%%"),
-                        '평균취업률': st.column_config.NumberColumn(format="%.1f%%"),
+                        '평균만족도': st.column_config.NumberColumn(format="%.1f점"),
                     })
-        elif no_empl_data:
-            st.info("ℹ️ 선택된 훈련 유형은 취업률 데이터가 없습니다. 대신 만족도-모집률 기준으로 기관 경쟁력을 분석합니다.")
-            inst_all['평균만족도'] = (pd.to_numeric(inst_all['AVG_SCORE'], errors='coerce').fillna(0) / 100).round(1)
-            inst_alt = inst_all[inst_all['평균만족도'] > 0].rename(columns={'TRAINST_NM': '기관명', 'TRPR_CNT': '개설수'})
-            inst_alt = inst_alt.nlargest(50, '개설수')
-            if not inst_alt.empty:
-                fig_alt = px.scatter(
-                    inst_alt, x='평균모집률', y='평균만족도', size='개설수',
-                    hover_name='기관명', size_max=40,
-                    color='평균만족도', color_continuous_scale='RdYlGn',
-                    labels={'평균모집률': '평균 모집률 (%)', '평균만족도': '평균 만족도 (100점)'},
-                )
-                med_r = inst_alt['평균모집률'].median()
-                med_s = inst_alt['평균만족도'].median()
-                fig_alt.add_hline(y=med_s, line_dash='dash', line_color='gray', line_width=1)
-                fig_alt.add_vline(x=med_r, line_dash='dash', line_color='gray', line_width=1)
-                fig_alt.update_layout(height=480, coloraxis_showscale=False)
-                st.plotly_chart(fig_alt, use_container_width=True)
-                st.caption("📌 기준선: 중앙값 기준 — 우상단(고모집·고만족도), 좌하단(저모집·저만족도)")
         else:
-            st.info("취업률 데이터가 있는 기관이 없습니다.")
+            st.info("기관 분석 데이터가 없습니다.")
     else:
         st.info("기관 분석 데이터가 없습니다.")
 
