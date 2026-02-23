@@ -75,9 +75,6 @@ with st.sidebar:
         format_func=lambda x: f"{x}회차 ({courses_df[courses_df['TRPR_DEGR']==x]['TRPR_NM'].iloc[0]})",
     )
     st.divider()
-    if st.button("🔄 데이터 새로고침"):
-        st.cache_data.clear()
-        st.rerun()
     st.caption("💡 '미퇴실'은 입실은 했으나 퇴실 기록이 없는 상태입니다.")
 
 
