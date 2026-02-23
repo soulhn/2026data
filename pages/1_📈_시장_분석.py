@@ -587,7 +587,7 @@ def load_internal_courses():
         SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT,
                TOT_TRCO, TOT_FXNUM, TOT_PAR_MKS, TOT_TRP_CNT,
                FINI_CNT, EI_EMPL_RATE_3, EI_EMPL_CNT_3,
-               EI_EMPL_RATE_6, EI_EMPL_CNT_6
+               EI_EMPL_RATE_6, EI_EMPL_CNT_6, HRD_EMPL_RATE_6
         FROM TB_COURSE_MASTER
     """)
     if internal.empty:
@@ -602,6 +602,11 @@ def load_internal_courses():
             lambda v: EMPL_CODE_MAP.get(v, '')
         )
         internal[c] = pd.to_numeric(internal[c], errors='coerce')
+    # HRD 6개월 (고용보험 미가입) 합산 → home.py와 동일 방식
+    internal['HRD_EMPL_RATE_6'] = pd.to_numeric(internal['HRD_EMPL_RATE_6'], errors='coerce')
+    internal['TOTAL_RATE_6'] = internal['EI_EMPL_RATE_6'].fillna(0) + internal['HRD_EMPL_RATE_6'].fillna(0)
+    _no6 = internal['EI_EMPL_RATE_6'].isna() & internal['HRD_EMPL_RATE_6'].isna()
+    internal.loc[_no6, 'TOTAL_RATE_6'] = pd.NA
     internal['모집률'] = (internal['TOT_TRP_CNT'] / internal['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0)
     internal['FINI_CNT'] = pd.to_numeric(internal['FINI_CNT'], errors='coerce').fillna(0)
     internal['수료율'] = (internal['FINI_CNT'] / internal['TOT_PAR_MKS'].replace(0, pd.NA) * 100).fillna(0)
@@ -1536,7 +1541,7 @@ with tabs[5]:
             # 회차별 상세 비교 테이블
             st.subheader("회차별 상세 비교")
             detail = internal_df[['TRPR_DEGR', 'TRPR_NM', 'TR_STA_DT', 'TOT_TRCO', 'TOT_FXNUM', 'TOT_TRP_CNT', 'FINI_CNT', '수료율',
-                                   'EI_EMPL_RATE_3', 'EI_EMPL_RATE_3_LABEL', 'EI_EMPL_RATE_6', 'EI_EMPL_RATE_6_LABEL']].copy()
+                                   'EI_EMPL_RATE_3', 'EI_EMPL_RATE_3_LABEL', 'TOTAL_RATE_6', 'EI_EMPL_RATE_6_LABEL']].copy()
             detail.columns = ['회차', '과정명', '시작일', '훈련비', '정원', '수강신청인원', '수료인원', '수료율(%)',
                                '_3m', '3개월 취업률(%)', '_6m', '6개월 취업률(%)']
             detail = detail.sort_values('회차', key=lambda x: pd.to_numeric(x, errors='coerce')).reset_index(drop=True)
