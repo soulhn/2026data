@@ -850,33 +850,6 @@ with tabs[0]:
         st.plotly_chart(fig_rec_trend, use_container_width=True)
     st.divider()
 
-    # ── 경쟁 심화도 ──
-    st.subheader("⚔️ 경쟁 심화도 분석")
-    if internal_df is None:
-        st.info("HANWHA_COURSE_ID가 설정되지 않았습니다. 시장 전체 경쟁 분석만 표시합니다.")
-        our_ncs_codes_comp = []
-    else:
-        internal_trpr_ids_comp = internal_df['TRPR_ID'].unique().tolist()
-        if internal_trpr_ids_comp:
-            placeholders = ','.join('?' * len(internal_trpr_ids_comp))
-            matched_comp = _sql_query(f"""
-                SELECT DISTINCT NCS_CD FROM TB_MARKET_TREND
-                WHERE TRPR_ID IN ({placeholders}) AND NCS_CD IS NOT NULL
-            """, params=internal_trpr_ids_comp)
-            our_ncs_codes_comp = matched_comp['NCS_CD'].dropna().unique().tolist() if not matched_comp.empty else []
-        else:
-            our_ncs_codes_comp = []
-
-    if our_ncs_codes_comp:
-        st.subheader("우리 NCS 분야 경쟁 과정 수 추이")
-        comp_monthly = load_competition_monthly(where, params, our_ncs_codes_comp)
-        if not comp_monthly.empty:
-            comp_monthly = comp_monthly.sort_values('YEAR_MONTH')
-            fig_comp = px.line(comp_monthly, x='YEAR_MONTH', y='경쟁과정수', color='NCS_CD', markers=True, title='우리 NCS 분야 월별 경쟁 과정 수')
-            fig_comp.update_xaxes(type='category')
-            st.plotly_chart(fig_comp, use_container_width=True)
-        st.divider()
-
     # ── 기관 경쟁력 매트릭스 ──
     st.subheader("🏢 훈련기관 경쟁력 매트릭스")
     st.caption("버블 크기: 개설 과정 수 | X축: 평균 모집률 | Y축: 평균 만족도. 우측 상단이 고만족·고수요 기관입니다.")
