@@ -273,7 +273,10 @@ def calc_revenue(attend_days, training_days, period_training_days=None):
         fee = full_fee
         status = "전액"
     elif rate > 0:
-        fee = int(full_fee * rate)
+        # 정수 산술로 부동소수점 오차 방지
+        # int(full_fee * 0.35) = 1,016,399 (버그) vs full_fee * 350 // 1000 = 1,016,400
+        rate_per_mille = round(attend_days * 1000 / training_days)
+        fee = full_fee * rate_per_mille // 1000
         status = "비례"
     else:
         fee = 0
