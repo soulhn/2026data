@@ -627,11 +627,9 @@ params = st.session_state['mkt_params']
 # ==========================================
 # 3. 메인 대시보드
 # ==========================================
-with st.status("📊 시장 데이터 분석 중...", expanded=True) as _ld:
-    _ld.write("🔢 기본 지표 집계 중 (30만건+ 대상)...")
+with st.spinner("시장 데이터 불러오는 중..."):
     kpi_df = load_kpi_data(where, params)
-    total_count = int(kpi_df['CNT'].iloc[0]) if not kpi_df.empty else 0
-    _ld.update(label=f"✅ {total_count:,}건 분석 완료", state="complete", expanded=False)
+total_count = int(kpi_df['CNT'].iloc[0]) if not kpi_df.empty else 0
 
 st.title(f"📈 IT 훈련 시장 상세 분석 ({total_count:,}건)")
 st.markdown("---")
