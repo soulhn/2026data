@@ -900,34 +900,6 @@ with tabs[0]:
             st.plotly_chart(fig_comp, use_container_width=True)
         st.divider()
 
-    st.subheader("NCS별 공급-수요 매트릭스")
-    st.caption("과정수(공급) vs 모집률(수요) - 우측 하단은 과잉공급 위험 영역")
-    ncs_supply = load_ncs_agg(where, params, min_courses=3)
-    if not ncs_supply.empty:
-        ncs_supply['NCS_CD'] = ncs_supply['NCS_CD'].apply(lambda x: str(int(float(x))) if pd.notna(x) and str(x) not in ('', 'nan') else '')
-        ncs_supply = ncs_supply.rename(columns={'CNT': '과정수', 'AVG_RECRUIT': '평균모집률'})
-        ncs_supply['is_ours'] = ncs_supply['NCS_CD'].isin(our_ncs_codes_comp) if our_ncs_codes_comp else False
-        fig_matrix = px.scatter(
-            ncs_supply, x='과정수', y='평균모집률', text='NCS_CD',
-            color='is_ours', color_discrete_map={True: 'red', False: 'steelblue'},
-            size='과정수', opacity=0.7,
-            labels={'is_ours': '우리 분야'},
-            title='NCS별 공급(과정수) vs 수요(모집률)'
-        )
-        avg_recruit = ncs_supply['평균모집률'].mean()
-        avg_count = ncs_supply['과정수'].mean()
-        fig_matrix.add_hline(y=avg_recruit, line_dash="dash", line_color="gray", opacity=0.5, annotation_text="평균 모집률")
-        fig_matrix.add_vline(x=avg_count, line_dash="dash", line_color="gray", opacity=0.5, annotation_text="평균 과정수")
-        fig_matrix.update_traces(textposition='top center')
-        fig_matrix.update_layout(showlegend=True)
-        st.plotly_chart(fig_matrix, use_container_width=True)
-        oversupply = ncs_supply[(ncs_supply['과정수'] > avg_count) & (ncs_supply['평균모집률'] < avg_recruit)]
-        if not oversupply.empty:
-            st.warning(f"과잉공급 위험 NCS ({len(oversupply)}개): {', '.join(oversupply['NCS_CD'].tolist())}")
-    else:
-        st.info("분석할 NCS 데이터가 부족합니다.")
-    st.divider()
-
     # ── 기관 경쟁력 매트릭스 ──
     st.subheader("🏢 훈련기관 경쟁력 매트릭스")
     st.caption("버블 크기: 개설 과정 수 | X축: 평균 모집률 | Y축: 평균 만족도. 우측 상단이 고만족·고수요 기관입니다.")
@@ -1199,6 +1171,34 @@ with tabs[3]:
                          column_config={'증가율(%)': st.column_config.NumberColumn(format="%.1f%%")})
     else:
         st.info("NCS 성장 분석 데이터가 부족합니다. (최소 2건 이상 NCS 코드가 필요합니다)")
+
+    st.divider()
+
+    # ── 섹션 3: NCS별 공급-수요 매트릭스 ──
+    st.subheader("🔲 NCS별 공급-수요 매트릭스")
+    st.caption("과정수(공급) vs 모집률(수요) — 좌상단(저공급·고수요) = 진입 기회, 우하단(고공급·저수요) = 과잉공급 위험")
+    ncs_supply = load_ncs_agg(where, params, min_courses=3)
+    if not ncs_supply.empty:
+        ncs_supply['NCS_CD'] = ncs_supply['NCS_CD'].apply(lambda x: str(int(float(x))) if pd.notna(x) and str(x) not in ('', 'nan') else '')
+        ncs_supply = ncs_supply.rename(columns={'CNT': '과정수', 'AVG_RECRUIT': '평균모집률'})
+        fig_matrix = px.scatter(
+            ncs_supply, x='과정수', y='평균모집률', text='NCS_CD',
+            color_discrete_sequence=['steelblue'],
+            size='과정수', opacity=0.7,
+            labels={'과정수': '공급(과정 수)', '평균모집률': '수요(모집률 %)'},
+            title='NCS별 공급(과정수) vs 수요(모집률)'
+        )
+        avg_recruit = ncs_supply['평균모집률'].mean()
+        avg_count = ncs_supply['과정수'].mean()
+        fig_matrix.add_hline(y=avg_recruit, line_dash="dash", line_color="gray", opacity=0.5, annotation_text="평균 모집률")
+        fig_matrix.add_vline(x=avg_count, line_dash="dash", line_color="gray", opacity=0.5, annotation_text="평균 과정수")
+        fig_matrix.update_traces(textposition='top center')
+        st.plotly_chart(fig_matrix, use_container_width=True)
+        oversupply = ncs_supply[(ncs_supply['과정수'] > avg_count) & (ncs_supply['평균모집률'] < avg_recruit)]
+        if not oversupply.empty:
+            st.warning(f"과잉공급 위험 NCS ({len(oversupply)}개): {', '.join(oversupply['NCS_CD'].tolist())}")
+    else:
+        st.info("분석할 NCS 데이터가 부족합니다.")
 
 
 # ─────────────────────────────────────────
