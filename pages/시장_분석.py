@@ -784,21 +784,24 @@ tabs = st.tabs([
 # [Tab 0] 📊 시장 개요 & 사업 기회
 # ─────────────────────────────────────────
 with tabs[0]:
-    # ── 월별 개설 추이 + 증감률 ──
+    # ── 월별 개설 추이 + 평균 모집률 ──
     st.subheader("신규 과정 개설 추이")
     monthly_count = load_monthly_counts(where, params)
-    if not monthly_count.empty:
-        monthly_count = monthly_count.rename(columns={'COUNT': '개설수'})
-        monthly_count = monthly_count.sort_values('YEAR_MONTH')
-        monthly_count['전월대비(%)'] = monthly_count['개설수'].pct_change() * 100
-        col_trend1, col_trend2 = st.columns(2)
-        with col_trend1:
+    recruit_trend = load_monthly_recruit(where, params)
+    col_trend1, col_trend2 = st.columns(2)
+    with col_trend1:
+        if not monthly_count.empty:
+            monthly_count = monthly_count.rename(columns={'COUNT': '개설수'}).sort_values('YEAR_MONTH')
             fig_cnt = px.bar(monthly_count, x='YEAR_MONTH', y='개설수', text_auto=True, title='월별 신규 과정 개설 수')
+            fig_cnt.update_xaxes(type='category')
             st.plotly_chart(fig_cnt, use_container_width=True)
-        with col_trend2:
-            fig_chg = px.bar(monthly_count.dropna(subset=['전월대비(%)']), x='YEAR_MONTH', y='전월대비(%)',
-                             color='전월대비(%)', color_continuous_scale='RdYlGn', text_auto='.1f', title='전월 대비 증감률(%)')
-            st.plotly_chart(fig_chg, use_container_width=True)
+    with col_trend2:
+        if not recruit_trend.empty:
+            recruit_trend = recruit_trend.sort_values('YEAR_MONTH')
+            fig_rec = px.line(recruit_trend, x='YEAR_MONTH', y='모집률', markers=True, title='월별 평균 모집률 추이')
+            fig_rec.update_xaxes(type='category')
+            fig_rec.update_layout(yaxis_title='평균 모집률 (%)')
+            st.plotly_chart(fig_rec, use_container_width=True)
     st.divider()
 
     # ── 지역별: 바차트 + Top5 시계열 ──
@@ -833,21 +836,6 @@ with tabs[0]:
                 fig_reg.update_traces(mode='lines+markers', marker=dict(size=5))
                 fig_reg.update_layout(hovermode='x unified', height=380)
                 st.plotly_chart(fig_reg, use_container_width=True)
-    st.divider()
-
-    # ── 모집률 변화 추세 ──
-    st.subheader("모집률 변화 추세")
-    recruit_trend = load_monthly_recruit(where, params)
-    if len(recruit_trend) >= 3:
-        recruit_trend = recruit_trend.sort_values('YEAR_MONTH')
-        recent_3 = recruit_trend.tail(3)['모집률'].values
-        if recent_3[-1] < recent_3[0]:
-            st.error(f"최근 3개월 모집률 하락 추세 감지: {recent_3[0]:.1f}% → {recent_3[-1]:.1f}%")
-        else:
-            st.success(f"최근 3개월 모집률 안정/상승: {recent_3[0]:.1f}% → {recent_3[-1]:.1f}%")
-        fig_rec_trend = px.line(recruit_trend, x='YEAR_MONTH', y='모집률', markers=True, title='월별 평균 모집률 추이')
-        fig_rec_trend.update_xaxes(type='category')
-        st.plotly_chart(fig_rec_trend, use_container_width=True)
     st.divider()
 
     # ── 기관 경쟁력 매트릭스 ──
