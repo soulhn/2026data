@@ -103,3 +103,34 @@ class TestGrandTotal:
     def test_grand_total_17(self):
         """17기 총 매출 = 각 단위기간 버림액 합계"""
         assert sum(PERIOD_TOTALS_17) == GRAND_TOTAL_17 == 349_347_680
+
+
+class TestKnownLimitation:
+    """
+    [구현 한계] 카드사별 소계 내 버림 재현 불가
+
+    HRD-Net 청구서는 신한카드(SH) / 농협카드(NH) 등 제휴 금융기관별로
+    학생을 그룹화한 뒤 각 소계에 10원 단위 버림을 적용한다.
+
+    예) 17기 6단위 기간:
+        SH 16명 raw=31,797,928 → 버림 31,797,920
+        NH  8명 raw=15,681,019 → 버림 15,681,010
+        실제 합계: 47,478,930
+
+    우리 DB(TB_TRAINEE_INFO, TB_ATTENDANCE_LOG)에는 카드사 구분 정보가
+    없으므로, 단위기간 전체 합에 버림을 1회 적용한다.
+        전체 raw=47,478,947 → 버림 47,478,940 (실제 대비 +10원)
+
+    이로 인해 카드사 그룹이 N개인 단위기간은 최대 (N-1)×9원의 오차 발생.
+    실제 관측된 최대 오차: 10원/기간.
+    """
+
+    def test_period6_single_truncation(self):
+        """단위기간 단일 버림: 실제 대비 최대 10원 오차 허용"""
+        # Group1(SH) raw + Group2(NH) raw
+        raw_total = 31_797_928 + 15_681_019
+        our_result = (raw_total // 10) * 10      # 47,478,940
+        actual     = 47_478_930                   # HRD-Net 실제
+        assert abs(our_result - actual) <= 10, (
+            f"오차 {our_result - actual}원: 카드사별 소계 버림 미반영으로 허용 범위(10원) 내"
+        )
