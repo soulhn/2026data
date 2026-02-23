@@ -179,8 +179,8 @@ def render_dashboard():
         {"연도": "2025", "상위(%)": 3.9, "label": "22위"},
     ])
     chart = alt.Chart(rank_df).mark_bar(width=60).encode(
-        x=alt.X("연도:N", title="연도", axis=alt.Axis(labelFontSize=13)),
-        y=alt.Y("상위(%):Q", title="상위 % (낮을수록 우수)",
+        x=alt.X("연도:N", title="연도", axis=alt.Axis(labelFontSize=13, labelAngle=0)),
+        y=alt.Y("상위(%):Q", axis=alt.Axis(title=['상위%', '(낮을수록', '우수)'], titleAngle=0),
                 scale=alt.Scale(domain=[0, 10])),
         color=alt.value("#2ecc71"),
         tooltip=[alt.Tooltip("연도:N"), alt.Tooltip("label:N", title="순위"), alt.Tooltip(
@@ -201,8 +201,8 @@ def render_dashboard():
         year_counts = df.groupby(
             'Year')['TRPR_NM'].count().reset_index(name='과정수')
         chart = alt.Chart(year_counts).mark_bar().encode(
-            x=alt.X('Year:O', title='연도'),
-            y=alt.Y('과정수:Q', title='운영 과정 수'),
+            x=alt.X('Year:O', title='연도', axis=alt.Axis(labelAngle=0)),
+            y=alt.Y('과정수:Q', axis=alt.Axis(title=['운', '영', '과', '정', '수'], titleAngle=0)),
             color=alt.value('#3182bd'),
             tooltip=['Year', '과정수'],
         ).properties(height=300)
