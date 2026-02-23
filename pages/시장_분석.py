@@ -419,9 +419,9 @@ def load_type_counts(where, params):
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_keyword_names(where, params):
-    """Tab 10: 과정명 + 취업률 로드."""
+    """키워드 탭: 과정명 + 취업률 + 연월 로드."""
     return _sql_query(f"""
-        SELECT TRPR_NM, EI_EMPL_RATE_3 FROM TB_MARKET_TREND {where}
+        SELECT TRPR_NM, EI_EMPL_RATE_3, YEAR_MONTH FROM TB_MARKET_TREND {where}
         ORDER BY RANDOM() LIMIT 8000
     """, params=params)
 
@@ -743,42 +743,57 @@ else:
     kwd_shared = pd.DataFrame()
     top_words_shared = []
 
-cert_df_shared = _load_data(f"""
-    SELECT CERTIFICATE, EI_EMPL_RATE_3, TOT_TRCO, TRAIN_TARGET, NCS_CD
-    FROM TB_MARKET_TREND {where}
-    {"AND" if where else "WHERE"} CERTIFICATE IS NOT NULL AND CERTIFICATE != ''
-""", params=params)
-if not cert_df_shared.empty:
-    cert_df_shared['EI_EMPL_RATE_3'] = pd.to_numeric(cert_df_shared['EI_EMPL_RATE_3'], errors='coerce')
-    cert_df_shared['TOT_TRCO'] = pd.to_numeric(cert_df_shared['TOT_TRCO'], errors='coerce')
-    _cert_clean = (cert_df_shared['CERTIFICATE'].astype(str)
-        .str.replace(',', '|', regex=False).str.replace('\n', '|', regex=False)
-        .str.replace('/', '|', regex=False).str.replace('·', '|', regex=False))
-    _cert_exp = cert_df_shared.assign(자격증=_cert_clean.str.split('|')).explode('자격증')
-    _cert_exp['자격증'] = _cert_exp['자격증'].str.strip()
-    _cert_exp = _cert_exp[_cert_exp['자격증'].str.len() > 1]
-    _cert_parsed = _cert_exp.rename(columns={'EI_EMPL_RATE_3': '취업률', 'TOT_TRCO': '훈련비'})
-    if not _cert_parsed.empty:
-        cert_stats_shared = _cert_parsed.groupby('자격증').agg(
-            과정수=('자격증', 'count'),
-            평균_취업률=('취업률', 'mean'),
-            평균_훈련비=('훈련비', 'mean'),
-        ).reset_index()
-        cert_stats_shared = cert_stats_shared[cert_stats_shared['과정수'] >= CERT_MIN_COURSES]
-        cert_stats_shared['평균_취업률'] = cert_stats_shared['평균_취업률'].round(1)
-        cert_stats_shared['평균_훈련비'] = cert_stats_shared['평균_훈련비'].round(0)
-        cert_stats_shared = cert_stats_shared.sort_values('과정수', ascending=False)
-    else:
-        cert_stats_shared = pd.DataFrame()
-else:
-    cert_stats_shared = pd.DataFrame()
+# 키워드별 통합 통계 (빈도 + 취업률 + 트렌드)
+kwd_stats_df = pd.DataFrame()
+kwd_trend_df = pd.DataFrame()
+if not names_df_shared.empty and top_words_shared:
+    names_df_shared['EI_EMPL_RATE_3'] = pd.to_numeric(names_df_shared['EI_EMPL_RATE_3'], errors='coerce')
+    _names_valid = names_df_shared[names_df_shared['EI_EMPL_RATE_3'] > 0].copy()
+    _kwd_stat_rows = []
+    for _w, _cnt in _freq_shared.most_common(30):
+        _empl_vals = _names_valid.loc[
+            _names_valid['TRPR_NM'].str.contains(_w, na=False), 'EI_EMPL_RATE_3'
+        ].dropna()
+        _kwd_stat_rows.append({
+            '키워드': _w, '빈도': _cnt,
+            '평균취업률': round(_empl_vals.mean(), 1) if len(_empl_vals) >= 3 else None,
+            '유효과정수': len(_empl_vals),
+        })
+    kwd_stats_df = pd.DataFrame(_kwd_stat_rows)
+
+    # 트렌드 분석: YEAR_MONTH 기반 최근 vs 이전 기간 비교
+    if 'YEAR_MONTH' in names_df_shared.columns:
+        _all_ym = sorted(names_df_shared['YEAR_MONTH'].dropna().unique())
+        if len(_all_ym) >= 4:
+            _mid_ym = _all_ym[len(_all_ym) // 2]
+            _recent_nm = names_df_shared[names_df_shared['YEAR_MONTH'] >= _mid_ym]['TRPR_NM']
+            _prev_nm   = names_df_shared[names_df_shared['YEAR_MONTH'] <  _mid_ym]['TRPR_NM']
+            _r_words = [w for w in ' '.join(_recent_nm.dropna().astype(str)).split()
+                        if len(w) > 1 and w not in _stops]
+            _p_words = [w for w in ' '.join(_prev_nm.dropna().astype(str)).split()
+                        if len(w) > 1 and w not in _stops]
+            _r_cnt = Counter(_r_words); _p_cnt = Counter(_p_words)
+            _r_tot = max(len(_r_words), 1); _p_tot = max(len(_p_words), 1)
+            _trend_rows = []
+            for _w, _ in (Counter(_r_words) + Counter(_p_words)).most_common(50):
+                _r_rate = _r_cnt.get(_w, 0) / _r_tot * 1000
+                _p_rate = _p_cnt.get(_w, 0) / _p_tot * 1000
+                _trend_rows.append({
+                    '키워드': _w,
+                    '최근 등장': _r_cnt.get(_w, 0),
+                    '이전 등장': _p_cnt.get(_w, 0),
+                    '변화율(%)': round((_r_rate - _p_rate) / (_p_rate + 0.1) * 100, 0),
+                })
+            kwd_trend_df = pd.DataFrame(_trend_rows)
+
+# 자격증 데이터: K-디지털 트레이닝 등 주요 사업유형에 해당 없음 → 제거
 
 # 3.2 탭 구성
 tabs = st.tabs([
     "📊 시장 개요", "🏆 순위 & 모집",
     "🎨 유형 & 일정", "📈 시계열 & 경쟁",
     "📊 취업률 분석", "💎 우리 과정 vs 시장",
-    "☁️ 키워드 & 자격증", "🔭 사업기회 발굴", "📑 데이터 조회"
+    "☁️ 키워드 분석", "🔭 사업기회 발굴", "📑 데이터 조회"
 ])
 
 # ─────────────────────────────────────────
@@ -1327,44 +1342,7 @@ with tabs[4]:
         else:
             st.info("비용-취업률 분석 데이터가 없습니다.")
 
-        st.divider()
 
-        # §5: 자격증별 취업률
-        st.subheader("자격증별 평균 취업률")
-        if not cert_stats_shared.empty:
-            top_empl = cert_stats_shared[cert_stats_shared['과정수'] >= CERT_EMPL_MIN_COURSES].sort_values('평균_취업률', ascending=False).head(TOP_CERTS_LIMIT)
-            if not top_empl.empty:
-                fig2_cert = px.bar(top_empl, x='평균_취업률', y='자격증', orientation='h',
-                              color='과정수', color_continuous_scale='Blues',
-                              hover_data=['과정수', '평균_훈련비'])
-                fig2_cert.update_layout(height=500, yaxis={'categoryorder': 'total ascending'})
-                st.plotly_chart(fig2_cert, use_container_width=True)
-
-        st.divider()
-
-        # §6: 키워드별 취업률
-        st.subheader("키워드별 평균 취업률")
-        st.caption("해당 키워드가 과정명에 포함된 과정들의 평균 취업률입니다.")
-        if not names_df_shared.empty and top_words_shared:
-            names_df_shared['EI_EMPL_RATE_3'] = pd.to_numeric(names_df_shared['EI_EMPL_RATE_3'], errors='coerce')
-            names_valid_t5 = names_df_shared[names_df_shared['EI_EMPL_RATE_3'] > 0].copy()
-            kwd_empl_t5 = []
-            for w in top_words_shared:
-                mask = names_valid_t5['TRPR_NM'].str.contains(w, na=False)
-                avg_e = names_valid_t5.loc[mask, 'EI_EMPL_RATE_3'].mean()
-                cnt = mask.sum()
-                if cnt >= 3 and not pd.isna(avg_e):
-                    kwd_empl_t5.append({'키워드': w, '평균취업률': round(avg_e, 1), '과정수': cnt})
-            if kwd_empl_t5:
-                kwd_empl_df_t5 = pd.DataFrame(kwd_empl_t5).sort_values('평균취업률')
-                fig_empl_kwd = px.bar(kwd_empl_df_t5, x='평균취업률', y='키워드', orientation='h',
-                                      color='평균취업률', color_continuous_scale='RdYlGn',
-                                      text='평균취업률', hover_data=['과정수'])
-                fig_empl_kwd.update_traces(texttemplate='%{x:.1f}%', textposition='outside')
-                fig_empl_kwd.update_layout(height=500, coloraxis_showscale=False, margin=dict(t=10, b=20))
-                st.plotly_chart(fig_empl_kwd, use_container_width=True)
-            else:
-                st.info("취업률 데이터가 있는 키워드가 없습니다.")
 
 # ─────────────────────────────────────────
 # [Tab 5] 💎 우리 과정 vs 시장
@@ -1568,47 +1546,111 @@ with tabs[5]:
             )
 
 # ─────────────────────────────────────────
-# [Tab 6] ☁️ 키워드 & 자격증
+# [Tab 6] ☁️ 키워드 분析
 # ─────────────────────────────────────────
 with tabs[6]:
-    # §1: 키워드 빈도
-    st.subheader("🔥 과정명 트렌드 키워드")
+    # §1: 키워드 빈도 Top 25
+    st.subheader("🔥 과정명 트렌드 키워드 Top 25")
+    st.caption("훈련과정명에서 자주 등장하는 키워드 빈도입니다.")
     if not kwd_shared.empty:
         fig_kwd = px.bar(kwd_shared.sort_values('빈도'), x='빈도', y='키워드', orientation='h',
                          color='빈도', color_continuous_scale='Blues')
-        fig_kwd.update_layout(height=500, coloraxis_showscale=False, margin=dict(t=10, b=20))
+        fig_kwd.update_layout(height=520, coloraxis_showscale=False, margin=dict(t=10, b=20))
         st.plotly_chart(fig_kwd, use_container_width=True)
     else:
         st.info("키워드 데이터가 없습니다.")
 
     st.divider()
 
-    # §2: 자격증 연계 분석 - 과정수 bar
-    st.subheader("🎓 자격증 연계 분석")
-    if not cert_stats_shared.empty:
-        st.metric("연계 자격증 종류", f"{len(cert_stats_shared)}개", help="5건 이상 연계된 자격증만 표시")
-        top20 = cert_stats_shared.head(TOP_CERTS_LIMIT)
-        fig_cert = px.bar(top20, x='과정수', y='자격증', orientation='h',
-                          color='평균_훈련비', color_continuous_scale='Blues',
-                          hover_data=['평균_훈련비'])
-        fig_cert.update_layout(height=500, yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig_cert, use_container_width=True)
+    # §2: 키워드별 평균 취업률
+    st.subheader("💼 키워드별 평균 취업률")
+    st.caption("해당 키워드가 과정명에 포함된 과정들의 평균 취업률입니다. (3개월 고용보험 기준, 3건 이상 집계된 키워드만 표시)")
+    if not kwd_stats_df.empty:
+        _kwd_empl = kwd_stats_df.dropna(subset=['평균취업률']).sort_values('평균취업률')
+        if not _kwd_empl.empty:
+            fig_empl_kwd = px.bar(_kwd_empl, x='평균취업률', y='키워드', orientation='h',
+                                  color='평균취업률', color_continuous_scale='RdYlGn',
+                                  text='평균취업률', hover_data=['빈도', '유효과정수'])
+            fig_empl_kwd.update_traces(texttemplate='%{x:.1f}%', textposition='outside')
+            fig_empl_kwd.update_layout(height=520, coloraxis_showscale=False, margin=dict(t=10, b=20))
+            st.plotly_chart(fig_empl_kwd, use_container_width=True)
+        else:
+            st.info("취업률 데이터가 있는 키워드가 없습니다.")
+    else:
+        st.info("키워드 통계 데이터가 없습니다.")
 
-        # §3: 전체 자격증 테이블
-        st.markdown("##### 전체 자격증 데이터")
+    st.divider()
+
+    # §3: 황금 키워드 매트릭스 (빈도 × 취업률)
+    st.subheader("🎯 황금 키워드 매트릭스")
+    st.caption("우상단(빈도 높고 취업률도 높음) = 시장에서 검증된 인기 과정명 키워드")
+    if not kwd_stats_df.empty:
+        _matrix = kwd_stats_df.dropna(subset=['평균취업률']).copy()
+        if len(_matrix) >= 3:
+            _avg_cnt  = _matrix['빈도'].mean()
+            _avg_empl = _matrix['평균취업률'].mean()
+            fig_mat = px.scatter(
+                _matrix, x='빈도', y='평균취업률', text='키워드',
+                color='평균취업률', color_continuous_scale='RdYlGn',
+                size='빈도', size_max=40,
+                labels={'빈도': '빈도 (등장 횟수)', '평균취업률': '평균 취업률(%)'},
+                hover_data=['유효과정수'],
+            )
+            fig_mat.update_traces(textposition='top center', textfont_size=11)
+            fig_mat.add_hline(y=_avg_empl, line_dash='dash', line_color='gray', opacity=0.5)
+            fig_mat.add_vline(x=_avg_cnt,  line_dash='dash', line_color='gray', opacity=0.5)
+            fig_mat.add_annotation(x=_matrix['빈도'].max() * 0.97, y=_avg_empl + 1.5,
+                                   text=f'평균 취업률 {_avg_empl:.1f}%', showarrow=False,
+                                   font=dict(size=11, color='gray'))
+            fig_mat.update_layout(height=520, coloraxis_showscale=False)
+            st.plotly_chart(fig_mat, use_container_width=True)
+        else:
+            st.info("매트릭스 표시에 필요한 데이터가 부족합니다.")
+
+    st.divider()
+
+    # §4: 상승 / 하락 키워드 트렌드
+    st.subheader("📈 상승 / 하락 키워드")
+    st.caption("최근 기간 대비 이전 기간의 키워드 등장 비율 변화입니다. (양수 = 상승, 음수 = 하락)")
+    if not kwd_trend_df.empty:
+        _rising  = kwd_trend_df.nlargest(10,  '변화율(%)')
+        _falling = kwd_trend_df.nsmallest(10, '변화율(%)')
+        col_r, col_f = st.columns(2)
+        with col_r:
+            st.markdown("**🚀 상승 키워드 Top 10**")
+            st.dataframe(_rising[['키워드', '최근 등장', '이전 등장', '변화율(%)']].reset_index(drop=True),
+                         use_container_width=True, hide_index=True)
+        with col_f:
+            st.markdown("**📉 하락 키워드 Top 10**")
+            st.dataframe(_falling[['키워드', '최근 등장', '이전 등장', '변화율(%)']].reset_index(drop=True),
+                         use_container_width=True, hide_index=True)
+        _trend_show = pd.concat([_rising, _falling]).drop_duplicates(subset='키워드').sort_values('변화율(%)')
+        fig_trend = px.bar(
+            _trend_show, x='변화율(%)', y='키워드', orientation='h',
+            color='변화율(%)', color_continuous_scale='RdYlGn',
+            hover_data=['최근 등장', '이전 등장'],
+        )
+        fig_trend.update_layout(height=480, coloraxis_showscale=False, margin=dict(t=10, b=20))
+        st.plotly_chart(fig_trend, use_container_width=True)
+    else:
+        st.info("기간별 트렌드 분析에 필요한 데이터가 부족합니다.")
+
+    st.divider()
+
+    # §5: 키워드별 상세 통계 테이블
+    st.subheader("📋 키워드별 상세 통계")
+    if not kwd_stats_df.empty:
         st.dataframe(
-            cert_stats_shared,
+            kwd_stats_df.sort_values('빈도', ascending=False),
             column_config={
-                '과정수': st.column_config.NumberColumn(format="%d"),
-                '평균_취업률': st.column_config.NumberColumn('평균 취업률(%)', format="%.1f"),
-                '평균_훈련비': st.column_config.NumberColumn('평균 훈련비(원)', format="%,.0f"),
+                '키워드': '키워드',
+                '빈도': st.column_config.NumberColumn('빈도', format="%d"),
+                '평균취업률': st.column_config.NumberColumn('평균 취업률(%)', format="%.1f"),
+                '유효과정수': st.column_config.NumberColumn('취업률 집계 과정수', format="%d"),
             },
             use_container_width=True,
             hide_index=True,
         )
-    else:
-        st.info("자격증 데이터가 없습니다.")
-
 # ─────────────────────────────────────────
 # [Tab 7] 🔭 사업기회 발굴
 # ─────────────────────────────────────────
