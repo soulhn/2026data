@@ -845,7 +845,7 @@ with tabs[0]:
         # 모집률 내림차순 정렬 → 두 차트 공통 y축 순서
         region_opp = region_opp.sort_values('평균모집률', ascending=True)
         region_opp['기회'] = (region_opp['과정수'] < avg_c) & (region_opp['평균모집률'] > avg_r)
-        colors = ['#2ecc71' if v else '#5dade2' for v in region_opp['기회']]
+        colors = ['#2980b9' if v else '#d5d8dc' for v in region_opp['기회']]
         chart_h = max(300, len(region_opp) * 28)
 
         col_l, col_r = st.columns(2)
@@ -868,7 +868,7 @@ with tabs[0]:
             st.plotly_chart(fig_recruit, use_container_width=True)
 
         with col_r:
-            supply_colors = ['#2ecc71' if v else '#5dade2' for v in region_opp['기회']]
+            supply_colors = ['#2980b9' if v else '#d5d8dc' for v in region_opp['기회']]
             fig_supply = go.Figure(go.Bar(
                 x=region_opp['과정수'],
                 y=region_opp['REGION'],
