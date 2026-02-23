@@ -87,12 +87,19 @@ def build_revenue_df(trpr_id, trpr_degr, start_dt, end_dt):
 
         for trnee_id, grp in period_df.groupby('TRNEE_ID'):
             trnee_nm = grp['TRNEE_NM'].iloc[0] if not grp['TRNEE_NM'].isna().all() else trnee_id
+            # 수강생 개인 훈련일수: 중도입과자는 실제 수강 개시 이후 날짜 수
+            # (출석률 분모로 사용; full_fee는 period_training_days 기준)
+            student_td = grp[
+                ~grp['ATEND_STATUS'].isin({'중도탈락미출석'})
+            ]['ATEND_DT'].nunique()
             present = grp[~grp['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)]
             base_attend = present['ATEND_DT'].nunique()
             # 지각+조퇴+외출 3개 누적 → 가상 결석 1일 차감
             penalty = int(present['ATEND_STATUS'].apply(_penalty).sum())
             attend_days = max(0, base_attend - penalty // 3)
-            fee, rate, status = calc_revenue(attend_days, training_days)
+            fee, rate, status = calc_revenue(
+                attend_days, student_td, period_training_days=training_days
+            )
             rows.append({
                 'TRNEE_ID': trnee_id,
                 'TRNEE_NM': trnee_nm,

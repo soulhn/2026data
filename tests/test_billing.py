@@ -105,6 +105,77 @@ class TestGrandTotal:
         assert sum(PERIOD_TOTALS_17) == GRAND_TOTAL_17 == 349_347_680
 
 
+# ── 18기 1단위 (중도입과 케이스) ───────────────────────────────────────────────
+
+PERIOD1_18 = [
+    # (이름, period_td, student_td, attend_days, expected_fee)
+    # period_td=22 (1단위 전체 훈련일수), student_td=개인 훈련일수
+    ("김대의",  22, 22, 22, 3_194_400),
+    ("김민수",  22, 22, 21, 3_194_400),
+    ("김재상",  22, 22, 21, 3_194_400),
+    ("김택곤",  22, 20, 20, 3_194_400),  # 중도입과: student_td=20, 20/20=100%
+    ("박종원",  22, 22, 21, 3_194_400),
+    ("박진우",  22, 22, 21, 3_194_400),
+    ("안진기",  22, 20, 20, 3_194_400),  # 중도입과: 20/20=100%
+    ("육세윤",  22, 20, 17, 3_194_400),  # 중도입과: 17/20=85% → 전액 (기존 코드에서 비례로 오계산)
+    ("윤동기",  22, 22, 20, 3_194_400),
+    ("윤석현",  22, 22, 21, 3_194_400),
+    ("이승진",  22, 20, 20, 3_194_400),  # 중도입과: 20/20=100%
+    ("이인화",  22, 22, 19, 3_194_400),
+    ("이진구",  22, 22, 22, 3_194_400),
+    ("임성민",  22, 22, 21, 3_194_400),
+    ("전하윤",  22, 22, 20, 3_194_400),
+    ("조상원",  22, 19, 19, 3_194_400),  # 중도입과: 19/19=100%
+    ("조용주",  22, 22, 22, 3_194_400),
+    ("조원석",  22, 22, 20, 3_194_400),
+    ("최유경",  22, 21, 20, 3_194_400),  # 중도입과: 20/21=95.2%
+    ("최정우",  22, 22, 22, 3_194_400),
+    ("최정필",  22, 22, 22, 3_194_400),
+    ("김민준",  22, 22, 22, 3_194_400),
+    ("박채연",  22, 22, 21, 3_194_400),
+    ("서현원",  22, 22, 22, 3_194_400),
+    ("손혜원",  22, 22, 22, 3_194_400),
+    ("이원진",  22, 22, 22, 3_194_400),
+    ("임승택",  22, 22, 21, 3_194_400),
+]
+
+PERIOD1_18_ACTUAL = 86_248_800  # 27 × 3,194,400
+
+
+class TestMidTermJoiner:
+    """중도입과(단위기간 도중 입과) 수강생 청구액 검증"""
+
+    def test_yukseyun_mid_joiner(self):
+        """육세윤: student_td=20, attend=17 → 17/20=85% → 전액 (period_td=22 기준 full_fee)"""
+        fee, rate, status = calc_revenue(17, 20, period_training_days=22)
+        assert rate == 0.85
+        assert status == "전액"
+        assert fee == 22 * DAILY_TRAINING_FEE == 3_194_400
+
+    def test_mid_joiner_proportional(self):
+        """중도입과 + 비례: student_td=20, attend=14 → 14/20=70% → 비례 (full_fee는 period_td 기준)"""
+        fee, rate, status = calc_revenue(14, 20, period_training_days=22)
+        full_fee = 22 * DAILY_TRAINING_FEE
+        assert status == "비례"
+        assert fee == int(full_fee * round(14 / 20, 3))
+
+    def test_period1_18_all_students(self):
+        """18기 1단위 수강생 27명 개별 청구액 검증"""
+        for name, period_td, student_td, attend, expected in PERIOD1_18:
+            fee, _, _ = calc_revenue(attend, student_td, period_training_days=period_td)
+            assert fee == expected, (
+                f"{name}: calc_revenue({attend}, {student_td}, period={period_td}) = {fee:,}, expected {expected:,}"
+            )
+
+    def test_period1_18_total(self):
+        """18기 1단위 합계: 27 × 3,194,400 = 86,248,800"""
+        raw = sum(
+            calc_revenue(attend, student_td, period_training_days=period_td)[0]
+            for _, period_td, student_td, attend, _ in PERIOD1_18
+        )
+        assert raw == PERIOD1_18_ACTUAL == 86_248_800
+
+
 class TestKnownLimitation:
     """
     [구현 한계] 카드사별 소계 내 버림 재현 불가
