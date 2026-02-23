@@ -641,7 +641,7 @@ with tab_all:
         st.stop()
 
     all_rev_sorted = all_rev.sort_values('TRPR_DEGR')
-    x_labels = [f"{r}회차" for r in all_rev_sorted['TRPR_DEGR']]
+    x_labels = [str(r) for r in all_rev_sorted['TRPR_DEGR']]
 
     col_l, col_r = st.columns(2)
 
