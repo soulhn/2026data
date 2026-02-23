@@ -606,9 +606,9 @@ with tab_all:
                     point=alt.OverlayMarkDef(size=80), color='#3498db'
                 ).encode(
                     x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y('출석률:Q', axis=alt.Axis(title=['출', '석', '률', '(%)'], titleAngle=0), scale=alt.Scale(domain=[80, 100])),
+                    y=alt.Y('출석률:Q', axis=alt.Axis(title=['출', '석', '률', '(%)'], titleAngle=0)),
                     tooltip=['기수', '출석률'],
-                ).properties(height=420),
+                ).properties(height=350),
                 use_container_width=True,
             )
 
