@@ -70,23 +70,6 @@ def _render_project_intro():
     st.caption("한화시스템 BEYOND SW캠프 | K-Digital Training B2G 교육사업 | 2023.07 ~ 현재")
     st.divider()
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**🔴 해결한 문제**")
-        st.markdown("""
-- 출결·수료 데이터 수작업 집계 → 보고 **반나절 소요**
-- 위험군(이탈 징후) 감지 **수일 지연**
-- 수강생 1명 탈락 시 최대 **1,742만원** 매출 손실
-        """)
-    with col2:
-        st.markdown("**🟢 구축한 것**")
-        st.markdown("""
-- HRD-Net API 자동 ETL (GitHub Actions, 평일 매시간)
-- 위험군 **당일 자동 감지** · 즉시 대응 체계
-- 전국 KDT **30만건+** 기반 시장 경쟁 분석
-        """)
-
-    st.divider()
 
     mi1, mi2 = st.columns(2)
     mi1.metric("총 운영 기수", "25기", "2023.07 ~ 현재")
