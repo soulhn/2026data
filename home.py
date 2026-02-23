@@ -180,7 +180,7 @@ def render_dashboard():
     ])
     chart = alt.Chart(rank_df).mark_bar(width=60).encode(
         x=alt.X("연도:N", title="연도", axis=alt.Axis(labelFontSize=13, labelAngle=0)),
-        y=alt.Y("상위(%):Q", axis=alt.Axis(title=['상위%', '(낮을수록', '우수)'], titleAngle=0),
+        y=alt.Y("상위(%):Q", axis=alt.Axis(title=['상', '위', '%'], titleAngle=0),
                 scale=alt.Scale(domain=[0, 10])),
         color=alt.value("#2ecc71"),
         tooltip=[alt.Tooltip("연도:N"), alt.Tooltip("label:N", title="순위"), alt.Tooltip(
