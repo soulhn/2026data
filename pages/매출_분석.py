@@ -209,15 +209,33 @@ with st.sidebar:
 # ── 상단 핵심 지표 (전체 기수 기준) ──
 _top_rev = build_all_terms_revenue(course_list)
 if not _top_rev.empty:
+    # 종강 기수만 별도 집계 (진행중 기수는 매출이 부분합이라 평균 왜곡)
+    _done = _top_rev[
+        pd.to_datetime(_top_rev['TR_END_DT']) < pd.Timestamp.now()
+    ]
+    _done_src = _done if not _done.empty else _top_rev
     _total_cnt = int(
-        _top_rev['full_cnt'].sum() + _top_rev['prop_cnt'].sum() + _top_rev['none_cnt'].sum()
+        _done_src['full_cnt'].sum() + _done_src['prop_cnt'].sum() + _done_src['none_cnt'].sum()
     )
-    _full_pct = round(_top_rev['full_cnt'].sum() / _total_cnt * 100, 1) if _total_cnt > 0 else 0
+    _full_pct = round(_done_src['full_cnt'].sum() / _total_cnt * 100, 1) if _total_cnt > 0 else 0
     mk1, mk2, mk3, mk4 = st.columns(4)
     mk1.metric("누적 총매출", fmt_won(int(_top_rev['actual_fee'].sum())))
-    mk2.metric("기수당 평균 매출", fmt_won(int(_top_rev['actual_fee'].mean())))
-    mk3.metric("평균 달성률", f"{round(_top_rev['achievement'].mean(), 1)}%")
-    mk4.metric("전액 청구 비율", f"{_full_pct}%")
+    mk2.metric(
+        "기수당 평균 매출",
+        fmt_won(int(_done_src['actual_fee'].mean())),
+        help="종강 기수 기준 평균. 진행중 기수는 부분합이라 제외.",
+    )
+    mk3.metric(
+        "평균 달성률",
+        f"{round(_done_src['achievement'].mean(), 1)}%",
+        help="전액 기준 매출(훈련일수 × 단가 × 수강생) 대비 실제 청구액 비율 평균. "
+             "전원 전액이면 100%.",
+    )
+    mk4.metric(
+        "전액 청구 비율",
+        f"{_full_pct}%",
+        help="출석률 80% 이상으로 전액 청구된 학생-단위기간 건수 비율.",
+    )
     st.divider()
 
 tab_all, tab_indiv = st.tabs(["🌐 전체 기수 비교", "📌 개별 기수 분석"])
