@@ -176,6 +176,64 @@ class TestMidTermJoiner:
         assert raw == PERIOD1_18_ACTUAL == 86_248_800
 
 
+# ── 18기 2단위 (중도탈락 케이스) ───────────────────────────────────────────────
+# 중도탈락미출석 있는 수강생은 rate 분모 = 기간 전체 훈련일수(20)
+
+PERIOD2_18_DROPOUTS = [
+    # (이름, period_td, attend_days, expected_fee)
+    ("안진기", 20, 13, 1_887_600),  # 13/20=65% → 비례
+    ("전하윤", 20,  7, 1_016_400),  # 7/20=35%  → 비례
+    ("임승택", 20,  6,   871_200),  # 6/20=30%  → 비례
+]
+
+PERIOD2_18_ACTUAL = 73_471_200  # 24 × 2,904,000 + 1,887,600 + 1,016,400 + 871,200
+
+
+class TestDropout:
+    """중도탈락 수강생: rate 분모 = 기간 전체 훈련일수"""
+
+    def test_dropout_rate_uses_period_td(self):
+        """중도탈락 시 분모는 기간 전체(period_td), 개인 훈련일수 아님"""
+        for name, period_td, attend, expected in PERIOD2_18_DROPOUTS:
+            # 중도탈락: training_days = period_td (full period)
+            fee, rate, status = calc_revenue(attend, period_td, period_training_days=period_td)
+            assert fee == expected, (
+                f"{name}: fee={fee:,}, expected={expected:,}"
+            )
+            assert status == "비례"
+
+    def test_anjingi_65pct(self):
+        """안진기: 13/20=65% → 비례 → 1,887,600"""
+        fee, rate, status = calc_revenue(13, 20, period_training_days=20)
+        assert rate == 0.65
+        assert status == "비례"
+        assert fee == 1_887_600
+
+    def test_jeonhayun_35pct(self):
+        """전하윤: 7/20=35% → 비례 → 1,016,400"""
+        fee, rate, status = calc_revenue(7, 20, period_training_days=20)
+        assert rate == 0.35
+        assert status == "비례"
+        assert fee == 1_016_400
+
+    def test_imsungtaek_30pct(self):
+        """임승택: 6/20=30% → 비례 → 871,200"""
+        fee, rate, status = calc_revenue(6, 20, period_training_days=20)
+        assert rate == 0.30
+        assert status == "비례"
+        assert fee == 871_200
+
+    def test_period2_18_total(self):
+        """18기 2단위 합계: 24 × 2,904,000 + 3개 비례 = 73,471,200"""
+        full_fee = 20 * DAILY_TRAINING_FEE  # 2,904,000
+        normal_count = 27 - len(PERIOD2_18_DROPOUTS)
+        raw = normal_count * full_fee + sum(
+            calc_revenue(attend, period_td, period_training_days=period_td)[0]
+            for _, period_td, attend, _ in PERIOD2_18_DROPOUTS
+        )
+        assert raw == PERIOD2_18_ACTUAL == 73_471_200
+
+
 class TestKnownLimitation:
     """
     [구현 한계] 카드사별 소계 내 버림 재현 불가
