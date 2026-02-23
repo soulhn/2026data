@@ -88,7 +88,7 @@ def render_scatter_with_overlay(market_sample, internal_scatter, x_col, y_col,
     return med_x, med_y
 
 
-def _vert_ytitle(fig, text):
+def _vert_ytitle(fig, text, margin_l=80):
     """Y축 타이틀을 글자 단위로 세로 적층 표시 (annotation 방식)."""
     import re
     items = []
@@ -97,7 +97,7 @@ def _vert_ytitle(fig, text):
             items.append(part)
         else:
             items.extend(c for c in part if c.strip())
-    fig.update_layout(yaxis_title='', margin=dict(l=80))
+    fig.update_layout(yaxis_title='', margin=dict(l=margin_l))
     fig.add_annotation(
         x=0, y=0.5, xref='paper', yref='paper',
         text='<br>'.join(items), showarrow=False, textangle=0,
@@ -1125,6 +1125,7 @@ with tabs[2]:
         fig_kwd = px.bar(kwd_shared.sort_values('빈도'), x='빈도', y='키워드', orientation='h',
                          color='빈도', color_continuous_scale='Blues')
         fig_kwd.update_layout(height=520, coloraxis_showscale=False, margin=dict(t=10, b=20))
+        _vert_ytitle(fig_kwd, '키워드', margin_l=160)
         st.plotly_chart(fig_kwd, use_container_width=True)
     else:
         st.info("키워드 데이터가 없습니다.")
