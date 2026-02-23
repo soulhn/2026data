@@ -161,12 +161,16 @@ def init_all_tables():
     backfill_queries = []
     if is_pg():
         backfill_queries = [
-            "UPDATE TB_MARKET_TREND SET YEAR_MONTH = LEFT(TR_STA_DT, 4) || '-' || SUBSTR(TR_STA_DT, 5, 2) WHERE YEAR_MONTH IS NULL AND TR_STA_DT IS NOT NULL",
+            # TR_STA_DT는 YYYY-MM-DD 형식 → LEFT(7)로 YYYY-MM 추출
+            # NULL 및 잘못된 형식('2023--0' 등) 모두 수정
+            "UPDATE TB_MARKET_TREND SET YEAR_MONTH = LEFT(TR_STA_DT, 7) WHERE TR_STA_DT IS NOT NULL AND (YEAR_MONTH IS NULL OR YEAR_MONTH !~ '^[0-9]{4}-[0-9]{2}$')",
             "UPDATE TB_MARKET_TREND SET REGION = SPLIT_PART(ADDRESS, ' ', 1) WHERE REGION IS NULL AND ADDRESS IS NOT NULL",
         ]
     else:
         backfill_queries = [
-            "UPDATE TB_MARKET_TREND SET YEAR_MONTH = substr(TR_STA_DT, 1, 4) || '-' || substr(TR_STA_DT, 5, 2) WHERE YEAR_MONTH IS NULL AND TR_STA_DT IS NOT NULL",
+            # TR_STA_DT는 YYYY-MM-DD 형식 → substr(1,7)로 YYYY-MM 추출
+            # NULL 및 잘못된 형식('2023--0' 등: 길이≠7 또는 이중 대시) 모두 수정
+            "UPDATE TB_MARKET_TREND SET YEAR_MONTH = substr(TR_STA_DT, 1, 7) WHERE TR_STA_DT IS NOT NULL AND (YEAR_MONTH IS NULL OR length(YEAR_MONTH) != 7 OR YEAR_MONTH LIKE '%-%-%')",
             "UPDATE TB_MARKET_TREND SET REGION = substr(ADDRESS, 1, instr(ADDRESS || ' ', ' ') - 1) WHERE REGION IS NULL AND ADDRESS IS NOT NULL",
         ]
     for sql in backfill_queries:
