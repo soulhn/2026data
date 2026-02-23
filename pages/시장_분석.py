@@ -1427,18 +1427,6 @@ with tabs[5]:
 with tabs[6]:
     st.caption("수요(모집률)가 높고 공급(경쟁 과정 수)이 낮은 영역을 찾아 신규 교육사업 진입 기회를 도출합니다.")
 
-    # 우리 NCS 코드 (한 번만 조회)
-    _our_ncs_opp = []
-    if internal_df is not None:
-        _ids_opp = internal_df['TRPR_ID'].unique().tolist()
-        if _ids_opp:
-            _ph = ','.join('?' * len(_ids_opp))
-            _m = _sql_query(
-                f"SELECT DISTINCT NCS_CD FROM TB_MARKET_TREND WHERE TRPR_ID IN ({_ph}) AND NCS_CD IS NOT NULL",
-                params=_ids_opp
-            )
-            _our_ncs_opp = _m['NCS_CD'].dropna().unique().tolist() if not _m.empty else []
-
     # ── 섹션 1: 지역별 수요-공급 갭 ──
     st.subheader("📍 지역별 수요-공급 갭")
     st.caption("좌상단(과정 적고 모집률 높음) = 공급 부족 지역 → 신규 진입 기회")
@@ -1521,92 +1509,6 @@ with tabs[6]:
     else:
         st.info("NCS 성장 분석 데이터가 부족합니다. (최소 2건 이상 NCS 코드가 필요합니다)")
 
-    st.divider()
-
-    # ── 섹션 3: 고성과·저경쟁 NCS 매트릭스 (취업률 데이터 필요) ──
-    if no_empl_data:
-        st.info("ℹ️ 선택된 훈련 유형은 취업률 데이터가 없어 NCS 기회 매트릭스 및 종합 기회지수를 제공하지 않습니다.")
-    else:
-        st.subheader("🎯 고성과·저경쟁 NCS 기회 매트릭스")
-        st.caption("좌상단(경쟁 적고 취업률 높음) = 신규 진입 최적 영역. 버블 크기 = 모집률")
-
-        with st.spinner("🎯 NCS 기회 매트릭스 분석 중..."):
-            ncs_mat = load_ncs_opp_matrix(where, params)
-        if not ncs_mat.empty:
-            for col in ['경쟁과정수', '평균취업률', '평균모집률']:
-                ncs_mat[col] = pd.to_numeric(ncs_mat[col], errors='coerce')
-            ncs_mat = ncs_mat.dropna(subset=['평균취업률', '평균모집률'])
-
-            if not ncs_mat.empty:
-                ncs_mat = ncs_mat.copy()
-                ncs_mat['분류'] = ncs_mat['NCS_CD'].apply(
-                    lambda x: '우리 분야' if x in _our_ncs_opp else '시장'
-                )
-                fig_mat = px.scatter(
-                    ncs_mat, x='경쟁과정수', y='평균취업률',
-                    size='평균모집률', text='NCS_CD',
-                    color='분류', color_discrete_map={'우리 분야': 'red', '시장': 'steelblue'},
-                    labels={'경쟁과정수': '경쟁 강도 (과정 수)', '평균취업률': '성과 (취업률 %)'},
-                    title='NCS별 경쟁강도 vs 취업률 (버블 크기 = 모집률)'
-                )
-                med_comp = ncs_mat['경쟁과정수'].median()
-                med_empl_mat = ncs_mat['평균취업률'].median()
-                fig_mat.add_hline(y=med_empl_mat, line_dash="dash", line_color="gray", opacity=0.5)
-                fig_mat.add_vline(x=med_comp, line_dash="dash", line_color="gray", opacity=0.5)
-                fig_mat.add_annotation(
-                    x=ncs_mat['경쟁과정수'].quantile(0.1), y=ncs_mat['평균취업률'].quantile(0.9),
-                    text="🌟 최적 진입 영역", showarrow=False, font=dict(color='green', size=12)
-                )
-                fig_mat.update_traces(textposition='top center')
-                st.plotly_chart(fig_mat, use_container_width=True)
-
-                best_ncs = ncs_mat[
-                    (ncs_mat['경쟁과정수'] < med_comp) & (ncs_mat['평균취업률'] > med_empl_mat)
-                ].sort_values('평균취업률', ascending=False)
-                if not best_ncs.empty:
-                    st.success("🌟 **최적 진입 영역 NCS**: " + ", ".join(best_ncs['NCS_CD'].head(8).tolist()))
-        else:
-            st.info("기회 매트릭스 데이터가 부족합니다.")
-            ncs_mat = pd.DataFrame()
-
-        st.divider()
-
-        # ── 섹션 4: 종합 기회 지수 ──
-        st.subheader("🏆 종합 사업기회 지수 Top 15")
-        st.caption("취업률(40점) + 모집률(40점) − 경쟁도(20점) 기준 정규화 합산")
-
-        if not ncs_mat.empty and len(ncs_mat) >= 3:
-            score_df = ncs_mat.copy()
-
-            def _minmax(s):
-                lo, hi = s.min(), s.max()
-                return (s - lo) / (hi - lo) if hi > lo else pd.Series(0.5, index=s.index)
-
-            score_df['기회지수'] = (
-                _minmax(score_df['평균취업률']) * 40
-                + _minmax(score_df['평균모집률']) * 40
-                - _minmax(score_df['경쟁과정수']) * 20
-            ).round(1)
-            top15 = score_df.nlargest(15, '기회지수').copy()
-            top15['순위'] = range(1, len(top15) + 1)
-            if _our_ncs_opp:
-                top15['비고'] = top15['NCS_CD'].apply(lambda x: '⭐ 우리 분야' if x in _our_ncs_opp else '')
-
-            disp_cols = ['순위', 'NCS_CD', '기회지수', '평균취업률', '평균모집률', '경쟁과정수']
-            if '비고' in top15.columns:
-                disp_cols.append('비고')
-            st.dataframe(
-                top15[disp_cols].reset_index(drop=True),
-                use_container_width=True, hide_index=True,
-                column_config={
-                    '기회지수': st.column_config.ProgressColumn('기회지수 (80점 만점)', min_value=0, max_value=80, format="%.1f"),
-                    '평균취업률': st.column_config.NumberColumn(format="%.1f%%"),
-                    '평균모집률': st.column_config.NumberColumn(format="%.1f%%"),
-                    '경쟁과정수': st.column_config.NumberColumn(format="%d개"),
-                }
-            )
-        else:
-            st.info("종합 기회지수 산출에 데이터가 부족합니다.")
 
 # ─────────────────────────────────────────
 # [Tab 7] 📑 데이터 조회
