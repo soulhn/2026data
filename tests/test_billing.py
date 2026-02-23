@@ -23,7 +23,7 @@ PERIOD2_17 = [
     ("허정우",  21, 21, 3_049_200),
     ("홍서연",  21, 20, 3_049_200),
     ("강설",    21, 20, 3_049_200),
-    ("김광호",  21,  0, 0),           # 미청구
+    ("김광호",  21,  0,         0),  # 미청구
     ("김륜환",  21, 19, 3_049_200),
     ("김아영",  21, 20, 3_049_200),
     ("김영재",  21, 15, 2_177_128),  # 71.4% → 비례
@@ -32,77 +32,49 @@ PERIOD2_17 = [
     ("최경민",  21, 17, 3_049_200),  # 81% → 전액
 ]
 
-PERIOD2_ACTUAL = 68_387_450
+PERIOD2_17_ACTUAL = 68_387_450
+
+# 17기 6단위 (training_days=19) — SH/NH 카드사 2그룹
+# Group1 SH(신한카드) 16명
+PERIOD6_17_GROUP1 = [
+    # (이름, attend_days, expected_fee)
+    ("강병욱", 18, 2_758_800),  # 18/19=94.7% → 전액
+    ("구창모",  0,         0),  # 미청구
+    ("권재찬",  0,         0),  # 미청구
+    ("김성인", 16, 2_758_800),  # 16/19=84.2% → 전액
+    ("양승우", 19, 2_758_800),  # 100% → 전액
+    ("양형모", 17, 2_758_800),  # 17/19=89.5% → 전액
+    ("염준선", 14, 2_033_235),  # 14/19=73.7% → 비례
+    ("유현경", 17, 2_758_800),  # 17/19=89.5% → 전액
+    ("이상우", 15, 2_176_693),  # 15/19=78.9% → 비례
+    ("이시욱", 18, 2_758_800),  # 18/19=94.7% → 전액
+    ("이현식", 16, 2_758_800),  # 16/19=84.2% → 전액
+    ("임주식",  0,         0),  # 미청구
+    ("최민성", 19, 2_758_800),  # 100% → 전액
+    ("허정빈",  0,         0),  # 미청구
+    ("허정우", 17, 2_758_800),  # 17/19=89.5% → 전액
+    ("홍서연", 16, 2_758_800),  # 16/19=84.2% → 전액
+]
+
+# Group2 NH(농협카드) 8명
+PERIOD6_17_GROUP2 = [
+    ("강설",   17, 2_758_800),  # 17/19=89.5% → 전액
+    ("김광호",  0,         0),  # 미청구
+    ("김륜환", 13, 1_887_019),  # 13/19=68.4% → 비례
+    ("김아영", 16, 2_758_800),  # 16/19=84.2% → 전액
+    ("김영재", 16, 2_758_800),  # 16/19=84.2% → 전액
+    ("김원중", 16, 2_758_800),  # 16/19=84.2% → 전액
+    ("윤소민", 17, 2_758_800),  # 17/19=89.5% → 전액
+    ("최경민",  0,         0),  # 미청구
+]
+
+PERIOD6_17_RAW_GROUP1 = 31_797_928   # SH 16명 개별합
+PERIOD6_17_RAW_GROUP2 = 15_681_019   # NH 8명 개별합
+PERIOD6_17_RAW = 47_478_947          # 전체 raw (Group1 + Group2)
+PERIOD6_17_ACTUAL = 47_478_930       # HRD-Net 실제 (카드사별 소계 버림)
 
 PERIOD_TOTALS_17 = [73_180_800, 68_387_450, 64_031_740, 55_031_960, 41_236_800, 47_478_930]
 GRAND_TOTAL_17 = 349_347_680
-
-
-# ── 개별 청구액 ────────────────────────────────────────────────────────────────
-
-class TestCalcRevenue:
-    def test_full_payment_100pct(self):
-        """100% 출석 → 전액"""
-        fee, rate, status = calc_revenue(21, 21)
-        assert fee == 21 * DAILY_TRAINING_FEE == 3_049_200
-        assert status == "전액"
-
-    def test_full_payment_threshold_81pct(self):
-        """81% (>= 80%) → 전액"""
-        fee, rate, status = calc_revenue(17, 21)
-        assert fee == 21 * DAILY_TRAINING_FEE == 3_049_200
-        assert status == "전액"
-
-    def test_proportional_714pct(self):
-        """71.4% → 비례: int(full_fee × round(attend/training, 3))"""
-        fee, rate, status = calc_revenue(15, 21)
-        full_fee = 21 * DAILY_TRAINING_FEE  # 3,049,200
-        expected = int(full_fee * round(15 / 21, 3))  # int(3,049,200 × 0.714) = 2,177,128
-        assert fee == expected == 2_177_128
-        assert status == "비례"
-
-    def test_zero_attendance(self):
-        """0% → 미청구"""
-        fee, rate, status = calc_revenue(0, 21)
-        assert fee == 0
-        assert status == "미청구"
-
-    def test_period2_all_students(self):
-        """2단위 기간 수강생 24명 개별 청구액 검증"""
-        for name, training, attend, expected_fee in PERIOD2_17:
-            fee, _, _ = calc_revenue(attend, training)
-            assert fee == expected_fee, (
-                f"{name}: calc_revenue({attend}, {training}) = {fee}, expected {expected_fee}"
-            )
-
-
-# ── 단위기간 집계 ──────────────────────────────────────────────────────────────
-
-class TestPeriodTruncation:
-    def test_period2_raw_sum(self):
-        """2단위 기간 raw 합계 검증"""
-        raw = sum(calc_revenue(a, t)[0] for _, t, a, _ in PERIOD2_17)
-        assert raw == 68_387_456
-
-    def test_period2_truncated(self):
-        """2단위 기간: raw 합계를 10원 단위 버림 → 실제 청구액"""
-        raw = sum(calc_revenue(a, t)[0] for _, t, a, _ in PERIOD2_17)
-        truncated = (raw // 10) * 10
-        assert truncated == PERIOD2_ACTUAL == 68_387_450
-
-    def test_truncation_formula(self):
-        """(raw // 10) * 10 = 10원 단위 버림"""
-        assert (68_387_456 // 10) * 10 == 68_387_450
-        assert (64_031_746 // 10) * 10 == 64_031_740
-        assert (55_031_961 // 10) * 10 == 55_031_960
-
-
-# ── 총 매출 ────────────────────────────────────────────────────────────────────
-
-class TestGrandTotal:
-    def test_grand_total_17(self):
-        """17기 총 매출 = 각 단위기간 버림액 합계"""
-        assert sum(PERIOD_TOTALS_17) == GRAND_TOTAL_17 == 349_347_680
 
 
 # ── 18기 1단위 (중도입과 케이스) ───────────────────────────────────────────────
@@ -142,6 +114,188 @@ PERIOD1_18 = [
 PERIOD1_18_ACTUAL = 86_248_800  # 27 × 3,194,400
 
 
+# ── 18기 2단위 ─────────────────────────────────────────────────────────────────
+# 전원 training_days=20 (period_td=20 동일)
+# - 일반 수강생: rate_td=student_td=20 (중도탈락미출석 없음)
+# - 중도탈락: rate_td=period_td=20 (중도탈락미출석 기록 있음)
+
+PERIOD2_18_FULL = [
+    # (이름, attend_days, expected_fee) — training_days=20 for all
+    # 24명 전액
+    ("김대의",  20, 2_904_000),
+    ("김민수",  20, 2_904_000),
+    ("김재상",  20, 2_904_000),
+    ("김택곤",  19, 2_904_000),  # 19/20=95% → 전액
+    ("박종원",  20, 2_904_000),
+    ("박진우",  20, 2_904_000),
+    ("육세윤",  20, 2_904_000),
+    ("윤동기",  19, 2_904_000),
+    ("윤석현",  20, 2_904_000),
+    ("이승진",  19, 2_904_000),
+    ("이인화",  19, 2_904_000),
+    ("이진구",  20, 2_904_000),
+    ("임성민",  20, 2_904_000),
+    ("조상원",  20, 2_904_000),
+    ("조용주",  20, 2_904_000),
+    ("조원석",  16, 2_904_000),  # 16/20=80% → 전액 (전액 경계값)
+    ("최유경",  19, 2_904_000),
+    ("최정우",  20, 2_904_000),
+    ("최정필",  20, 2_904_000),
+    ("김민준",  20, 2_904_000),
+    ("박채연",  19, 2_904_000),
+    ("서현원",  20, 2_904_000),
+    ("손혜원",  20, 2_904_000),
+    ("이원진",  19, 2_904_000),
+    # 3명 중도탈락 비례 (rate_td=period_td=20)
+    ("안진기",  13, 1_887_600),  # 13/20=65% → 비례
+    ("전하윤",   7, 1_016_400),  # 7/20=35% → 비례
+    ("임승택",   6,   871_200),  # 6/20=30% → 비례
+]
+
+PERIOD2_18_DROPOUTS = [
+    # (이름, period_td, attend_days, expected_fee)
+    ("안진기", 20, 13, 1_887_600),  # 13/20=65% → 비례
+    ("전하윤", 20,  7, 1_016_400),  # 7/20=35%  → 비례
+    ("임승택", 20,  6,   871_200),  # 6/20=30%  → 비례
+]
+
+PERIOD2_18_ACTUAL = 73_471_200  # 24 × 2,904,000 + 1,887,600 + 1,016,400 + 871,200
+
+
+# ── 개별 청구액 ────────────────────────────────────────────────────────────────
+
+class TestCalcRevenue:
+    def test_full_payment_100pct(self):
+        """100% 출석 → 전액"""
+        fee, rate, status = calc_revenue(21, 21)
+        assert fee == 21 * DAILY_TRAINING_FEE == 3_049_200
+        assert status == "전액"
+
+    def test_full_payment_threshold_81pct(self):
+        """81% (>= 80%) → 전액"""
+        fee, rate, status = calc_revenue(17, 21)
+        assert fee == 21 * DAILY_TRAINING_FEE == 3_049_200
+        assert status == "전액"
+
+    def test_full_payment_threshold_80pct_exact(self):
+        """80% 정확히 (경계값) → 전액"""
+        fee, rate, status = calc_revenue(16, 20)
+        assert fee == 20 * DAILY_TRAINING_FEE == 2_904_000
+        assert status == "전액"
+
+    def test_proportional_714pct(self):
+        """71.4% → 비례: full_fee × rate_per_mille // 1000"""
+        fee, rate, status = calc_revenue(15, 21)
+        # rate_per_mille = round(15*1000/21) = 714
+        # fee = 3,049,200 × 714 // 1000 = 2,177,128
+        assert fee == 2_177_128
+        assert status == "비례"
+
+    def test_zero_attendance(self):
+        """0% → 미청구"""
+        fee, rate, status = calc_revenue(0, 21)
+        assert fee == 0
+        assert status == "미청구"
+
+    def test_period2_17_all_students(self):
+        """17기 2단위 수강생 24명 개별 청구액 검증"""
+        for name, training, attend, expected_fee in PERIOD2_17:
+            fee, _, _ = calc_revenue(attend, training)
+            assert fee == expected_fee, (
+                f"{name}: calc_revenue({attend}, {training}) = {fee}, expected {expected_fee}"
+            )
+
+
+# ── 17기 6단위 개별 청구액 ────────────────────────────────────────────────────
+
+class TestPeriod6_17Students:
+    """17기 6단위 (training_days=19) 24명 개별 청구액 검증"""
+
+    def test_group1_individual_fees(self):
+        """Group1(SH) 16명 개별 청구액"""
+        for name, attend, expected in PERIOD6_17_GROUP1:
+            fee, _, _ = calc_revenue(attend, 19)
+            assert fee == expected, (
+                f"{name}: calc_revenue({attend}, 19) = {fee:,}, expected {expected:,}"
+            )
+
+    def test_group2_individual_fees(self):
+        """Group2(NH) 8명 개별 청구액"""
+        for name, attend, expected in PERIOD6_17_GROUP2:
+            fee, _, _ = calc_revenue(attend, 19)
+            assert fee == expected, (
+                f"{name}: calc_revenue({attend}, 19) = {fee:,}, expected {expected:,}"
+            )
+
+    def test_group1_raw_sum(self):
+        """Group1(SH) raw 합계 = 31,797,928"""
+        raw = sum(calc_revenue(a, 19)[0] for _, a, _ in PERIOD6_17_GROUP1)
+        assert raw == PERIOD6_17_RAW_GROUP1 == 31_797_928
+
+    def test_group2_raw_sum(self):
+        """Group2(NH) raw 합계 = 15,681,019"""
+        raw = sum(calc_revenue(a, 19)[0] for _, a, _ in PERIOD6_17_GROUP2)
+        assert raw == PERIOD6_17_RAW_GROUP2 == 15_681_019
+
+    def test_period6_combined_raw(self):
+        """6단위 전체 raw 합계 = 47,478,947"""
+        g1 = sum(calc_revenue(a, 19)[0] for _, a, _ in PERIOD6_17_GROUP1)
+        g2 = sum(calc_revenue(a, 19)[0] for _, a, _ in PERIOD6_17_GROUP2)
+        assert g1 + g2 == PERIOD6_17_RAW == 47_478_947
+
+    def test_염준선_비례(self):
+        """염준선: 14/19=73.7% → 비례 → 2,033,235"""
+        fee, rate, status = calc_revenue(14, 19)
+        assert rate == 0.737
+        assert status == "비례"
+        assert fee == 2_033_235
+
+    def test_이상우_비례(self):
+        """이상우: 15/19=78.9% (< 80%) → 비례 → 2,176,693"""
+        fee, rate, status = calc_revenue(15, 19)
+        assert rate == 0.789
+        assert status == "비례"
+        assert fee == 2_176_693
+
+    def test_김륜환_비례(self):
+        """김륜환: 13/19=68.4% → 비례 → 1,887,019"""
+        fee, rate, status = calc_revenue(13, 19)
+        assert rate == 0.684
+        assert status == "비례"
+        assert fee == 1_887_019
+
+
+# ── 단위기간 집계 ──────────────────────────────────────────────────────────────
+
+class TestPeriodTruncation:
+    def test_period2_17_raw_sum(self):
+        """17기 2단위 raw 합계 = 68,387,456"""
+        raw = sum(calc_revenue(a, t)[0] for _, t, a, _ in PERIOD2_17)
+        assert raw == 68_387_456
+
+    def test_period2_17_truncated(self):
+        """17기 2단위: raw 합계를 10원 단위 버림 → 실제 청구액"""
+        raw = sum(calc_revenue(a, t)[0] for _, t, a, _ in PERIOD2_17)
+        truncated = (raw // 10) * 10
+        assert truncated == PERIOD2_17_ACTUAL == 68_387_450
+
+    def test_truncation_formula(self):
+        """(raw // 10) * 10 = 10원 단위 버림"""
+        assert (68_387_456 // 10) * 10 == 68_387_450
+        assert (64_031_746 // 10) * 10 == 64_031_740
+        assert (55_031_961 // 10) * 10 == 55_031_960
+
+
+# ── 총 매출 ────────────────────────────────────────────────────────────────────
+
+class TestGrandTotal:
+    def test_grand_total_17(self):
+        """17기 총 매출 = 각 단위기간 버림액 합계"""
+        assert sum(PERIOD_TOTALS_17) == GRAND_TOTAL_17 == 349_347_680
+
+
+# ── 18기 1단위 (중도입과 케이스) ───────────────────────────────────────────────
+
 class TestMidTermJoiner:
     """중도입과(단위기간 도중 입과) 수강생 청구액 검증"""
 
@@ -157,7 +311,8 @@ class TestMidTermJoiner:
         fee, rate, status = calc_revenue(14, 20, period_training_days=22)
         full_fee = 22 * DAILY_TRAINING_FEE
         assert status == "비례"
-        assert fee == int(full_fee * round(14 / 20, 3))
+        # rate_per_mille = round(14*1000/20) = 700; fee = full_fee * 700 // 1000
+        assert fee == full_fee * 700 // 1000
 
     def test_period1_18_all_students(self):
         """18기 1단위 수강생 27명 개별 청구액 검증"""
@@ -178,16 +333,6 @@ class TestMidTermJoiner:
 
 # ── 18기 2단위 (중도탈락 케이스) ───────────────────────────────────────────────
 # 중도탈락미출석 있는 수강생은 rate 분모 = 기간 전체 훈련일수(20)
-
-PERIOD2_18_DROPOUTS = [
-    # (이름, period_td, attend_days, expected_fee)
-    ("안진기", 20, 13, 1_887_600),  # 13/20=65% → 비례
-    ("전하윤", 20,  7, 1_016_400),  # 7/20=35%  → 비례
-    ("임승택", 20,  6,   871_200),  # 6/20=30%  → 비례
-]
-
-PERIOD2_18_ACTUAL = 73_471_200  # 24 × 2,904,000 + 1,887,600 + 1,016,400 + 871,200
-
 
 class TestDropout:
     """중도탈락 수강생: rate 분모 = 기간 전체 훈련일수"""
@@ -234,6 +379,37 @@ class TestDropout:
         assert raw == PERIOD2_18_ACTUAL == 73_471_200
 
 
+# ── 18기 2단위 전체 27명 검증 ──────────────────────────────────────────────────
+
+class TestPeriod2_18Full:
+    """18기 2단위 전체 27명 개별 청구액 + 합계 검증"""
+
+    def test_all_students_individual_fees(self):
+        """27명 전원 개별 청구액 검증 (training_days=period_td=20)"""
+        for name, attend, expected in PERIOD2_18_FULL:
+            fee, _, _ = calc_revenue(attend, 20, period_training_days=20)
+            assert fee == expected, (
+                f"{name}: calc_revenue({attend}, 20) = {fee:,}, expected {expected:,}"
+            )
+
+    def test_조원석_80pct_boundary(self):
+        """조원석: 16/20=80% 정확히 → 전액 (REVENUE_FULL_THRESHOLD 경계)"""
+        fee, rate, status = calc_revenue(16, 20, period_training_days=20)
+        assert rate == 0.80
+        assert status == "전액"
+        assert fee == 20 * DAILY_TRAINING_FEE == 2_904_000
+
+    def test_period2_18_full_total(self):
+        """18기 2단위 전 27명 합계 = 73,471,200"""
+        raw = sum(
+            calc_revenue(attend, 20, period_training_days=20)[0]
+            for _, attend, _ in PERIOD2_18_FULL
+        )
+        assert raw == PERIOD2_18_ACTUAL == 73_471_200
+
+
+# ── 구현 한계: 카드사별 소계 버림 재현 불가 ────────────────────────────────────
+
 class TestKnownLimitation:
     """
     [구현 한계] 카드사별 소계 내 버림 재현 불가
@@ -256,10 +432,21 @@ class TestKnownLimitation:
 
     def test_period6_single_truncation(self):
         """단위기간 단일 버림: 실제 대비 최대 10원 오차 허용"""
-        # Group1(SH) raw + Group2(NH) raw
-        raw_total = 31_797_928 + 15_681_019
-        our_result = (raw_total // 10) * 10      # 47,478,940
-        actual     = 47_478_930                   # HRD-Net 실제
-        assert abs(our_result - actual) <= 10, (
-            f"오차 {our_result - actual}원: 카드사별 소계 버림 미반영으로 허용 범위(10원) 내"
+        our_result = (PERIOD6_17_RAW // 10) * 10   # 47,478,940
+        assert our_result == 47_478_940
+        assert abs(our_result - PERIOD6_17_ACTUAL) <= 10, (
+            f"오차 {our_result - PERIOD6_17_ACTUAL}원: 카드사별 소계 버림 미반영으로 허용 범위(10원) 내"
         )
+
+    def test_card_group_truncation_detail(self):
+        """카드사 그룹별 버림 후 합산 = HRD-Net 실제값"""
+        sh_truncated = (PERIOD6_17_RAW_GROUP1 // 10) * 10  # 31,797,920
+        nh_truncated = (PERIOD6_17_RAW_GROUP2 // 10) * 10  # 15,681,010
+        assert sh_truncated == 31_797_920
+        assert nh_truncated == 15_681_010
+        assert sh_truncated + nh_truncated == PERIOD6_17_ACTUAL == 47_478_930
+
+    def test_our_single_truncation_vs_card_split(self):
+        """우리 방식(단일 버림) vs HRD-Net(카드사별 버림): 10원 차이"""
+        our_result = (PERIOD6_17_RAW // 10) * 10   # 47,478,940
+        assert our_result - PERIOD6_17_ACTUAL == 10  # 정확히 10원 차이
