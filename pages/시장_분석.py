@@ -792,8 +792,8 @@ if not names_df_shared.empty and top_words_shared:
 tabs = st.tabs([
     "📊 시장 개요", "🏆 순위 & 모집",
     "🎨 유형 & 일정", "📈 시계열 & 경쟁",
-    "📊 취업률 분석", "💎 우리 과정 vs 시장",
-    "☁️ 키워드 분석", "🔭 사업기회 발굴", "📑 데이터 조회"
+    "💎 우리 과정 vs 시장",
+    "☁️ 키워드 분析", "🔭 사업기회 발굴", "📑 데이터 조회"
 ])
 
 # ─────────────────────────────────────────
@@ -1186,168 +1186,10 @@ with tabs[3]:
         st.info("기관 분석 데이터가 없습니다.")
 
 # ─────────────────────────────────────────
-# [Tab 4] 📊 취업률 분석
+# ─────────────────────────────────────────
+# [Tab 4] 💎 우리 과정 vs 시장
 # ─────────────────────────────────────────
 with tabs[4]:
-    if no_empl_data:
-        st.warning("⚠️ 선택된 훈련 유형은 HRD-Net에서 취업률을 제공하지 않습니다.")
-        st.info("KDT 취업률은 별도 평가 체계로 관리되며 이 페이지에서 조회되지 않습니다.")
-    else:
-        # §1: 월별 취업률 추이
-        st.subheader("월별 평균 취업률 추이")
-        monthly_empl = load_monthly_empl(where, params)
-        if not monthly_empl.empty:
-            monthly_empl = monthly_empl.sort_values('월')
-            monthly_empl['3개월 이동평균'] = monthly_empl['평균취업률'].rolling(3, min_periods=1).mean()
-
-            fig_empl_trend = go.Figure()
-            fig_empl_trend.add_trace(go.Scatter(x=monthly_empl['월'], y=monthly_empl['평균취업률'], mode='lines+markers', name='월별 평균', opacity=0.6))
-            fig_empl_trend.add_trace(go.Scatter(x=monthly_empl['월'], y=monthly_empl['3개월 이동평균'], mode='lines', name='3개월 이동평균', line=dict(width=3)))
-
-            # 우리 과정 개설 시점 마커
-            if internal_df is not None:
-                for _, row in internal_df.iterrows():
-                    if pd.notna(row['TR_STA_DT']):
-                        ym = row['TR_STA_DT'].strftime('%Y-%m')
-                        fig_empl_trend.add_vline(x=ym, line_dash="dash", line_color="red", opacity=0.5)
-                        fig_empl_trend.add_annotation(x=ym, y=1, yref="paper", text=f"{int(row['TRPR_DEGR'])}기", showarrow=False, yshift=10, font=dict(color="red", size=10))
-
-            fig_empl_trend.update_layout(xaxis_title='월', yaxis_title='취업률(%)', title='시장 전체 월별 취업률 추이')
-            fig_empl_trend.update_xaxes(type='category')
-            st.plotly_chart(fig_empl_trend, use_container_width=True)
-        else:
-            st.info("취업률 데이터가 없습니다.")
-
-        st.divider()
-
-        # §2: 유형별 평균 취업률
-        st.subheader("유형별 평균 취업률")
-        if not type_perf_data.empty:
-            fig_empl_type = px.bar(
-                type_perf_data.dropna(subset=['평균취업률']).sort_values('평균취업률'),
-                x='평균취업률', y='유형', orientation='h',
-                color='평균취업률', color_continuous_scale='RdYlGn',
-                text='평균취업률', labels={'평균취업률': '평균 취업률 (%)'},
-            )
-            fig_empl_type.update_traces(texttemplate='%{x:.1f}%', textposition='outside')
-            fig_empl_type.update_layout(height=320, margin=dict(t=10, b=30), coloraxis_showscale=False, title='유형별 평균 취업률')
-            st.plotly_chart(fig_empl_type, use_container_width=True)
-
-        st.divider()
-
-        # §3: 비용-취업률 산점도
-        st.subheader("💸 훈련비 vs 취업률 상관관계 분석")
-        st.caption("원이 크면 정원이 많은 과정, 색상은 훈련 유형을 나타냅니다.")
-        cost_sample_t5 = load_scatter_sample(where, params, limit=SCATTER_SAMPLE_LIMIT)
-        if not cost_sample_t5.empty:
-            cost_sample_t5['TOT_TRCO'] = pd.to_numeric(cost_sample_t5['TOT_TRCO'], errors='coerce')
-            cost_sample_t5['EI_EMPL_RATE_3'] = pd.to_numeric(cost_sample_t5['EI_EMPL_RATE_3'], errors='coerce')
-            cost_sample_t5['TOT_FXNUM'] = pd.to_numeric(cost_sample_t5['TOT_FXNUM'], errors='coerce')
-            fig_scatter_t5 = px.scatter(
-                cost_sample_t5, x='TOT_TRCO', y='EI_EMPL_RATE_3', color='TRAIN_TARGET', size='TOT_FXNUM',
-                hover_data=['TRPR_NM', 'TRAINST_NM'], opacity=0.7,
-                labels={'TOT_TRCO': '훈련비(원)', 'EI_EMPL_RATE_3': '취업률(%)', 'TRAIN_TARGET': '유형'}
-            )
-            st.plotly_chart(fig_scatter_t5, use_container_width=True)
-
-        st.divider()
-
-        # §4: 비용 대비 성과 (old Tab8)
-        st.subheader("🎯 비용 대비 성과 분석")
-        cost_sample = cost_sample_t5 if not cost_sample_t5.empty else load_scatter_sample(where, params, limit=SCATTER_SAMPLE_LIMIT)
-        if not cost_sample.empty:
-            cost_sample_clean = cost_sample.dropna(subset=['TOT_TRCO', 'EI_EMPL_RATE_3'])
-
-            # 훈련비 구간별 평균 취업률
-            st.subheader("훈련비 구간별 평균 취업률")
-            if not cost_sample_clean.empty:
-                cost_sample_clean = cost_sample_clean.copy()
-                cost_sample_clean['비용구간'] = pd.cut(cost_sample_clean['TOT_TRCO'], bins=COST_BINS, labels=COST_BIN_LABELS)
-                bin_stats = cost_sample_clean.groupby('비용구간', observed=True)['EI_EMPL_RATE_3'].agg(['mean', 'count']).reset_index()
-                bin_stats.columns = ['비용구간', '평균취업률', '과정수']
-                fig_bin = px.bar(bin_stats, x='비용구간', y='평균취업률', text_auto='.1f', color='과정수',
-                                 title='훈련비 구간별 평균 취업률(%)', labels={'평균취업률': '취업률(%)'})
-                st.plotly_chart(fig_bin, use_container_width=True)
-            else:
-                st.info("유효한 비용/취업률 데이터가 없습니다.")
-
-            st.divider()
-
-            # 4분면 scatter
-            st.subheader("비용 vs 취업률 4분면 분석")
-            if not cost_sample_clean.empty:
-                int_scatter = (
-                    internal_df[(internal_df['TOT_TRCO'] > 0) & (internal_df['EI_EMPL_RATE_3'] > 0)].copy()
-                    if internal_df is not None else pd.DataFrame()
-                )
-                med_x_t8, med_y_t8 = render_scatter_with_overlay(
-                    cost_sample_clean, int_scatter,
-                    x_col='TOT_TRCO', y_col='EI_EMPL_RATE_3',
-                    title='비용 vs 취업률 (우상단=고비용/고성과, 좌상단=가성비 우수)',
-                    x_label='훈련비(원)', y_label='취업률(%)',
-                    quadrant_labels=[
-                        {'x': cost_sample_clean['TOT_TRCO'].median() * 0.3, 'y': cost_sample_clean['EI_EMPL_RATE_3'].median() * 1.5, 'text': '가성비 우수', 'color': 'green'},
-                        {'x': cost_sample_clean['TOT_TRCO'].median() * 1.8, 'y': cost_sample_clean['EI_EMPL_RATE_3'].median() * 0.5, 'text': '개선 필요', 'color': 'red'},
-                    ]
-                )
-
-            st.divider()
-
-            # 가성비 챔피언 Top 20
-            st.subheader("가성비 챔피언 Top 20 (취업률 / 백만원당)")
-            if not cost_sample_clean.empty:
-                champ = cost_sample_clean.copy()
-                champ['가성비'] = champ['EI_EMPL_RATE_3'] / (champ['TOT_TRCO'] / 1_000_000)
-                champ = champ.nlargest(20, '가성비')[['TRPR_NM', 'TRAINST_NM', 'TOT_TRCO', 'EI_EMPL_RATE_3', '가성비']]
-                champ.columns = ['과정명', '훈련기관', '훈련비', '취업률(%)', '가성비(취업률/백만원)']
-                st.dataframe(
-                    champ.style.format({'훈련비': '{:,.0f}원', '취업률(%)': '{:.1f}%', '가성비(취업률/백만원)': '{:.2f}'}),
-                    use_container_width=True, hide_index=True
-                )
-
-            st.divider()
-
-            # 가격 시뮬레이터
-            st.subheader("가격 시뮬레이터: 훈련비 → 예상 취업률")
-            if not cost_sample_clean.empty and len(cost_sample_clean) >= 10:
-                X = cost_sample_clean[['TOT_TRCO']].values
-                y = cost_sample_clean['EI_EMPL_RATE_3'].values
-                from sklearn.linear_model import LinearRegression
-                model = LinearRegression().fit(X, y)
-                r2 = model.score(X, y)
-
-                sim_min = int(cost_sample_clean['TOT_TRCO'].quantile(0.05))
-                sim_max = int(cost_sample_clean['TOT_TRCO'].quantile(0.95))
-                sim_val = st.slider("훈련비 설정 (원)", min_value=sim_min, max_value=sim_max, value=int((sim_min + sim_max) / 2), step=100_000, format="%d원")
-
-                pred = model.predict([[sim_val]])[0]
-                pred = max(0, min(100, pred))
-                st.metric("예상 취업률", f"{pred:.1f}%", help=f"선형회귀 기반 (R²={r2:.3f})")
-
-                # 회귀선 시각화
-                x_range = np.linspace(sim_min, sim_max, 100)
-                y_pred = model.predict(x_range.reshape(-1, 1))
-
-                fig_sim = go.Figure()
-                sample_sim = cost_sample_clean.sample(n=min(REGRESSION_SAMPLE_LIMIT, len(cost_sample_clean)), random_state=42)
-                fig_sim.add_trace(go.Scatter(x=sample_sim['TOT_TRCO'], y=sample_sim['EI_EMPL_RATE_3'], mode='markers', name='실제 데이터', opacity=0.3, marker=dict(size=4)))
-                fig_sim.add_trace(go.Scatter(x=x_range, y=y_pred, mode='lines', name='회귀선', line=dict(color='red', width=2)))
-                fig_sim.add_trace(go.Scatter(x=[sim_val], y=[pred], mode='markers', name='시뮬레이션', marker=dict(size=15, color='gold', symbol='star')))
-                fig_sim.update_layout(xaxis_title='훈련비(원)', yaxis_title='취업률(%)', title=f'훈련비-취업률 선형회귀 (R²={r2:.3f})')
-                st.plotly_chart(fig_sim, use_container_width=True)
-
-                st.caption(f"회귀 계수: 훈련비 100만원 증가 시 취업률 {model.coef_[0] * 1_000_000:.2f}%p 변화 / 절편: {model.intercept_:.1f}%")
-            else:
-                st.info("시뮬레이션에 필요한 데이터가 부족합니다 (최소 10건).")
-        else:
-            st.info("비용-취업률 분석 데이터가 없습니다.")
-
-
-
-# ─────────────────────────────────────────
-# [Tab 5] 💎 우리 과정 vs 시장
-# ─────────────────────────────────────────
-with tabs[5]:
     if internal_df is None:
         st.info("HANWHA_COURSE_ID가 설정되지 않았습니다. 환경변수 또는 Streamlit Secrets에 설정하면 우리 과정과 시장을 비교할 수 있습니다.")
     else:
@@ -1546,9 +1388,9 @@ with tabs[5]:
             )
 
 # ─────────────────────────────────────────
-# [Tab 6] ☁️ 키워드 분析
+# [Tab 5] ☁️ 키워드 분析
 # ─────────────────────────────────────────
-with tabs[6]:
+with tabs[5]:
     # §1: 키워드 빈도 Top 25
     st.subheader("🔥 과정명 트렌드 키워드 Top 25")
     st.caption("훈련과정명에서 자주 등장하는 키워드 빈도입니다.")
@@ -1652,9 +1494,9 @@ with tabs[6]:
             hide_index=True,
         )
 # ─────────────────────────────────────────
-# [Tab 7] 🔭 사업기회 발굴
+# [Tab 6] 🔭 사업기회 발굴
 # ─────────────────────────────────────────
-with tabs[7]:
+with tabs[6]:
     st.caption("수요(모집률)가 높고 공급(경쟁 과정 수)이 낮은 영역을 찾아 신규 교육사업 진입 기회를 도출합니다.")
 
     # 우리 NCS 코드 (한 번만 조회)
@@ -1839,9 +1681,9 @@ with tabs[7]:
             st.info("종합 기회지수 산출에 데이터가 부족합니다.")
 
 # ─────────────────────────────────────────
-# [Tab 8] 📑 데이터 조회
+# [Tab 7] 📑 데이터 조회
 # ─────────────────────────────────────────
-with tabs[8]:
+with tabs[7]:
     st.subheader(f"📄 상세 데이터 ({total_count:,}건)")
 
     preview_df = load_data_preview(where, params, limit=1000)
