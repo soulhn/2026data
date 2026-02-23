@@ -163,8 +163,8 @@ with tab_all:
         degr_stats['출석률'] = (degr_stats['출석건수'] / degr_stats['총건수'] * 100).round(1)
         degr_stats['기수'] = degr_stats['TRPR_DEGR_KEY'].astype(str) + '회차'
         bar = alt.Chart(degr_stats).mark_bar().encode(
-            x=alt.X('기수:N', title='기수'),
-            y=alt.Y('출석률:Q', title='출석률 (%)', scale=alt.Scale(domain=[0, 100])),
+            x=alt.X('기수:N', title='기수', axis=alt.Axis(labelAngle=0)),
+            y=alt.Y('출석률:Q', axis=alt.Axis(title='출\n석\n률\n(%)', titleAngle=0), scale=alt.Scale(domain=[0, 100])),
             color=alt.condition(alt.datum.출석률 < 80, alt.value('#e74c3c'), alt.value('#2ecc71')),
             tooltip=['기수', '출석률'],
         ).properties(height=180)
@@ -301,8 +301,8 @@ with tab_detail:
             st.markdown("##### 📈 최근 출결 추이")
             st.caption(f"최근 {RECENT_TREND_DAYS}일간 일별 출석률. 빨간 점선은 {ATTENDANCE_TARGET}% 기준선.")
             line = alt.Chart(weekly_df).mark_line(point=True, color='#3498db').encode(
-                x=alt.X('날짜:N', title='날짜'),
-                y=alt.Y('출석률:Q', title='출석률 (%)', scale=alt.Scale(domain=[50, 100])),
+                x=alt.X('날짜:N', title='날짜', axis=alt.Axis(labelAngle=0)),
+                y=alt.Y('출석률:Q', axis=alt.Axis(title='출\n석\n률\n(%)', titleAngle=0), scale=alt.Scale(domain=[50, 100])),
                 tooltip=['날짜', '출석률', '출석', '총원'],
             ).properties(height=200)
             rule = alt.Chart(pd.DataFrame({'y': [ATTENDANCE_TARGET]})).mark_rule(
