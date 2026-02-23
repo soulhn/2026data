@@ -217,7 +217,12 @@ def load_db_counts():
     s["trainee_status"]= load_data("SELECT TRNEE_STATUS as 훈련생상태, COUNT(*) as 건수 FROM TB_TRAINEE_INFO GROUP BY TRNEE_STATUS ORDER BY 건수 DESC")
     s["cache_items"]   = load_data("SELECT CACHE_KEY as 캐시키, COMPUTED_AT as 계산시각 FROM TB_MARKET_CACHE ORDER BY CACHE_KEY")
     df_last = load_data("SELECT MAX(COLLECTED_AT) AS LAST_AT FROM TB_COURSE_MASTER")
-    s["last_at"] = str(df_last["LAST_AT"].iloc[0])[:16] if not df_last.empty and df_last["LAST_AT"].iloc[0] else "-"
+    if not df_last.empty and df_last["LAST_AT"].iloc[0]:
+        from datetime import timedelta
+        last_kst = pd.to_datetime(df_last["LAST_AT"].iloc[0]) + timedelta(hours=9)
+        s["last_at"] = last_kst.strftime("%Y-%m-%d %H:%M") + " (KST)"
+    else:
+        s["last_at"] = "-"
     return s
 
 
