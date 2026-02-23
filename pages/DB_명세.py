@@ -5,6 +5,10 @@ import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import check_password, load_data, is_pg, DB_FILE, get_connection
 from config import CACHE_TTL_DEFAULT
+try:
+    from hrd_etl import run_etl
+except ImportError:
+    run_etl = None
 
 st.set_page_config(page_title="DB 명세", page_icon="🗄️", layout="wide")
 check_password()
@@ -216,7 +220,14 @@ def load_db_counts():
     s["attend_status"] = load_data("SELECT ATEND_STATUS as 출결상태, COUNT(*) as 건수 FROM TB_ATTENDANCE_LOG GROUP BY ATEND_STATUS ORDER BY 건수 DESC")
     s["trainee_status"]= load_data("SELECT TRNEE_STATUS as 훈련생상태, COUNT(*) as 건수 FROM TB_TRAINEE_INFO GROUP BY TRNEE_STATUS ORDER BY 건수 DESC")
     s["cache_items"]   = load_data("SELECT CACHE_KEY as 캐시키, COMPUTED_AT as 계산시각 FROM TB_MARKET_CACHE ORDER BY CACHE_KEY")
+    df_last = load_data("SELECT MAX(COLLECTED_AT) AS LAST_AT FROM TB_COURSE_MASTER")
+    s["last_at"] = str(df_last["LAST_AT"].iloc[0])[:16] if not df_last.empty and df_last["LAST_AT"].iloc[0] else "-"
     return s
+
+
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
+def load_table_preview(tbl_name):
+    return load_data(f"SELECT * FROM {tbl_name} LIMIT 20")
 
 
 with st.spinner("DB 통계 로드 중..."):
@@ -224,6 +235,15 @@ with st.spinner("DB 통계 로드 중..."):
     sample_vals = load_sample_values()
     counts      = load_db_counts()
 
+# ── 수집 현황 KPI ──
+st.subheader("📡 수집 현황")
+k1, k2, k3, k4, k5 = st.columns(5)
+k1.metric("수집된 과정", f"{counts.get('TB_COURSE_MASTER', 0):,}건")
+k2.metric("수집된 훈련생", f"{counts.get('TB_TRAINEE_INFO', 0):,}명")
+k3.metric("수집된 로그", f"{counts.get('TB_ATTENDANCE_LOG', 0):,}행")
+k4.metric("시장 동향", f"{counts.get('TB_MARKET_TREND', 0):,}건")
+k5.metric("최종 수집 시각", counts.get("last_at", "-"))
+st.divider()
 
 # ==========================================
 # 테이블 개요
@@ -315,6 +335,15 @@ for tab, (tbl_name, info) in zip(tabs, SCHEMAS.items()):
             height=min(80 + len(rows) * 35, 550),
         )
 
+        # 데이터 미리보기
+        st.divider()
+        with st.expander("📋 데이터 미리보기 (최근 20건)"):
+            preview_df = load_table_preview(tbl_name)
+            if not preview_df.empty:
+                st.dataframe(preview_df, use_container_width=True, hide_index=True)
+            else:
+                st.caption("데이터 없음")
+
         # 데이터 분포
         st.divider()
         st.markdown("**데이터 분포**")
@@ -357,3 +386,12 @@ for tab, (tbl_name, info) in zip(tabs, SCHEMAS.items()):
             st.markdown("*캐시 항목 목록*")
             if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
             else: st.warning("캐시가 비어 있습니다. market_etl.py를 실행하세요.")
+
+with st.sidebar:
+    st.header("관리자 메뉴")
+    if run_etl and st.button("🚀 HRD-Net 데이터 가져오기"):
+        with st.spinner("데이터 업데이트 중..."):
+            run_etl()
+        st.cache_data.clear()
+        st.success("완료!")
+        st.rerun()
