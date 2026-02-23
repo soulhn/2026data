@@ -421,7 +421,7 @@ def load_type_counts(where, params):
 def load_keyword_names(where, params):
     """키워드 탭: 과정명 + 취업률 + 연월 로드."""
     return _sql_query(f"""
-        SELECT TRPR_NM, EI_EMPL_RATE_3, YEAR_MONTH FROM TB_MARKET_TREND {where}
+        SELECT TRPR_NM, EI_EMPL_RATE_3, YEAR_MONTH, TR_STA_DT FROM TB_MARKET_TREND {where}
         ORDER BY RANDOM() LIMIT 8000
     """, params=params)
 
@@ -745,10 +745,17 @@ else:
 
 # 연도별 키워드 트렌드 계산
 kwd_year_df = pd.DataFrame()
-if not names_df_shared.empty and top_words_shared and 'YEAR_MONTH' in names_df_shared.columns:
-    _ym_valid = names_df_shared['YEAR_MONTH'].dropna()
-    if not _ym_valid.empty:
-        names_df_shared['_year'] = _ym_valid.str[:4]
+if not names_df_shared.empty and top_words_shared:
+    # YEAR_MONTH 우선, 없으면 TR_STA_DT에서 연도 추출 (TR_STA_DT는 WHERE 절 기준으로 항상 존재)
+    _yr_col = None
+    for _col in ('YEAR_MONTH', 'TR_STA_DT'):
+        if _col in names_df_shared.columns:
+            _cand = names_df_shared[_col].dropna().str[:4].replace('', pd.NA).dropna()
+            if not _cand.empty:
+                _yr_col = _col
+                break
+    if _yr_col:
+        names_df_shared['_year'] = names_df_shared[_yr_col].dropna().str[:4]
         _years = sorted(names_df_shared['_year'].dropna().unique())
         _top_kws = [w for w, _ in _freq_shared.most_common(15)]
         _year_rows = []
