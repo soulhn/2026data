@@ -127,7 +127,8 @@ def build_all_terms_revenue(course_df):
         base_fee = sum(
             p['training_days_total'] for p in _enrich_periods(rev_df, periods)
         )
-        actual_fee = rev_df.groupby(['TRNEE_ID', 'period_num'])['fee'].sum().reset_index()['fee'].sum()
+        _p_raw = rev_df.groupby('period_num')['fee'].sum()
+        actual_fee = int(((_p_raw // 10) * 10).sum())
         n_students = rev_df['TRNEE_ID'].nunique()
         full_cnt = (rev_df.groupby(['TRNEE_ID', 'period_num'])['status'].first() == '전액').sum()
         prop_cnt = (rev_df.groupby(['TRNEE_ID', 'period_num'])['status'].first() == '비례').sum()
@@ -218,8 +219,12 @@ with tab_indiv:
         training_days=('training_days', 'first'),
     ).reset_index()
 
+    # 단위기간별 raw 합계 → 10원 단위 버림 → 총합
+    _period_raw = rev_df.groupby('period_num')['fee'].sum()
+    _period_fee = (_period_raw // 10) * 10
+
     base_fee_total = int((period_student_df['training_days'] * DAILY_TRAINING_FEE).sum())
-    actual_fee_total = int(period_student_df['fee'].sum())
+    actual_fee_total = int(_period_fee.sum())
     achievement = round(actual_fee_total / base_fee_total * 100, 1) if base_fee_total > 0 else 0
     loss_total = base_fee_total - actual_fee_total
     full_cnt = int((period_student_df['status'] == '전액').sum())
@@ -259,6 +264,10 @@ with tab_indiv:
             prop_cnt=('status', lambda s: (s == '비례').sum()),
             none_cnt=('status', lambda s: (s == '미청구').sum()),
         ).reset_index()
+        # 단위기간 합계 10원 단위 버림 적용
+        period_summary['actual_fee'] = (
+            period_summary['period_num'].map(_period_fee).fillna(0).astype(int)
+        )
         period_summary['base_fee'] = period_summary['training_days'] * DAILY_TRAINING_FEE * period_summary['n_students']
         period_summary['achievement'] = (
             period_summary['actual_fee'] / period_summary['base_fee'] * 100
