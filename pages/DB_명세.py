@@ -110,7 +110,7 @@ SCHEMAS = {
             ("INST_INO",         "TEXT",      "기관 코드"),
             ("TRAINST_CST_ID",   "TEXT",      "기관 ID"),
             ("TRAIN_TARGET",     "TEXT",      "훈련 유형 (K-디지털 트레이닝 등)"),
-            ("TRAIN_TARGET_CD",  "TEXT",      "훈련 유형 코드"),
+            ("TRAIN_TARGET_CD",  "TEXT",      "훈련 유형 코드 — C0031=근로자원격 / C0054=국가기간전략 / C0054G=기업맞춤형 / C0054S=일반고특화 / C0054Y=스마트혼합 / C0055=실업자원격 / C0055C=과정평가형 / C0061=내일배움카드 / C0104=K-디지털트레이닝 / C0105=K-디지털기초"),
             ("WKEND_SE",         "TEXT",      "주말/주중 구분"),
             ("TITLE_ICON",       "TEXT",      "아이콘"),
             ("TITLE_LINK",       "TEXT",      "과정 링크"),
