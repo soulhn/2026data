@@ -842,24 +842,50 @@ with tabs[0]:
             region_opp[col] = pd.to_numeric(region_opp[col], errors='coerce').fillna(0)
         avg_c = region_opp['과정수'].mean()
         avg_r = region_opp['평균모집률'].mean()
+        # 모집률 내림차순 정렬 → 두 차트 공통 y축 순서
         region_opp = region_opp.sort_values('평균모집률', ascending=True)
         region_opp['기회'] = (region_opp['과정수'] < avg_c) & (region_opp['평균모집률'] > avg_r)
         colors = ['#2ecc71' if v else '#5dade2' for v in region_opp['기회']]
-        fig_reg = go.Figure(go.Bar(
-            x=region_opp['평균모집률'],
-            y=region_opp['REGION'],
-            orientation='h',
-            marker_color=colors,
-            text=region_opp['평균모집률'].round(1).astype(str) + '%',
-            textposition='outside',
-        ))
-        fig_reg.add_vline(x=avg_r, line_dash="dash", line_color="gray", opacity=0.6)
-        fig_reg.update_layout(
-            title='지역별 모집률 (🟢 = 진입 기회)',
-            xaxis_title='모집률 (%)',
-            height=max(300, len(region_opp) * 28),
-        )
-        st.plotly_chart(fig_reg, use_container_width=True)
+        chart_h = max(300, len(region_opp) * 28)
+
+        col_l, col_r = st.columns(2)
+        with col_l:
+            fig_recruit = go.Figure(go.Bar(
+                x=region_opp['평균모집률'],
+                y=region_opp['REGION'],
+                orientation='h',
+                marker_color=colors,
+                text=region_opp['평균모집률'].round(1).astype(str) + '%',
+                textposition='outside',
+            ))
+            fig_recruit.add_vline(x=avg_r, line_dash="dash", line_color="gray", opacity=0.6)
+            fig_recruit.update_layout(
+                title='모집률 (%) — 높을수록 수요 ↑',
+                xaxis_title='모집률 (%)',
+                height=chart_h,
+                margin=dict(r=10),
+            )
+            st.plotly_chart(fig_recruit, use_container_width=True)
+
+        with col_r:
+            supply_colors = ['#2ecc71' if v else '#e0e0e0' for v in region_opp['기회']]
+            fig_supply = go.Figure(go.Bar(
+                x=region_opp['과정수'],
+                y=region_opp['REGION'],
+                orientation='h',
+                marker_color=supply_colors,
+                text=region_opp['과정수'].astype(int).astype(str) + '개',
+                textposition='outside',
+            ))
+            fig_supply.add_vline(x=avg_c, line_dash="dash", line_color="gray", opacity=0.6)
+            fig_supply.update_layout(
+                title='과정수 (개) — 적을수록 공급 ↓',
+                xaxis_title='과정수 (개)',
+                height=chart_h,
+                margin=dict(r=10),
+            )
+            st.plotly_chart(fig_supply, use_container_width=True)
+
         opp_regions = region_opp[region_opp['기회']].sort_values('평균모집률', ascending=False)
         if not opp_regions.empty:
             st.success("🎯 **진입 기회 지역**: " + ", ".join(opp_regions['REGION'].tolist()))
