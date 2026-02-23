@@ -1148,7 +1148,7 @@ with tabs[3]:
     with st.spinner("📍 지역별 수요-공급 갭 분석 중..."):
         region_opp = load_region_opp(where, params)
     if not region_opp.empty:
-        for col in ['과정수', '총신청인원', '평균모집률', '평균취업률']:
+        for col in ['과정수', '총신청인원', '평균모집률']:
             region_opp[col] = pd.to_numeric(region_opp[col], errors='coerce').fillna(0)
         avg_c = region_opp['과정수'].mean()
         avg_r = region_opp['평균모집률'].mean()
@@ -1156,7 +1156,7 @@ with tabs[3]:
         fig_reg_opp = px.scatter(
             region_opp, x='과정수', y='평균모집률',
             size='총신청인원', text='REGION',
-            color='평균취업률', color_continuous_scale='RdYlGn',
+            color_discrete_sequence=['#5dade2'],
             labels={'REGION': '지역', '과정수': '공급(과정 수)', '평균모집률': '수요(모집률 %)'},
             title='지역별 공급(과정 수) vs 수요(모집률)'
         )
