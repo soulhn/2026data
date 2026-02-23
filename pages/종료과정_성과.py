@@ -499,11 +499,17 @@ with tab_indiv:
         st.markdown("##### 📍 출석률과 수료 상태의 상관관계")
         st.caption("결석이 많을수록 '중도탈락'이나 '제적' 상태일 확률이 높습니다.")
         if '결석_횟수' in students_df.columns:
+            _statuses = list(students_df['TRNEE_STATUS'].unique())
+            _dropout = [s for s in _statuses if '중도탈락' in str(s)]
+            _others = [s for s in _statuses if '중도탈락' not in str(s)]
+            _color_range = ['#e74c3c'] * len(_dropout) + ['#5d9fdb', '#2ecc71', '#e67e22', '#9b59b6', '#95a5a6'][:len(_others)]
             st.altair_chart(
                 alt.Chart(students_df).mark_circle(size=60).encode(
                     x=alt.X('나이:Q', scale=alt.Scale(domain=[15, 50])),
                     y=alt.Y('결석_횟수:Q', axis=alt.Axis(title=['총', '결', '석', '일', '수'], titleAngle=0)),
-                    color='TRNEE_STATUS',
+                    color=alt.Color('TRNEE_STATUS:N', scale=alt.Scale(
+                        domain=_dropout + _others, range=_color_range
+                    )),
                     tooltip=['TRNEE_NM', '나이', '결석_횟수', 'TRNEE_STATUS'],
                 ).interactive().properties(height=400),
                 use_container_width=True,
