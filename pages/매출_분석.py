@@ -206,6 +206,20 @@ with st.sidebar:
         f"**기간:** {sel_row['TR_STA_DT']} ~ {sel_row['TR_END_DT']}"
     )
 
+# ── 상단 핵심 지표 (전체 기수 기준) ──
+_top_rev = build_all_terms_revenue(course_list)
+if not _top_rev.empty:
+    _total_cnt = int(
+        _top_rev['full_cnt'].sum() + _top_rev['prop_cnt'].sum() + _top_rev['none_cnt'].sum()
+    )
+    _full_pct = round(_top_rev['full_cnt'].sum() / _total_cnt * 100, 1) if _total_cnt > 0 else 0
+    mk1, mk2, mk3, mk4 = st.columns(4)
+    mk1.metric("누적 총매출", fmt_won(int(_top_rev['actual_fee'].sum())))
+    mk2.metric("기수당 평균 매출", fmt_won(int(_top_rev['actual_fee'].mean())))
+    mk3.metric("평균 달성률", f"{round(_top_rev['achievement'].mean(), 1)}%")
+    mk4.metric("전액 청구 비율", f"{_full_pct}%")
+    st.divider()
+
 tab_all, tab_indiv = st.tabs(["🌐 전체 기수 비교", "📌 개별 기수 분석"])
 
 
@@ -602,8 +616,7 @@ with tab_indiv:
 with tab_all:
     st.subheader("📊 전체 기수 매출 비교")
 
-    with st.spinner("전체 기수 매출 집계 중..."):
-        all_rev = build_all_terms_revenue(course_list)
+    all_rev = _top_rev  # 상단 핵심 지표와 동일 데이터 재사용 (캐시)
 
     if all_rev.empty:
         st.warning("매출 집계 데이터가 없습니다.")
