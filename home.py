@@ -163,7 +163,7 @@ def render_dashboard():
 
     # [Section 4] 시장 포지셔닝
     st.subheader("📍 전국 KDT 시장 포지셔닝")
-    st.caption("직업능력심사평가원 KDT 훈련과정 성과평가 기준 | 전국 동일 NCS(정보통신) 과정 대상")
+    st.caption("K-디지털 트레이닝 모집 인원 기준")
 
     r1, r2, r3 = st.columns(3)
     with r1:
