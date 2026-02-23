@@ -21,7 +21,8 @@ ETL_REFRESH_MONTHS = 12
 ETL_PAGE_SIZE = 100
 ETL_MAX_WORKERS = 4
 ETL_BATCH_SIZE = 1000
-ETL_UPDATE_CUTOFF_DAYS = 7
+ETL_UPDATE_CUTOFF_DAYS = 7      # 종료 후 N일 초과 → 출결 수집 스킵
+ETL_FULL_SKIP_MONTHS = 7        # 종료 후 N개월 초과 → API 호출 완전 스킵 (취업률 6개월 확정 이후)
 ETL_BATCH_PAGE_SIZE = 100
 
 # ── 시장 동향 분석 ──

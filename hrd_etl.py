@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 from utils import get_connection, get_retry_session, adapt_query, is_pg
 from init_db import init_all_tables
-from config import ETL_BATCH_PAGE_SIZE, ETL_UPDATE_CUTOFF_DAYS
+from config import ETL_BATCH_PAGE_SIZE, ETL_UPDATE_CUTOFF_DAYS, ETL_FULL_SKIP_MONTHS
 
 
 def batch_execute(cursor, sql, data_list):
@@ -80,6 +80,7 @@ def run_etl():
         return
 
     update_cutoff_date = (datetime.now() - timedelta(days=ETL_UPDATE_CUTOFF_DAYS)).strftime('%Y-%m-%d')
+    full_skip_cutoff = (datetime.now() - relativedelta(months=ETL_FULL_SKIP_MONTHS)).strftime('%Y-%m-%d')
 
     for idx, course in enumerate(course_list, 1):
         try: trpr_degr = int(course.get('trprDegr', 0))
@@ -129,6 +130,13 @@ def run_etl():
 
         trpr_id = course.get('trprId')
         end_date = course.get('trEndDt', '9999-12-31')
+
+        # 종료 후 7개월 초과: 취업률 확정 → API 호출 전체 스킵
+        if end_date < full_skip_cutoff:
+            print(f"   {trpr_degr}회차: 종료 7개월 초과({end_date}). API 호출 전체 스킵.")
+            conn.commit()
+            continue
+
         cursor.execute(adapt_query("SELECT 1 FROM TB_ATTENDANCE_LOG WHERE TRPR_ID=? AND TRPR_DEGR=? LIMIT 1"), (trpr_id, trpr_degr))
         is_data_exists = cursor.fetchone() is not None
 
