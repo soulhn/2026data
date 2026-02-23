@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from collections import Counter
+from datetime import datetime
 import sys
 import os
 
@@ -807,10 +808,12 @@ with tabs[0]:
     st.subheader("신규 과정 개설 추이")
     monthly_count = load_monthly_counts(where, params)
     recruit_trend = load_monthly_recruit(where, params)
+    _this_month = datetime.now().strftime('%Y-%m')
     col_trend1, col_trend2 = st.columns(2)
     with col_trend1:
         if not monthly_count.empty:
             monthly_count = monthly_count.rename(columns={'COUNT': '개설수'}).sort_values('YEAR_MONTH')
+            monthly_count = monthly_count[monthly_count['YEAR_MONTH'] < _this_month]
             fig_cnt = px.bar(monthly_count, x='YEAR_MONTH', y='개설수', text_auto=True, title='월별 신규 과정 개설 수')
             _ym = monthly_count['YEAR_MONTH'].tolist()
             _tv = [m for m in _ym if str(m).endswith('-01')]
@@ -820,6 +823,7 @@ with tabs[0]:
     with col_trend2:
         if not recruit_trend.empty:
             recruit_trend = recruit_trend.sort_values('YEAR_MONTH')
+            recruit_trend = recruit_trend[recruit_trend['YEAR_MONTH'] < _this_month]
             fig_rec = px.line(recruit_trend, x='YEAR_MONTH', y='모집률', markers=True, title='월별 평균 모집률 추이')
             _ym2 = recruit_trend['YEAR_MONTH'].tolist()
             _tv2 = [m for m in _ym2 if str(m).endswith('-01')]
