@@ -1384,91 +1384,44 @@ with tabs[5]:
 
     st.divider()
 
-    # §2: 키워드별 평균 취업률
-    st.subheader("💼 키워드별 평균 취업률")
-    st.caption("해당 키워드가 과정명에 포함된 과정들의 평균 취업률입니다. (3개월 고용보험 기준, 3건 이상 집계된 키워드만 표시)")
-    if not kwd_stats_df.empty:
-        _kwd_empl = kwd_stats_df.dropna(subset=['평균취업률']).sort_values('평균취업률')
-        if not _kwd_empl.empty:
-            fig_empl_kwd = px.bar(_kwd_empl, x='평균취업률', y='키워드', orientation='h',
-                                  color='평균취업률', color_continuous_scale='RdYlGn',
-                                  text='평균취업률', hover_data=['빈도', '유효과정수'])
-            fig_empl_kwd.update_traces(texttemplate='%{x:.1f}%', textposition='outside')
-            fig_empl_kwd.update_layout(height=520, coloraxis_showscale=False, margin=dict(t=10, b=20))
-            st.plotly_chart(fig_empl_kwd, use_container_width=True)
-        else:
-            st.info("취업률 데이터가 있는 키워드가 없습니다.")
-    else:
-        st.info("키워드 통계 데이터가 없습니다.")
-
-    st.divider()
-
-    # §3: 황금 키워드 매트릭스 (빈도 × 취업률)
-    st.subheader("🎯 황금 키워드 매트릭스")
-    st.caption("우상단(빈도 높고 취업률도 높음) = 시장에서 검증된 인기 과정명 키워드")
-    if not kwd_stats_df.empty:
-        _matrix = kwd_stats_df.dropna(subset=['평균취업률']).copy()
-        if len(_matrix) >= 3:
-            _avg_cnt  = _matrix['빈도'].mean()
-            _avg_empl = _matrix['평균취업률'].mean()
-            fig_mat = px.scatter(
-                _matrix, x='빈도', y='평균취업률', text='키워드',
-                color='평균취업률', color_continuous_scale='RdYlGn',
-                size='빈도', size_max=40,
-                labels={'빈도': '빈도 (등장 횟수)', '평균취업률': '평균 취업률(%)'},
-                hover_data=['유효과정수'],
-            )
-            fig_mat.update_traces(textposition='top center', textfont_size=11)
-            fig_mat.add_hline(y=_avg_empl, line_dash='dash', line_color='gray', opacity=0.5)
-            fig_mat.add_vline(x=_avg_cnt,  line_dash='dash', line_color='gray', opacity=0.5)
-            fig_mat.add_annotation(x=_matrix['빈도'].max() * 0.97, y=_avg_empl + 1.5,
-                                   text=f'평균 취업률 {_avg_empl:.1f}%', showarrow=False,
-                                   font=dict(size=11, color='gray'))
-            fig_mat.update_layout(height=520, coloraxis_showscale=False)
-            st.plotly_chart(fig_mat, use_container_width=True)
-        else:
-            st.info("매트릭스 표시에 필요한 데이터가 부족합니다.")
-
-    st.divider()
-
-    # §4: 상승 / 하락 키워드 트렌드
-    st.subheader("📈 상승 / 하락 키워드")
-    st.caption("최근 기간 대비 이전 기간의 키워드 등장 비율 변화입니다. (양수 = 상승, 음수 = 하락)")
-    if not kwd_trend_df.empty:
-        _rising  = kwd_trend_df.nlargest(10,  '변화율(%)')
-        _falling = kwd_trend_df.nsmallest(10, '변화율(%)')
-        col_r, col_f = st.columns(2)
-        with col_r:
-            st.markdown("**🚀 상승 키워드 Top 10**")
-            st.dataframe(_rising[['키워드', '최근 등장', '이전 등장', '변화율(%)']].reset_index(drop=True),
-                         use_container_width=True, hide_index=True)
-        with col_f:
-            st.markdown("**📉 하락 키워드 Top 10**")
-            st.dataframe(_falling[['키워드', '최근 등장', '이전 등장', '변화율(%)']].reset_index(drop=True),
-                         use_container_width=True, hide_index=True)
-        _trend_show = pd.concat([_rising, _falling]).drop_duplicates(subset='키워드').sort_values('변화율(%)')
-        fig_trend = px.bar(
-            _trend_show, x='변화율(%)', y='키워드', orientation='h',
-            color='변화율(%)', color_continuous_scale='RdYlGn',
-            hover_data=['최근 등장', '이전 등장'],
+    # §2: 연도별 트렌드 키워드
+    st.subheader("📈 연도별 키워드 트렌드")
+    st.caption("Top 15 키워드의 연도별 등장 비율(천 단어당)입니다. 선이 올라갈수록 해당 연도에 많이 쓰인 키워드입니다.")
+    if not kwd_year_df.empty and len(kwd_year_df['연도'].unique()) >= 2:
+        fig_yr = px.line(
+            kwd_year_df, x='연도', y='비율(천건당)', color='키워드',
+            markers=True,
+            labels={'비율(천건당)': '등장 비율 (천 단어당)', '연도': '연도'},
         )
-        fig_trend.update_layout(height=480, coloraxis_showscale=False, margin=dict(t=10, b=20))
-        st.plotly_chart(fig_trend, use_container_width=True)
+        fig_yr.update_layout(height=420, legend=dict(
+            orientation='v', x=1.01, y=1, font=dict(size=11)
+        ))
+        st.plotly_chart(fig_yr, use_container_width=True)
+
+        st.caption("히트맵: 색이 진할수록 해당 연도에 많이 등장한 키워드입니다.")
+        _pivot = kwd_year_df.pivot(index='키워드', columns='연도', values='비율(천건당)').fillna(0)
+        _pivot = _pivot.loc[_pivot.sum(axis=1).sort_values(ascending=False).index]
+        fig_heat = px.imshow(
+            _pivot,
+            color_continuous_scale='Blues',
+            labels=dict(x='연도', y='키워드', color='비율(천건당)'),
+            aspect='auto',
+        )
+        fig_heat.update_layout(height=420, margin=dict(t=10, b=20))
+        st.plotly_chart(fig_heat, use_container_width=True)
     else:
-        st.info("기간별 트렌드 분석에 필요한 데이터가 부족합니다.")
+        st.info("연도별 트렌드 분석에 필요한 데이터가 부족합니다 (2개 연도 이상 필요).")
 
     st.divider()
 
-    # §5: 키워드별 상세 통계 테이블
-    st.subheader("📋 키워드별 상세 통계")
-    if not kwd_stats_df.empty:
+    # §3: 키워드별 빈도 통계 테이블
+    st.subheader("📋 키워드별 빈도 통계")
+    if not kwd_shared.empty:
         st.dataframe(
-            kwd_stats_df.sort_values('빈도', ascending=False),
+            kwd_shared.sort_values('빈도', ascending=False),
             column_config={
                 '키워드': '키워드',
-                '빈도': st.column_config.NumberColumn('빈도', format="%d"),
-                '평균취업률': st.column_config.NumberColumn('평균 취업률(%)', format="%.1f"),
-                '유효과정수': st.column_config.NumberColumn('취업률 집계 과정수', format="%d"),
+                '빈도': st.column_config.NumberColumn('빈도 (샘플 8000건 기준)', format="%d"),
             },
             use_container_width=True,
             hide_index=True,
