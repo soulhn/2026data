@@ -217,8 +217,11 @@ if not _top_rev.empty:
         _done_src['full_cnt'].sum() + _done_src['prop_cnt'].sum() + _done_src['none_cnt'].sum()
     )
     _full_pct = round(_done_src['full_cnt'].sum() / _total_cnt * 100, 1) if _total_cnt > 0 else 0
-    mk1, mk2, mk3, mk4 = st.columns(4)
-    mk1.metric("누적 총매출", fmt_won(int(_top_rev['actual_fee'].sum())))
+    _total_actual = int(_top_rev['actual_fee'].sum())
+    _eok = round(_total_actual / 1e8, 1)
+    mk0, mk1, mk2, mk3, mk4 = st.columns(5)
+    mk0.metric("누적", f"{_eok}억")
+    mk1.metric("누적 총매출", fmt_won(_total_actual))
     mk2.metric(
         "기수당 평균 매출",
         fmt_won(int(_done_src['actual_fee'].mean())),
