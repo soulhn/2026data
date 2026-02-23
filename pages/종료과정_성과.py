@@ -225,7 +225,7 @@ with tab_indiv:
             st.markdown("##### 📊 연령대별 수료율 & 평균 결석")
             age_grp = students_df.groupby('연령대').agg(
                 인원=('TRNEE_ID', 'count'),
-                수료=('TRNEE_STATUS', lambda x: (x == '수료').sum()),
+                수료=('TRNEE_STATUS', lambda x: x.str.contains('수료|조기취업', na=False).sum()),
                 평균_결석=('결석_횟수', 'mean'),
             ).reset_index()
             age_grp['수료율'] = (age_grp['수료'] / age_grp['인원'] * 100).round(1)
@@ -259,7 +259,7 @@ with tab_indiv:
             st.markdown("##### 📊 훈련생 유형별 성과 비교")
             type_stats = students_df.groupby('TRNEE_TYPE').agg(
                 인원=('TRNEE_ID', 'count'),
-                수료_인원=('TRNEE_STATUS', lambda x: (x == '수료').sum()),
+                수료_인원=('TRNEE_STATUS', lambda x: x.str.contains('수료|조기취업', na=False).sum()),
                 평균_결석=('결석_횟수', 'mean'),
                 평균_지각=('지각_횟수', 'mean'),
             ).reset_index()
