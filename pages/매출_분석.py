@@ -5,7 +5,6 @@ import plotly.express as px
 import datetime
 import sys
 import os
-import math
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import load_data, check_password, get_billing_periods, calc_revenue
@@ -293,7 +292,7 @@ with tab_indiv:
 
     st.divider()
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📈 매출 개요", "👥 수강생별 상세", "📅 단위기간 상세", "⚠️ 위험 현황"])
+    tab1, tab2, tab3 = st.tabs(["📈 매출 개요", "👥 수강생별 상세", "📅 단위기간 상세"])
 
     # ── 탭 1: 매출 개요 ──────────────────────────────────
     with tab1:
@@ -564,71 +563,6 @@ with tab_indiv:
             p_display = p_display.sort_values('출석일', ascending=False)
             st.dataframe(p_display, use_container_width=True, hide_index=True)
 
-    # ── 탭 4: 위험 현황 ──────────────────────────────────
-    with tab4:
-        today = datetime.date.today()
-
-        # 진행중 단위기간
-        active_periods = [p for p in periods if p['status'] == '진행중']
-        done_periods = [p for p in periods if p['status'] == '완료']
-
-        if active_periods:
-            st.subheader("⚠️ 진행중 단위기간 위험 수강생")
-            for ap in active_periods:
-                p_risk = rev_df[rev_df['period_num'] == ap['period_num']].copy()
-                risk_students = p_risk[p_risk['rate'] < REVENUE_FULL_THRESHOLD].copy()
-
-                if risk_students.empty:
-                    st.success(f"✅ {ap['label']}: 모든 수강생 전액 청구 기준 충족")
-                    continue
-
-                st.warning(f"🚨 {ap['label']}: {len(risk_students)}명 위험")
-
-                # 전액까지 필요한 추가 출석일 계산
-                def needed_days(row):
-                    td = row['training_days']
-                    needed = max(0, math.ceil(REVENUE_FULL_THRESHOLD * td - row['attend_days']))
-                    remaining = (ap['end'] - today).days + 1
-                    return needed, remaining
-
-                risk_rows = []
-                for _, r in risk_students.iterrows():
-                    needed, remaining = needed_days(r)
-                    recoverable = needed <= remaining
-                    loss = r['training_days'] * DAILY_TRAINING_FEE - r['fee']
-                    risk_rows.append({
-                        '이름': r['TRNEE_NM'],
-                        '출석일': r['attend_days'],
-                        '훈련일': r['training_days'],
-                        '출석률': f"{r['rate']*100:.1f}%",
-                        '현재 훈련비': fmt_won(r['fee']),
-                        '추가 필요 출석': needed,
-                        '잔여 훈련일': remaining,
-                        '회복 가능': '✅' if recoverable else '❌',
-                        '손실액': fmt_won(loss),
-                    })
-                st.dataframe(pd.DataFrame(risk_rows), use_container_width=True, hide_index=True)
-        else:
-            st.info("현재 진행중인 단위기간이 없습니다.")
-
-        if done_periods:
-            st.subheader("📋 완료 기간 비례 청구 내역")
-            done_pnums = [p['period_num'] for p in done_periods]
-            done_df = rev_df[
-                (rev_df['period_num'].isin(done_pnums)) & (rev_df['status'].isin(['비례', '미청구']))
-            ].copy()
-            if done_df.empty:
-                st.success("완료된 모든 기간에서 비례/미청구 건수가 없습니다.")
-            else:
-                done_display = done_df[['period_label', 'TRNEE_NM', 'attend_days',
-                                         'training_days', 'rate', 'fee', 'status']].copy()
-                done_display.columns = ['기간', '이름', '출석일', '훈련일', '출석률', '훈련비', '상태']
-                done_display['출석률'] = (done_display['출석률'] * 100).round(1).astype(str) + '%'
-                done_display['훈련비'] = done_display['훈련비'].apply(fmt_won)
-                done_display['손실액'] = done_df.apply(
-                    lambda r: fmt_won(r['training_days'] * DAILY_TRAINING_FEE - r['fee']), axis=1
-                ).values
-                st.dataframe(done_display, use_container_width=True, hide_index=True)
 
 
 with tab_all:
