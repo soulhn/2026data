@@ -844,10 +844,9 @@ with tabs[0]:
         avg_r = region_opp['평균모집률'].mean()
         med_c = region_opp['과정수'].median()
         med_r = region_opp['평균모집률'].median()
-        st.caption(
-            f"📊 모집률 — 평균: **{avg_r:.1f}%** | 중앙값: **{med_r:.1f}%** &nbsp;&nbsp;|&nbsp;&nbsp;"
-            f"🏫 과정수 — 평균: **{avg_c:.0f}개** | 중앙값: **{med_c:.0f}개**"
-        )
+        st.caption(f"📊 모집률 — 평균: **{avg_r:.1f}%** | 중앙값: **{med_r:.1f}%**")
+        st.caption(f"🏫 과정수 — 평균: **{avg_c:.0f}개** | 중앙값: **{med_c:.0f}개**")
+        st.caption("기준선: 빨간 파선 = 평균 / 노란 점선 = 중앙값")
         # 모집률 내림차순 정렬 → 두 차트 공통 y축 순서
         region_opp = region_opp.sort_values('평균모집률', ascending=True)
         region_opp['기회'] = (region_opp['과정수'] < avg_c) & (region_opp['평균모집률'] > avg_r)
