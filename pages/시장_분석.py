@@ -88,6 +88,25 @@ def render_scatter_with_overlay(market_sample, internal_scatter, x_col, y_col,
     return med_x, med_y
 
 
+def _vert_ytitle(fig, text):
+    """Y축 타이틀을 글자 단위로 세로 적층 표시 (annotation 방식)."""
+    import re
+    items = []
+    for part in re.split(r'(\([^)]+\))', text):
+        if part.startswith('(') and part.endswith(')'):
+            items.append(part)
+        else:
+            items.extend(c for c in part if c.strip())
+    fig.update_layout(yaxis_title='', margin=dict(l=80))
+    fig.add_annotation(
+        x=0, y=0.5, xref='paper', yref='paper',
+        text='<br>'.join(items), showarrow=False, textangle=0,
+        font=dict(size=11), align='center',
+        xanchor='center', xshift=-50,
+    )
+    return fig
+
+
 # ==========================================
 # 0-B. SQL 집계 헬퍼
 # ==========================================
@@ -796,6 +815,7 @@ with tabs[0]:
             _ym = monthly_count['YEAR_MONTH'].tolist()
             _tv = [m for m in _ym if str(m).endswith('-01')]
             fig_cnt.update_xaxes(type='category', tickvals=_tv, ticktext=[m[:4] for m in _tv])
+            _vert_ytitle(fig_cnt, '개설수')
             st.plotly_chart(fig_cnt, use_container_width=True)
     with col_trend2:
         if not recruit_trend.empty:
@@ -804,7 +824,7 @@ with tabs[0]:
             _ym2 = recruit_trend['YEAR_MONTH'].tolist()
             _tv2 = [m for m in _ym2 if str(m).endswith('-01')]
             fig_rec.update_xaxes(type='category', tickvals=_tv2, ticktext=[m[:4] for m in _tv2])
-            fig_rec.update_layout(yaxis_title='평균 모집률 (%)')
+            _vert_ytitle(fig_rec, '평균 모집률 (%)')
             st.plotly_chart(fig_rec, use_container_width=True)
     st.divider()
 
@@ -840,6 +860,7 @@ with tabs[0]:
                 fig_reg.update_traces(mode='lines+markers', marker=dict(size=5))
                 fig_reg.update_layout(hovermode='x unified', height=380)
                 fig_reg.update_xaxes(dtick='M12', tickformat='%Y')
+                _vert_ytitle(fig_reg, '개설수')
                 st.plotly_chart(fig_reg, use_container_width=True)
     st.divider()
 
@@ -864,6 +885,7 @@ with tabs[0]:
             fig_alt.add_hline(y=med_s, line_dash='dash', line_color='gray', line_width=1)
             fig_alt.add_vline(x=med_r, line_dash='dash', line_color='gray', line_width=1)
             fig_alt.update_layout(height=480, coloraxis_showscale=False)
+            _vert_ytitle(fig_alt, '평균 만족도 (100점)')
             st.plotly_chart(fig_alt, use_container_width=True)
             st.caption("📌 기준선: 중앙값 기준 — 우상단(고모집·고만족도), 좌하단(저모집·저만족도)")
             with st.expander("📄 기관 상세 데이터 보기"):
@@ -909,6 +931,7 @@ with tabs[0]:
             text="🔴 과잉공급 (경쟁 심화)", showarrow=False, font=dict(color='red', size=11)
         )
         fig_reg_opp.update_traces(textposition='top center')
+        _vert_ytitle(fig_reg_opp, '모집률 (%)')
         st.plotly_chart(fig_reg_opp, use_container_width=True)
         opp_regions = region_opp[
             (region_opp['과정수'] < avg_c) & (region_opp['평균모집률'] > avg_r)
@@ -983,6 +1006,7 @@ with tabs[0]:
         fig_matrix.add_hline(y=avg_recruit, line_dash="dash", line_color="gray", opacity=0.5, annotation_text="평균 모집률")
         fig_matrix.add_vline(x=avg_count, line_dash="dash", line_color="gray", opacity=0.5, annotation_text="평균 과정수")
         fig_matrix.update_traces(textposition='top center')
+        _vert_ytitle(fig_matrix, '모집률 (%)')
         st.plotly_chart(fig_matrix, use_container_width=True)
         oversupply = ncs_supply[(ncs_supply['과정수'] > avg_count) & (ncs_supply['평균모집률'] < avg_recruit)]
         if not oversupply.empty:
@@ -1062,8 +1086,10 @@ with tabs[1]:
         if not type_wk.empty:
             wk_cnt = type_wk.groupby('WKEND_SE')['CNT'].sum().reset_index()
             wk_cnt['구분'] = wk_cnt['WKEND_SE'].astype(str).map(WK_MAP).fillna('기타')
-            st.plotly_chart(px.bar(wk_cnt, x='구분', y='CNT', color='구분', text='CNT',
-                                   title="직장인 타겟(주말) 과정 수", labels={'CNT': '개수'}), use_container_width=True)
+            fig_wk = px.bar(wk_cnt, x='구분', y='CNT', color='구분', text='CNT',
+                            title="직장인 타겟(주말) 과정 수", labels={'CNT': '개수'})
+            _vert_ytitle(fig_wk, '개수')
+            st.plotly_chart(fig_wk, use_container_width=True)
     st.divider()
 
     # ── NCS별 모집 현황 ──
@@ -1117,6 +1143,7 @@ with tabs[2]:
         fig_yr.update_layout(height=420, legend=dict(
             orientation='v', x=1.01, y=1, font=dict(size=11)
         ))
+        _vert_ytitle(fig_yr, '등장 비율 (천건당)')
         st.plotly_chart(fig_yr, use_container_width=True)
     else:
         st.info("연도별 트렌드 분석에 필요한 데이터가 부족합니다 (2개 연도 이상 필요).")
