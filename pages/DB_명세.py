@@ -5,10 +5,6 @@ import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import check_password, load_data, is_pg, DB_FILE, get_connection
 from config import CACHE_TTL_DEFAULT
-try:
-    from hrd_etl import run_etl
-except ImportError:
-    run_etl = None
 
 st.set_page_config(page_title="DB 명세", page_icon="🗄️", layout="wide")
 check_password()
@@ -387,11 +383,3 @@ for tab, (tbl_name, info) in zip(tabs, SCHEMAS.items()):
             if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
             else: st.warning("캐시가 비어 있습니다. market_etl.py를 실행하세요.")
 
-with st.sidebar:
-    st.header("관리자 메뉴")
-    if run_etl and st.button("🚀 HRD-Net 데이터 가져오기"):
-        with st.spinner("데이터 업데이트 중..."):
-            run_etl()
-        st.cache_data.clear()
-        st.success("완료!")
-        st.rerun()
