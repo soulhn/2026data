@@ -132,7 +132,7 @@ market_etl.py (매일 21시) →                    ←    https://playdata.stre
   - **위험군 임계값**: `RISK_ABSENT = 3`, `RISK_LATE = 5`, `RISK_EARLY_LEAVE = 5`
   - **캐시 TTL**: `CACHE_TTL_DEFAULT = 600`, `CACHE_TTL_REALTIME = 300`, `CACHE_TTL_MARKET = 86400` (24시간 — 매일 21시 ETL 주기와 동기화)
   - **ETL 파라미터**: `ETL_ARCHIVE_START`, `ETL_REFRESH_MONTHS`, `ETL_PAGE_SIZE`, `ETL_MAX_WORKERS`, `ETL_UPDATE_CUTOFF_DAYS=7`(출결 스킵 기준일), `ETL_FULL_SKIP_MONTHS=7`(전체 API 스킵 기준월) 등
-  - **훈련유형 코드 매핑**: `TRNEE_TYPE_MAP` — HRD-Net `trneeTracseSe` 코드를 한글 레이블로 변환 (C0031→근로자원격, C0055→실업자원격, C0104→K-디지털트레이닝 등)
+  - **훈련유형 코드 매핑**: `TRNEE_TYPE_MAP` — HRD-Net `trneeTracseSe` 코드를 한글 레이블로 변환 (C0031→근로자, C0055→실업자, C0104→K-디지털트레이닝 등)
   - **시장 분석**: `COST_BINS/LABELS` (비용 구간), `SCATTER_SAMPLE_LIMIT = 3000`, `REGRESSION_SAMPLE_LIMIT = 2000`, `RECENT_TREND_DAYS = 10`, `NCS_MIN_COURSES = 5`, `TOP_CERTS_LIMIT = 20`
   - **매출 분석**: `DAILY_TRAINING_FEE = 145_200` (일 훈련비 단가), `REVENUE_FULL_THRESHOLD = 0.80` (전액 청구 최소 출석률)
 
