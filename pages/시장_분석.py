@@ -834,7 +834,7 @@ with tabs[0]:
 
     # ── 지역별 수요-공급 갭 ──
     st.subheader("📍 지역별 수요-공급 갭")
-    st.caption("모집률 높고 과정수 적은 지역(🟢) = 공급 부족 → 신규 진입 기회")
+    st.caption("모집률 높고 과정수 적은 지역(🔵) = 공급 부족 → 신규 진입 기회")
     with st.spinner("📍 지역별 분석 중..."):
         region_opp = load_region_opp(where, params)
     if not region_opp.empty:
@@ -844,9 +844,9 @@ with tabs[0]:
         avg_r = region_opp['평균모집률'].mean()
         med_c = region_opp['과정수'].median()
         med_r = region_opp['평균모집률'].median()
-        st.caption(f"📊 모집률 — 평균: **{avg_r:.1f}%** | 중앙값: **{med_r:.1f}%**")
-        st.caption(f"🏫 과정수 — 평균: **{avg_c:.0f}개** | 중앙값: **{med_c:.0f}개**")
-        st.caption("기준선: 빨간 파선 = 평균 / 노란 점선 = 중앙값")
+        st.markdown(f"📊 모집률 — 평균: **{avg_r:.1f}%** | 중앙값: **{med_r:.1f}%**")
+        st.markdown(f"🏫 과정수 — 평균: **{avg_c:.0f}개** | 중앙값: **{med_c:.0f}개**")
+        st.markdown("기준선: 🔴 빨간 파선 = 평균 / 🟡 노란 점선 = 중앙값")
         # 모집률 내림차순 정렬 → 두 차트 공통 y축 순서
         region_opp = region_opp.sort_values('평균모집률', ascending=True)
         region_opp['기회'] = (region_opp['과정수'] < avg_c) & (region_opp['평균모집률'] > avg_r)
