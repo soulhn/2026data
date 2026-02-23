@@ -232,14 +232,17 @@ with tab_indiv:
             age_grp['평균_결석'] = age_grp['평균_결석'].round(1)
             ag1, ag2 = st.columns(2)
             with ag1:
-                st.altair_chart(
-                    alt.Chart(age_grp).mark_bar(color='#8e44ad').encode(
-                        x=alt.X('연령대:N', sort='-y', title='연령대', axis=alt.Axis(labelAngle=0)),
-                        y=alt.Y('수료율:Q', axis=alt.Axis(title=['수', '료', '율'], titleAngle=0)),
-                        tooltip=['연령대', '수료율', '인원'],
-                    ).properties(height=250, title='연령대별 수료율'),
-                    use_container_width=True,
-                )
+                if age_grp['수료율'].sum() == 0:
+                    st.info("수강 상태가 아직 업데이트되지 않아 수료율을 표시할 수 없습니다.\n전체 기수 비교 탭을 참고하세요.")
+                else:
+                    st.altair_chart(
+                        alt.Chart(age_grp).mark_bar(color='#8e44ad').encode(
+                            x=alt.X('연령대:N', sort='-y', title='연령대', axis=alt.Axis(labelAngle=0)),
+                            y=alt.Y('수료율:Q', axis=alt.Axis(title=['수', '료', '율'], titleAngle=0)),
+                            tooltip=['연령대', '수료율', '인원'],
+                        ).properties(height=250, title='연령대별 수료율'),
+                        use_container_width=True,
+                    )
             with ag2:
                 st.altair_chart(
                     alt.Chart(age_grp).mark_bar(color='#c0392b').encode(
@@ -266,15 +269,18 @@ with tab_indiv:
 
             tc1, tc2 = st.columns(2)
             with tc1:
-                st.altair_chart(
-                    alt.Chart(type_stats).mark_bar().encode(
-                        x=alt.X('TRNEE_TYPE:N', title='유형', axis=alt.Axis(labelAngle=0)),
-                        y=alt.Y('수료율:Q', axis=alt.Axis(title=['수', '료', '율'], titleAngle=0)),
-                        color=alt.value('#3498db'),
-                        tooltip=['TRNEE_TYPE', '수료율', '인원'],
-                    ).properties(height=250, title='유형별 수료율'),
-                    use_container_width=True,
-                )
+                if type_stats['수료율'].sum() == 0:
+                    st.info("수강 상태가 아직 업데이트되지 않아 수료율을 표시할 수 없습니다.\n전체 기수 비교 탭을 참고하세요.")
+                else:
+                    st.altair_chart(
+                        alt.Chart(type_stats).mark_bar().encode(
+                            x=alt.X('TRNEE_TYPE:N', title='유형', axis=alt.Axis(labelAngle=0)),
+                            y=alt.Y('수료율:Q', axis=alt.Axis(title=['수', '료', '율'], titleAngle=0)),
+                            color=alt.value('#3498db'),
+                            tooltip=['TRNEE_TYPE', '수료율', '인원'],
+                        ).properties(height=250, title='유형별 수료율'),
+                        use_container_width=True,
+                    )
             with tc2:
                 st.altair_chart(
                     alt.Chart(type_stats).mark_bar().encode(
