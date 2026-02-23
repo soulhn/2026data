@@ -468,51 +468,6 @@ def load_region_opp(where, params):
     """, params=params)
 
 
-@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
-def load_ncs_growth(where, params):
-    """사업기회 탭: NCS별 최근 6개월 vs 이전 6개월 개설 증가율"""
-    if where == "":
-        _c = get_market_cache("ncs_growth")
-        if _c is not None:
-            return _c
-    max_ym_df = _sql_query(f"""
-        SELECT MAX(YEAR_MONTH) as MAX_YM FROM TB_MARKET_TREND {where}
-    """, params=params)
-    if max_ym_df.empty or pd.isna(max_ym_df['MAX_YM'].iloc[0]):
-        return pd.DataFrame()
-    try:
-        max_dt = pd.to_datetime(str(max_ym_df['MAX_YM'].iloc[0])[:7] + '-01')
-        mid_dt = max_dt - pd.DateOffset(months=6)
-        start_dt = max_dt - pd.DateOffset(months=12)
-        mid_ym = mid_dt.strftime('%Y-%m')
-        start_ym = start_dt.strftime('%Y-%m')
-        max_ym = max_dt.strftime('%Y-%m')
-    except Exception:
-        return pd.DataFrame()
-    and_or = "AND" if where else "WHERE"
-    recent_df = _sql_query(f"""
-        SELECT NCS_CD, COUNT(*) as 최근6개월
-        FROM TB_MARKET_TREND {where}
-          {and_or} YEAR_MONTH > ? AND YEAR_MONTH <= ?
-        GROUP BY NCS_CD HAVING COUNT(*) >= 2
-    """, params=list(params) + [mid_ym, max_ym])
-    prev_df = _sql_query(f"""
-        SELECT NCS_CD, COUNT(*) as 이전6개월
-        FROM TB_MARKET_TREND {where}
-          {and_or} YEAR_MONTH > ? AND YEAR_MONTH <= ?
-        GROUP BY NCS_CD HAVING COUNT(*) >= 2
-    """, params=list(params) + [start_ym, mid_ym])
-    if recent_df.empty:
-        return pd.DataFrame()
-    merged = recent_df.merge(
-        prev_df if not prev_df.empty else pd.DataFrame(columns=['NCS_CD', '이전6개월']),
-        on='NCS_CD', how='left'
-    ).fillna(0)
-    merged['증가율(%)'] = (
-        (merged['최근6개월'] - merged['이전6개월']) / merged['이전6개월'].replace(0, 1) * 100
-    ).round(1)
-    return merged.sort_values('증가율(%)', ascending=False)
-
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_ncs_opp_matrix(where, params):
@@ -914,50 +869,6 @@ with tabs[0]:
             st.success("🎯 **진입 기회 지역**: " + ", ".join(opp_regions['REGION'].tolist()))
     else:
         st.info("지역 데이터가 부족합니다.")
-
-    st.divider()
-
-    # ── 성장 중인 NCS 분야 ──
-    st.subheader("📈 성장 중인 NCS 분야")
-    st.caption("최근 6개월 개설 수 증가율 (이전 6개월 대비) — 빠르게 성장하는 분야 = 선제 진입 기회")
-    with st.spinner("📈 NCS 성장 분야 분석 중..."):
-        ncs_growth = load_ncs_growth(where, params)
-    if not ncs_growth.empty:
-        ncs_growth['NCS_CD'] = ncs_growth['NCS_CD'].apply(lambda x: str(int(float(x))) if pd.notna(x) and str(x) not in ('', 'nan') else '')
-        col_g1, col_g2 = st.columns(2)
-        with col_g1:
-            top_up = ncs_growth[ncs_growth['증가율(%)'] > 0].head(10)
-            if not top_up.empty:
-                fig_up = px.bar(
-                    top_up, x='증가율(%)', y='NCS_CD', orientation='h',
-                    color='증가율(%)', color_continuous_scale='Greens',
-                    text='증가율(%)', title='🚀 급성장 NCS Top 10',
-                    labels={'NCS_CD': 'NCS 분야'}
-                )
-                fig_up.update_yaxes(type='category')
-                fig_up.update_layout(yaxis={'categoryorder': 'total ascending'}, height=350)
-                st.plotly_chart(fig_up, use_container_width=True)
-            else:
-                st.caption("급성장 NCS 분야 없음")
-        with col_g2:
-            top_dn = ncs_growth[ncs_growth['증가율(%)'] < 0].tail(10)
-            if not top_dn.empty:
-                fig_dn = px.bar(
-                    top_dn, x='증가율(%)', y='NCS_CD', orientation='h',
-                    color='증가율(%)', color_continuous_scale='Reds_r',
-                    text='증가율(%)', title='📉 수요 감소 NCS Top 10',
-                    labels={'NCS_CD': 'NCS 분야'}
-                )
-                fig_dn.update_yaxes(type='category')
-                fig_dn.update_layout(yaxis={'categoryorder': 'total descending'}, height=350)
-                st.plotly_chart(fig_dn, use_container_width=True)
-            else:
-                st.caption("수요 감소 NCS 분야 없음")
-        with st.expander("전체 NCS 성장률 데이터"):
-            st.dataframe(ncs_growth, use_container_width=True, hide_index=True,
-                         column_config={'증가율(%)': st.column_config.NumberColumn(format="%.1f%%")})
-    else:
-        st.info("NCS 성장 분석 데이터가 부족합니다. (최소 2건 이상 NCS 코드가 필요합니다)")
 
     st.divider()
 
