@@ -198,7 +198,7 @@ with tab_indiv:
                 age_cnt.columns = ['연령대', '인원']
                 st.altair_chart(
                     alt.Chart(age_cnt).mark_bar(color='#5dade2').encode(
-                        x=alt.X('연령대:N', sort='-y', title='연령대'),
+                        x=alt.X('연령대:N', sort='-y', title='연령대', axis=alt.Axis(labelAngle=0)),
                         y=alt.Y('인원:Q', title='인원'),
                         tooltip=['연령대', '인원'],
                     ).properties(height=280),
@@ -234,7 +234,7 @@ with tab_indiv:
             with ag1:
                 st.altair_chart(
                     alt.Chart(age_grp).mark_bar(color='#8e44ad').encode(
-                        x=alt.X('연령대:N', sort='-y', title='연령대'),
+                        x=alt.X('연령대:N', sort='-y', title='연령대', axis=alt.Axis(labelAngle=0)),
                         y=alt.Y('수료율(%):Q', title='수료율 (%)'),
                         tooltip=['연령대', '수료율(%)', '인원'],
                     ).properties(height=250, title='연령대별 수료율'),
@@ -243,7 +243,7 @@ with tab_indiv:
             with ag2:
                 st.altair_chart(
                     alt.Chart(age_grp).mark_bar(color='#c0392b').encode(
-                        x=alt.X('연령대:N', sort='-y', title='연령대'),
+                        x=alt.X('연령대:N', sort='-y', title='연령대', axis=alt.Axis(labelAngle=0)),
                         y=alt.Y('평균_결석:Q', title='평균 결석일'),
                         tooltip=['연령대', '평균_결석', '인원'],
                     ).properties(height=250, title='연령대별 평균 결석'),
@@ -268,7 +268,7 @@ with tab_indiv:
             with tc1:
                 st.altair_chart(
                     alt.Chart(type_stats).mark_bar().encode(
-                        x=alt.X('TRNEE_TYPE:N', title='유형'),
+                        x=alt.X('TRNEE_TYPE:N', title='유형', axis=alt.Axis(labelAngle=0)),
                         y=alt.Y('수료율(%):Q', title='수료율 (%)'),
                         color=alt.value('#3498db'),
                         tooltip=['TRNEE_TYPE', '수료율(%)', '인원'],
@@ -278,7 +278,7 @@ with tab_indiv:
             with tc2:
                 st.altair_chart(
                     alt.Chart(type_stats).mark_bar().encode(
-                        x=alt.X('TRNEE_TYPE:N', title='유형'),
+                        x=alt.X('TRNEE_TYPE:N', title='유형', axis=alt.Axis(labelAngle=0)),
                         y=alt.Y('평균_결석:Q', title='평균 결석일'),
                         color=alt.value('#e74c3c'),
                         tooltip=['TRNEE_TYPE', '평균_결석', '평균_지각'],
@@ -298,7 +298,7 @@ with tab_indiv:
             daily_df['요일'] = daily_df['DAY_NM'].str[0]
             daily_agg = daily_df.groupby(['요일', 'ATEND_STATUS'], as_index=False)['CNT'].sum()
             base = alt.Chart(daily_agg).encode(
-                x=alt.X('요일:N', sort=day_order, title='요일'),
+                x=alt.X('요일:N', sort=day_order, title='요일', axis=alt.Axis(labelAngle=0)),
                 y=alt.Y('ATEND_STATUS:N', title='출결 상태'),
             )
             heatmap = base.mark_rect().encode(
@@ -317,7 +317,7 @@ with tab_indiv:
             if not absent_df.empty:
                 st.altair_chart(
                     alt.Chart(absent_df).mark_bar(color='#e74c3c').encode(
-                        x=alt.X('요일:N', sort=day_order, title='요일'),
+                        x=alt.X('요일:N', sort=day_order, title='요일', axis=alt.Axis(labelAngle=0)),
                         y=alt.Y('CNT:Q', title='결석 건수'),
                         tooltip=['요일', 'CNT'],
                     ).properties(height=250),
@@ -347,7 +347,7 @@ with tab_indiv:
                     with ca:
                         st.altair_chart(
                             alt.Chart(late_df).mark_bar(color='#e67e22').encode(
-                                x=alt.X('IN_TIME:N', sort='ascending', title='입실 시간'),
+                                x=alt.X('IN_TIME:N', sort='ascending', title='입실 시간', axis=alt.Axis(labelAngle=0)),
                                 y=alt.Y('count()', title='건수'),
                                 tooltip=['IN_TIME', 'count()'],
                             ).properties(height=350, title='지각 입실 시간별 건수'),
@@ -381,7 +381,7 @@ with tab_indiv:
                 with lc1:
                     st.altair_chart(
                         alt.Chart(leave_df).mark_bar(color='#16a085').encode(
-                            x=alt.X('OUT_TIME:N', sort='ascending', title='퇴실 시간'),
+                            x=alt.X('OUT_TIME:N', sort='ascending', title='퇴실 시간', axis=alt.Axis(labelAngle=0)),
                             y=alt.Y('count()', title='건수'),
                             tooltip=['OUT_TIME', 'count()'],
                         ).properties(height=300, title='조퇴 퇴실 시간별 건수'),
@@ -548,7 +548,7 @@ with tab_all:
         st.markdown("##### 기수별 수료율")
         st.altair_chart(
             alt.Chart(all_master).mark_bar(color='#3498db').encode(
-                x=alt.X('기수:N', sort=degr_order, title='기수'),
+                x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
                 y=alt.Y('수료율:Q', title='수료율 (%)'),
                 tooltip=['기수', '수료율', 'FINI_CNT', 'TOT_PAR_MKS'],
             ).properties(height=350),
@@ -558,7 +558,7 @@ with tab_all:
         st.markdown("##### 기수별 총 취업률 (6개월)")
         st.altair_chart(
             alt.Chart(all_master).mark_bar(color='#2ecc71').encode(
-                x=alt.X('기수:N', sort=degr_order, title='기수'),
+                x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
                 y=alt.Y('총_취업률:Q', title='취업률 (%)'),
                 tooltip=['기수', '총_취업률', 'EI_취업률_6', 'HRD_취업률_6'],
             ).properties(height=350),
@@ -586,7 +586,7 @@ with tab_all:
             st.markdown("##### 기수별 결석 건수")
             st.altair_chart(
                 alt.Chart(comp).mark_bar(color='#e74c3c').encode(
-                    x=alt.X('기수:N', sort=degr_order, title='기수'),
+                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
                     y=alt.Y('결석건수:Q', title='결석 건수'),
                     tooltip=['기수', '결석건수', '총건수'],
                 ).properties(height=350),
@@ -598,7 +598,7 @@ with tab_all:
                 alt.Chart(comp).mark_line(
                     point=alt.OverlayMarkDef(size=80), color='#3498db'
                 ).encode(
-                    x=alt.X('기수:N', sort=degr_order, title='기수'),
+                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
                     y=alt.Y('출석률:Q', title='출석률 (%)', scale=alt.Scale(domain=[80, 100])),
                     tooltip=['기수', '출석률'],
                 ).properties(height=350),
