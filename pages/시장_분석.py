@@ -776,12 +776,12 @@ if not names_df_shared.empty and top_words_shared:
 
 # 3.2 탭 구성
 tabs = st.tabs([
-    "📊 시장 개요 & 추이", "🏆 순위 & 유형",
-    "☁️ 키워드 분석", "🔭 사업기회 발굴", "📑 데이터 조회"
+    "📊 시장 개요 & 사업 기회", "🏆 순위 & 유형",
+    "☁️ 키워드 분석", "📑 데이터 조회"
 ])
 
 # ─────────────────────────────────────────
-# [Tab 0] 📊 시장 개요 & 추이  (구 시장 개요 + 시계열 & 경쟁 통합)
+# [Tab 0] 📊 시장 개요 & 사업 기회
 # ─────────────────────────────────────────
 with tabs[0]:
     # ── 월별 개설 추이 + 증감률 ──
@@ -885,6 +885,117 @@ with tabs[0]:
             st.info("기관 분석 데이터가 없습니다.")
     else:
         st.info("기관 분석 데이터가 없습니다.")
+
+    st.divider()
+
+    # ── 지역별 수요-공급 갭 ──
+    st.subheader("📍 지역별 수요-공급 갭")
+    st.caption("좌상단(과정 적고 모집률 높음) = 공급 부족 지역 → 신규 진입 기회")
+    with st.spinner("📍 지역별 수요-공급 갭 분석 중..."):
+        region_opp = load_region_opp(where, params)
+    if not region_opp.empty:
+        for col in ['과정수', '총신청인원', '평균모집률']:
+            region_opp[col] = pd.to_numeric(region_opp[col], errors='coerce').fillna(0)
+        avg_c = region_opp['과정수'].mean()
+        avg_r = region_opp['평균모집률'].mean()
+        fig_reg_opp = px.scatter(
+            region_opp, x='과정수', y='평균모집률',
+            size='총신청인원', text='REGION',
+            color_discrete_sequence=['#5dade2'],
+            labels={'REGION': '지역', '과정수': '공급(과정 수)', '평균모집률': '수요(모집률 %)'},
+            title='지역별 공급(과정 수) vs 수요(모집률)'
+        )
+        fig_reg_opp.add_hline(y=avg_r, line_dash="dash", line_color="gray", opacity=0.5)
+        fig_reg_opp.add_vline(x=avg_c, line_dash="dash", line_color="gray", opacity=0.5)
+        fig_reg_opp.add_annotation(
+            x=region_opp['과정수'].quantile(0.1), y=region_opp['평균모집률'].quantile(0.85),
+            text="🟢 고수요·저공급 (진입 기회)", showarrow=False, font=dict(color='green', size=11)
+        )
+        fig_reg_opp.add_annotation(
+            x=region_opp['과정수'].quantile(0.85), y=region_opp['평균모집률'].quantile(0.1),
+            text="🔴 과잉공급 (경쟁 심화)", showarrow=False, font=dict(color='red', size=11)
+        )
+        fig_reg_opp.update_traces(textposition='top center')
+        st.plotly_chart(fig_reg_opp, use_container_width=True)
+        opp_regions = region_opp[
+            (region_opp['과정수'] < avg_c) & (region_opp['평균모집률'] > avg_r)
+        ].sort_values('평균모집률', ascending=False)
+        if not opp_regions.empty:
+            st.success("🎯 **진입 기회 지역**: " + ", ".join(opp_regions['REGION'].tolist()))
+    else:
+        st.info("지역 데이터가 부족합니다.")
+
+    st.divider()
+
+    # ── 성장 중인 NCS 분야 ──
+    st.subheader("📈 성장 중인 NCS 분야")
+    st.caption("최근 6개월 개설 수 증가율 (이전 6개월 대비) — 빠르게 성장하는 분야 = 선제 진입 기회")
+    with st.spinner("📈 NCS 성장 분야 분석 중..."):
+        ncs_growth = load_ncs_growth(where, params)
+    if not ncs_growth.empty:
+        ncs_growth['NCS_CD'] = ncs_growth['NCS_CD'].apply(lambda x: str(int(float(x))) if pd.notna(x) and str(x) not in ('', 'nan') else '')
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            top_up = ncs_growth[ncs_growth['증가율(%)'] > 0].head(10)
+            if not top_up.empty:
+                fig_up = px.bar(
+                    top_up, x='증가율(%)', y='NCS_CD', orientation='h',
+                    color='증가율(%)', color_continuous_scale='Greens',
+                    text='증가율(%)', title='🚀 급성장 NCS Top 10',
+                    labels={'NCS_CD': 'NCS 분야'}
+                )
+                fig_up.update_yaxes(type='category')
+                fig_up.update_layout(yaxis={'categoryorder': 'total ascending'}, height=350)
+                st.plotly_chart(fig_up, use_container_width=True)
+            else:
+                st.caption("급성장 NCS 분야 없음")
+        with col_g2:
+            top_dn = ncs_growth[ncs_growth['증가율(%)'] < 0].tail(10)
+            if not top_dn.empty:
+                fig_dn = px.bar(
+                    top_dn, x='증가율(%)', y='NCS_CD', orientation='h',
+                    color='증가율(%)', color_continuous_scale='Reds_r',
+                    text='증가율(%)', title='📉 수요 감소 NCS Top 10',
+                    labels={'NCS_CD': 'NCS 분야'}
+                )
+                fig_dn.update_yaxes(type='category')
+                fig_dn.update_layout(yaxis={'categoryorder': 'total descending'}, height=350)
+                st.plotly_chart(fig_dn, use_container_width=True)
+            else:
+                st.caption("수요 감소 NCS 분야 없음")
+        with st.expander("전체 NCS 성장률 데이터"):
+            st.dataframe(ncs_growth, use_container_width=True, hide_index=True,
+                         column_config={'증가율(%)': st.column_config.NumberColumn(format="%.1f%%")})
+    else:
+        st.info("NCS 성장 분석 데이터가 부족합니다. (최소 2건 이상 NCS 코드가 필요합니다)")
+
+    st.divider()
+
+    # ── NCS별 공급-수요 매트릭스 ──
+    st.subheader("🔲 NCS별 공급-수요 매트릭스")
+    st.caption("과정수(공급) vs 모집률(수요) — 좌상단(저공급·고수요) = 진입 기회, 우하단(고공급·저수요) = 과잉공급 위험")
+    ncs_supply = load_ncs_agg(where, params, min_courses=3)
+    if not ncs_supply.empty:
+        ncs_supply['NCS_CD'] = ncs_supply['NCS_CD'].apply(lambda x: str(int(float(x))) if pd.notna(x) and str(x) not in ('', 'nan') else '')
+        ncs_supply = ncs_supply.rename(columns={'CNT': '과정수', 'AVG_RECRUIT': '평균모집률'})
+        fig_matrix = px.scatter(
+            ncs_supply, x='과정수', y='평균모집률', text='NCS_CD',
+            color_discrete_sequence=['steelblue'],
+            size='과정수', opacity=0.7,
+            labels={'과정수': '공급(과정 수)', '평균모집률': '수요(모집률 %)'},
+            title='NCS별 공급(과정수) vs 수요(모집률)'
+        )
+        avg_recruit = ncs_supply['평균모집률'].mean()
+        avg_count = ncs_supply['과정수'].mean()
+        fig_matrix.add_hline(y=avg_recruit, line_dash="dash", line_color="gray", opacity=0.5, annotation_text="평균 모집률")
+        fig_matrix.add_vline(x=avg_count, line_dash="dash", line_color="gray", opacity=0.5, annotation_text="평균 과정수")
+        fig_matrix.update_traces(textposition='top center')
+        st.plotly_chart(fig_matrix, use_container_width=True)
+        oversupply = ncs_supply[(ncs_supply['과정수'] > avg_count) & (ncs_supply['평균모집률'] < avg_recruit)]
+        if not oversupply.empty:
+            st.warning(f"과잉공급 위험 NCS ({len(oversupply)}개): {', '.join(oversupply['NCS_CD'].tolist())}")
+    else:
+        st.info("분석할 NCS 데이터가 부족합니다.")
 
 # ─────────────────────────────────────────
 # [Tab 1] 🏆 순위 & 유형  (구 순위 & 모집 + 유형 & 일정 통합)
@@ -1032,129 +1143,9 @@ with tabs[2]:
             hide_index=True,
         )
 # ─────────────────────────────────────────
-# [Tab 3] 🔭 사업기회 발굴
+# [Tab 3] 📑 데이터 조회
 # ─────────────────────────────────────────
 with tabs[3]:
-    st.caption("수요(모집률)가 높고 공급(경쟁 과정 수)이 낮은 영역을 찾아 신규 교육사업 진입 기회를 도출합니다.")
-
-    # ── 섹션 1: 지역별 수요-공급 갭 ──
-    st.subheader("📍 지역별 수요-공급 갭")
-    st.caption("좌상단(과정 적고 모집률 높음) = 공급 부족 지역 → 신규 진입 기회")
-
-    with st.spinner("📍 지역별 수요-공급 갭 분석 중..."):
-        region_opp = load_region_opp(where, params)
-    if not region_opp.empty:
-        for col in ['과정수', '총신청인원', '평균모집률']:
-            region_opp[col] = pd.to_numeric(region_opp[col], errors='coerce').fillna(0)
-        avg_c = region_opp['과정수'].mean()
-        avg_r = region_opp['평균모집률'].mean()
-
-        fig_reg_opp = px.scatter(
-            region_opp, x='과정수', y='평균모집률',
-            size='총신청인원', text='REGION',
-            color_discrete_sequence=['#5dade2'],
-            labels={'REGION': '지역', '과정수': '공급(과정 수)', '평균모집률': '수요(모집률 %)'},
-            title='지역별 공급(과정 수) vs 수요(모집률)'
-        )
-        fig_reg_opp.add_hline(y=avg_r, line_dash="dash", line_color="gray", opacity=0.5)
-        fig_reg_opp.add_vline(x=avg_c, line_dash="dash", line_color="gray", opacity=0.5)
-        fig_reg_opp.add_annotation(
-            x=region_opp['과정수'].quantile(0.1), y=region_opp['평균모집률'].quantile(0.85),
-            text="🟢 고수요·저공급 (진입 기회)", showarrow=False, font=dict(color='green', size=11)
-        )
-        fig_reg_opp.add_annotation(
-            x=region_opp['과정수'].quantile(0.85), y=region_opp['평균모집률'].quantile(0.1),
-            text="🔴 과잉공급 (경쟁 심화)", showarrow=False, font=dict(color='red', size=11)
-        )
-        fig_reg_opp.update_traces(textposition='top center')
-        st.plotly_chart(fig_reg_opp, use_container_width=True)
-
-        opp_regions = region_opp[
-            (region_opp['과정수'] < avg_c) & (region_opp['평균모집률'] > avg_r)
-        ].sort_values('평균모집률', ascending=False)
-        if not opp_regions.empty:
-            st.success("🎯 **진입 기회 지역**: " + ", ".join(opp_regions['REGION'].tolist()))
-    else:
-        st.info("지역 데이터가 부족합니다.")
-
-    st.divider()
-
-    # ── 섹션 2: 성장 중인 NCS 분야 ──
-    st.subheader("📈 성장 중인 NCS 분야")
-    st.caption("최근 6개월 개설 수 증가율 (이전 6개월 대비) — 빠르게 성장하는 분야 = 선제 진입 기회")
-
-    with st.spinner("📈 NCS 성장 분야 분석 중..."):
-        ncs_growth = load_ncs_growth(where, params)
-    if not ncs_growth.empty:
-        ncs_growth['NCS_CD'] = ncs_growth['NCS_CD'].apply(lambda x: str(int(float(x))) if pd.notna(x) and str(x) not in ('', 'nan') else '')
-        col_g1, col_g2 = st.columns(2)
-        with col_g1:
-            top_up = ncs_growth[ncs_growth['증가율(%)'] > 0].head(10)
-            if not top_up.empty:
-                fig_up = px.bar(
-                    top_up, x='증가율(%)', y='NCS_CD', orientation='h',
-                    color='증가율(%)', color_continuous_scale='Greens',
-                    text='증가율(%)', title='🚀 급성장 NCS Top 10',
-                    labels={'NCS_CD': 'NCS 분야'}
-                )
-                fig_up.update_yaxes(type='category')
-                fig_up.update_layout(yaxis={'categoryorder': 'total ascending'}, height=350)
-                st.plotly_chart(fig_up, use_container_width=True)
-            else:
-                st.caption("급성장 NCS 분야 없음")
-        with col_g2:
-            top_dn = ncs_growth[ncs_growth['증가율(%)'] < 0].tail(10)
-            if not top_dn.empty:
-                fig_dn = px.bar(
-                    top_dn, x='증가율(%)', y='NCS_CD', orientation='h',
-                    color='증가율(%)', color_continuous_scale='Reds_r',
-                    text='증가율(%)', title='📉 수요 감소 NCS Top 10',
-                    labels={'NCS_CD': 'NCS 분야'}
-                )
-                fig_dn.update_yaxes(type='category')
-                fig_dn.update_layout(yaxis={'categoryorder': 'total descending'}, height=350)
-                st.plotly_chart(fig_dn, use_container_width=True)
-            else:
-                st.caption("수요 감소 NCS 분야 없음")
-        with st.expander("전체 NCS 성장률 데이터"):
-            st.dataframe(ncs_growth, use_container_width=True, hide_index=True,
-                         column_config={'증가율(%)': st.column_config.NumberColumn(format="%.1f%%")})
-    else:
-        st.info("NCS 성장 분석 데이터가 부족합니다. (최소 2건 이상 NCS 코드가 필요합니다)")
-
-    st.divider()
-
-    # ── 섹션 3: NCS별 공급-수요 매트릭스 ──
-    st.subheader("🔲 NCS별 공급-수요 매트릭스")
-    st.caption("과정수(공급) vs 모집률(수요) — 좌상단(저공급·고수요) = 진입 기회, 우하단(고공급·저수요) = 과잉공급 위험")
-    ncs_supply = load_ncs_agg(where, params, min_courses=3)
-    if not ncs_supply.empty:
-        ncs_supply['NCS_CD'] = ncs_supply['NCS_CD'].apply(lambda x: str(int(float(x))) if pd.notna(x) and str(x) not in ('', 'nan') else '')
-        ncs_supply = ncs_supply.rename(columns={'CNT': '과정수', 'AVG_RECRUIT': '평균모집률'})
-        fig_matrix = px.scatter(
-            ncs_supply, x='과정수', y='평균모집률', text='NCS_CD',
-            color_discrete_sequence=['steelblue'],
-            size='과정수', opacity=0.7,
-            labels={'과정수': '공급(과정 수)', '평균모집률': '수요(모집률 %)'},
-            title='NCS별 공급(과정수) vs 수요(모집률)'
-        )
-        avg_recruit = ncs_supply['평균모집률'].mean()
-        avg_count = ncs_supply['과정수'].mean()
-        fig_matrix.add_hline(y=avg_recruit, line_dash="dash", line_color="gray", opacity=0.5, annotation_text="평균 모집률")
-        fig_matrix.add_vline(x=avg_count, line_dash="dash", line_color="gray", opacity=0.5, annotation_text="평균 과정수")
-        fig_matrix.update_traces(textposition='top center')
-        st.plotly_chart(fig_matrix, use_container_width=True)
-        oversupply = ncs_supply[(ncs_supply['과정수'] > avg_count) & (ncs_supply['평균모집률'] < avg_recruit)]
-        if not oversupply.empty:
-            st.warning(f"과잉공급 위험 NCS ({len(oversupply)}개): {', '.join(oversupply['NCS_CD'].tolist())}")
-    else:
-        st.info("분석할 NCS 데이터가 부족합니다.")
-
-
-# ─────────────────────────────────────────
-# [Tab 4] 📑 데이터 조회
-# ─────────────────────────────────────────
-with tabs[4]:
     st.subheader(f"📄 상세 데이터 ({total_count:,}건)")
 
     preview_df = load_data_preview(where, params, limit=1000)
