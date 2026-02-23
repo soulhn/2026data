@@ -1051,21 +1051,6 @@ with tabs[1]:
                                    title="직장인 타겟(주말) 과정 수", labels={'CNT': '개수'}), use_container_width=True)
     st.divider()
 
-    # ── 유형별 평균 모집률 ──
-    st.subheader("📊 유형별 평균 모집률")
-    st.caption("모집률 데이터가 있는 과정만 집계됩니다.")
-    if not type_perf_data.empty:
-        fig_fill = px.bar(
-            type_perf_data.dropna(subset=['평균모집률']).sort_values('평균모집률'),
-            x='평균모집률', y='유형', orientation='h',
-            color='평균모집률', color_continuous_scale='Blues',
-            text='평균모집률', labels={'평균모집률': '평균 모집률 (%)'},
-        )
-        fig_fill.update_traces(texttemplate='%{x:.1f}%', textposition='outside')
-        fig_fill.update_layout(height=320, margin=dict(t=10, b=30), coloraxis_showscale=False, title='유형별 평균 모집률')
-        st.plotly_chart(fig_fill, use_container_width=True)
-    st.divider()
-
     # ── NCS별 모집 현황 ──
     st.subheader("📊 인기 NCS(기술)별 모집 현황")
     ncs_data = load_ncs_agg(where, params, min_courses=NCS_MIN_COURSES if total_count >= 100 else 1)
