@@ -54,8 +54,8 @@ market_etl.py (매일 21시) →                    ←    https://playdata.stre
 - **`st.navigation()` 사용**: 사이드바 레이블을 파일명과 무관하게 커스텀 지정. 새 페이지 추가 시 `pg = st.navigation([...])` 목록에 수동 등록 필요
 - 사이드바 순서: 성과 대시보드 → 시장 분석 & 기회 발굴 → 종료 과정 성과 분석 → 현재 운영 현황 → 매출 분석 → 데이터 조회
 
-### 시장 분析 페이지 (pages/1_*.py) 구조
-- 사이드바 레이블: **시장 분析 & 기회 발굴**
+### 시장 분석 페이지 (pages/1_*.py) 구조
+- 사이드바 레이블: **시장 분석 & 기회 발굴**
 - **9개 탭** (2025-02 13탭→9탭 재편):
 
 | 탭 | 내용 | KDT(취업률 미제공) 시 |
@@ -64,7 +64,7 @@ market_etl.py (매일 21시) →                    ←    https://playdata.stre
 | 🏆 순위 & 모집 | 기관/과정 순위, 유형별·NCS별 모집 현황 | 정상 작동 |
 | 🎨 유형 & 일정 | 훈련유형 분포, 주말/주중, 유형별 모집률 | 정상 작동 |
 | 📈 시계열 & 경쟁 | 월별 훈련비·개설수·지역별 추이 + NCS 경쟁심화도 + 기관경쟁력 매트릭스 | 정상 작동 |
-| 📊 취업률 분析 | 월별취업률·유형별·비용산점도·비용대비성과·자격증별·키워드별 취업률 | 상단 배너만 표시 |
+| 📊 취업률 분석 | 월별취업률·유형별·비용산점도·비용대비성과·자격증별·키워드별 취업률 | 상단 배너만 표시 |
 | 💎 우리 과정 vs 시장 | 핵심지표 비교, 백분위, 레이더차트, 회차별 테이블 | 취업률 항목 "미제공", 레이더 3축 |
 | ☁️ 키워드 & 자격증 | 키워드 빈도, 자격증 과정수(color=훈련비), 전체 테이블 | 정상 작동 |
 | 🔭 사업기회 발굴 | 지역별 수요-공급 갭, NCS 성장, NCS 기회매트릭스, 기회지수 | §1·2만 표시, §3·4 안내 |
@@ -75,10 +75,10 @@ market_etl.py (매일 21시) →                    ←    https://playdata.stre
 - `load_internal_courses()`: TB_COURSE_MASTER 캐시 로드 (HANWHA_COURSE_ID 기반)
 - 내부 과정 NCS 코드는 TB_MARKET_TREND와 TRPR_ID merge로 매칭
 - `scikit-learn` LinearRegression: 비용→취업률 시뮬레이터
-- **자격증 분析**: CERTIFICATE 컬럼 파싱 → 자격증별 과정수/취업률 Top 20
+- **자격증 분석**: CERTIFICATE 컬럼 파싱 → 자격증별 과정수/취업률 Top 20
 - **회차별 상세 비교**: 정원/수강신청인원/수료인원/수료율/취업률(NaN→None, column_config 방식)
 - **사업기회 발굴**: 지역별 수요-공급 갭 / 성장 NCS 분야(최근 6개월 vs 이전 6개월) / 고성과·저경쟁 NCS 매트릭스 / 종합 기회지수 Top 15 (`load_region_opp()`, `load_ncs_growth()`, `load_ncs_opp_matrix()`)
-- HANWHA_COURSE_ID 미설정 시 시장 전체 분析만 표시 (st.info 안내)
+- HANWHA_COURSE_ID 미설정 시 시장 전체 분석만 표시 (st.info 안내)
 - **ETL 캐시 폴백**: `get_market_cache(key)` — `where == ""` 조건 시 TB_MARKET_CACHE에서 즉시 반환 (10개 함수 적용: kpi/monthly_counts/region_counts/inst_stats/ncs_agg/monthly_empl/monthly_recruit/region_opp/ncs_growth/ncs_opp_matrix)
 
 ### 종료 과정 성과 분석 페이지 (pages/2_*.py) 구조
@@ -133,7 +133,7 @@ market_etl.py (매일 21시) →                    ←    https://playdata.stre
 - 페이지에서 직접 `pd.read_sql()` 대신 `load_data()` 사용 권장
 - Plotly `add_vline`에 문자열 x값 + `annotation_text` 동시 사용 시 TypeError 발생 → `add_annotation` 별도 호출
 - **Plotly 시계열 끊김**: `YEAR_MONTH` 문자열('2021-01')을 Plotly가 날짜로 자동 해석하면 데이터 없는 달에 시각적 공백 발생 → `go.Figure` 라인차트는 `date_range`로 빈 달 fill 후 datetime 축 사용, `px.line` 은 `.update_xaxes(type='category')` 적용
-- UI에 노출되는 텍스트(subheader, metric, caption, 탭 레이블 등)는 **반드시 한글**만 사용 — 한자(분析·競·搜 등) 혼용 금지
+- UI에 노출되는 텍스트(subheader, metric, caption, 탭 레이블 등)는 **반드시 한글**만 사용 — 한자(분석·競·搜 등) 혼용 금지
 - 취업률 미제공 유형(KDT 등) 처리: `no_empl_data` 플래그로 판별 → 관련 지표는 `"미제공"` 표시, 레이더 차트는 취업률 축 제거(3축), `st.stop()` 은 탭 내부에서 사용 금지(이후 탭 렌더링도 중단됨) → `if/else` 패턴 사용
 - `TB_MARKET_TREND.TR_STA_DT`는 **`YYYY-MM-DD`** 형식으로 저장됨 → WHERE 절 날짜 파라미터는 반드시 `strftime('%Y-%m-%d')` 사용 (`YYYYMMDD` 형식 사용 시 문자열 비교 오류로 데이터 누락)
 - `home.py`에서 `st.navigation()` 사용 중 → pages/ 폴더 자동감지 비활성화. **새 페이지 추가 시 반드시 `pg = st.navigation([...])` 목록에도 수동 등록**
