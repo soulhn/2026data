@@ -868,7 +868,7 @@ with tabs[0]:
             st.plotly_chart(fig_recruit, use_container_width=True)
 
         with col_r:
-            supply_colors = ['#2ecc71' if v else '#e0e0e0' for v in region_opp['기회']]
+            supply_colors = ['#2ecc71' if v else '#5dade2' for v in region_opp['기회']]
             fig_supply = go.Figure(go.Bar(
                 x=region_opp['과정수'],
                 y=region_opp['REGION'],
