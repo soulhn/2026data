@@ -211,8 +211,8 @@ with tab_indiv:
                 tc.columns = ['유형', '인원']
                 st.altair_chart(
                     alt.Chart(tc).mark_bar().encode(
-                        x='인원:Q',
-                        y=alt.Y('유형:N', sort='-x'),
+                        x=alt.X('유형:N', sort='-y', axis=alt.Axis(labelAngle=0)),
+                        y=alt.Y('인원:Q', axis=alt.Axis(title=['인', '원'], titleAngle=0)),
                         color=alt.value('orange'),
                         tooltip=['유형', '인원'],
                     ).properties(height=280),
