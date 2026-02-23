@@ -915,7 +915,7 @@ with tabs[0]:
     st.caption("과정수(공급) vs 모집률(수요) - 우측 하단은 과잉공급 위험 영역")
     ncs_supply = load_ncs_agg(where, params, min_courses=3)
     if not ncs_supply.empty:
-        ncs_supply['NCS_CD'] = ncs_supply['NCS_CD'].astype(str)
+        ncs_supply['NCS_CD'] = ncs_supply['NCS_CD'].apply(lambda x: str(int(float(x))) if pd.notna(x) and str(x) not in ('', 'nan') else '')
         ncs_supply = ncs_supply.rename(columns={'CNT': '과정수', 'AVG_RECRUIT': '평균모집률'})
         ncs_supply['is_ours'] = ncs_supply['NCS_CD'].isin(our_ncs_codes_comp) if our_ncs_codes_comp else False
         fig_matrix = px.scatter(
@@ -1070,7 +1070,7 @@ with tabs[1]:
     st.subheader("📊 인기 NCS(기술)별 모집 현황")
     ncs_data = load_ncs_agg(where, params, min_courses=NCS_MIN_COURSES if total_count >= 100 else 1)
     if not ncs_data.empty:
-        ncs_data['NCS_CD'] = ncs_data['NCS_CD'].astype(str)
+        ncs_data['NCS_CD'] = ncs_data['NCS_CD'].apply(lambda x: str(int(float(x))) if pd.notna(x) and str(x) not in ('', 'nan') else '')
         ncs_data['평균모집률'] = (ncs_data['REG_COURSE_MAN'] / ncs_data['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
         ncs_top = ncs_data.head(10).rename(columns={'NCS_CD': 'NCS코드', 'CNT': '개설수', 'TOT_FXNUM': '총모집정원', 'REG_COURSE_MAN': '총신청인원'})
         ncs_top = ncs_top.sort_values('평균모집률', ascending=True)
