@@ -228,15 +228,15 @@ with tab_indiv:
                 수료=('TRNEE_STATUS', lambda x: (x == '수료').sum()),
                 평균_결석=('결석_횟수', 'mean'),
             ).reset_index()
-            age_grp['수료율(%)'] = (age_grp['수료'] / age_grp['인원'] * 100).round(1)
+            age_grp['수료율'] = (age_grp['수료'] / age_grp['인원'] * 100).round(1)
             age_grp['평균_결석'] = age_grp['평균_결석'].round(1)
             ag1, ag2 = st.columns(2)
             with ag1:
                 st.altair_chart(
                     alt.Chart(age_grp).mark_bar(color='#8e44ad').encode(
                         x=alt.X('연령대:N', sort='-y', title='연령대', axis=alt.Axis(labelAngle=0)),
-                        y=alt.Y('수료율(%):Q', axis=alt.Axis(title=['수', '료', '율', '(%)'], titleAngle=0)),
-                        tooltip=['연령대', '수료율(%)', '인원'],
+                        y=alt.Y('수료율:Q', axis=alt.Axis(title=['수', '료', '율'], titleAngle=0)),
+                        tooltip=['연령대', '수료율', '인원'],
                     ).properties(height=250, title='연령대별 수료율'),
                     use_container_width=True,
                 )
@@ -260,7 +260,7 @@ with tab_indiv:
                 평균_결석=('결석_횟수', 'mean'),
                 평균_지각=('지각_횟수', 'mean'),
             ).reset_index()
-            type_stats['수료율(%)'] = (type_stats['수료_인원'] / type_stats['인원'] * 100).round(1)
+            type_stats['수료율'] = (type_stats['수료_인원'] / type_stats['인원'] * 100).round(1)
             type_stats['평균_결석'] = type_stats['평균_결석'].round(1)
             type_stats['평균_지각'] = type_stats['평균_지각'].round(1)
 
@@ -269,9 +269,9 @@ with tab_indiv:
                 st.altair_chart(
                     alt.Chart(type_stats).mark_bar().encode(
                         x=alt.X('TRNEE_TYPE:N', title='유형', axis=alt.Axis(labelAngle=0)),
-                        y=alt.Y('수료율(%):Q', axis=alt.Axis(title=['수', '료', '율', '(%)'], titleAngle=0)),
+                        y=alt.Y('수료율:Q', axis=alt.Axis(title=['수', '료', '율'], titleAngle=0)),
                         color=alt.value('#3498db'),
-                        tooltip=['TRNEE_TYPE', '수료율(%)', '인원'],
+                        tooltip=['TRNEE_TYPE', '수료율', '인원'],
                     ).properties(height=250, title='유형별 수료율'),
                     use_container_width=True,
                 )
