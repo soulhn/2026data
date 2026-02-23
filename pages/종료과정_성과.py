@@ -765,34 +765,72 @@ with tab_all:
             )
     st.divider()
 
-    # === Section 3: 출결 현황 ===
-    st.markdown("#### 📅 출결 현황")
-    ac1, ac2 = st.columns(2)
-    with ac1:
-        st.markdown("##### 기수별 출석률 추이")
-        if not comp.empty:
-            st.altair_chart(
-                alt.Chart(comp).mark_line(
-                    point=alt.OverlayMarkDef(size=80), color='#3498db'
-                ).encode(
-                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y('출석률:Q', axis=alt.Axis(title=['출', '석', '률', '(%)'], titleAngle=0)),
-                    tooltip=['기수', '출석률'],
-                ).properties(height=300),
-                use_container_width=True,
-            )
-    with ac2:
+    # === Section 3: 출결 & 취업률 연관 분석 ===
+    st.markdown("#### 📅 출결과 취업률의 관계")
+    absent_avg_df = get_all_degr_absent_avg()
+    if not absent_avg_df.empty:
+        absent_avg_df['기수'] = absent_avg_df['TRPR_DEGR'].astype(str) + '회차'
+        absent_avg_df['평균_결석일'] = absent_avg_df['평균_결석일'].round(1)
+
+    if not comp.empty:
+        _corr_base = comp[['기수', '출석률']].merge(
+            all_master[['기수', '총_취업률']].dropna(subset=['총_취업률']),
+            on='기수', how='inner'
+        )
+
+        ac1, ac2 = st.columns(2)
+        with ac1:
+            st.markdown("##### 기수별 출석률 & 취업률 추이")
+            st.caption("두 지표 모두 % 기준 — 기수별 흐름 비교")
+            if not _corr_base.empty:
+                _long = pd.melt(_corr_base, id_vars='기수',
+                                value_vars=['출석률', '총_취업률'],
+                                var_name='지표', value_name='값')
+                _long['지표'] = _long['지표'].map({'출석률': '출석률', '총_취업률': '6개월 취업률'})
+                st.altair_chart(
+                    alt.Chart(_long).mark_line(point=True, strokeWidth=2).encode(
+                        x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
+                        y=alt.Y('값:Q', scale=alt.Scale(domain=[0, 100]),
+                                axis=alt.Axis(title=['%'], titleAngle=0)),
+                        color=alt.Color('지표:N', scale=alt.Scale(
+                            domain=['출석률', '6개월 취업률'],
+                            range=['#3498db', '#2ecc71']
+                        )),
+                        tooltip=['기수', '지표', '값'],
+                    ).properties(height=300),
+                    use_container_width=True,
+                )
+        with ac2:
+            st.markdown("##### 출석률 vs 취업률 상관관계")
+            st.caption("각 점 = 기수. 출석률이 높을수록 취업률도 높은지 확인")
+            if not _corr_base.empty:
+                _scatter = alt.Chart(_corr_base).mark_circle(size=90, color='#9b59b6').encode(
+                    x=alt.X('출석률:Q', title='출석률(%)'),
+                    y=alt.Y('총_취업률:Q', title='6개월 취업률(%)'),
+                    tooltip=['기수', '출석률', '총_취업률'],
+                )
+                _labels = alt.Chart(_corr_base).mark_text(dy=-12, fontSize=11, color='#555').encode(
+                    x=alt.X('출석률:Q'),
+                    y=alt.Y('총_취업률:Q'),
+                    text=alt.Text('기수:N'),
+                )
+                st.altair_chart(
+                    (_scatter + _labels).interactive().properties(height=300),
+                    use_container_width=True,
+                )
+        st.divider()
+
+    # 1인당 평균 결석일
+    ac3, ac4 = st.columns(2)
+    with ac3:
         st.markdown("##### 기수별 1인당 평균 결석일")
-        absent_avg_df = get_all_degr_absent_avg()
         if not absent_avg_df.empty:
-            absent_avg_df['기수'] = absent_avg_df['TRPR_DEGR'].astype(str) + '회차'
-            absent_avg_df['평균_결석일'] = absent_avg_df['평균_결석일'].round(1)
             st.altair_chart(
                 alt.Chart(absent_avg_df).mark_bar(color='#e74c3c').encode(
                     x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
                     y=alt.Y('평균_결석일:Q', axis=alt.Axis(title=['평', '균', '결', '석', '일'], titleAngle=0)),
                     tooltip=['기수', '평균_결석일'],
-                ).properties(height=300),
+                ).properties(height=280),
                 use_container_width=True,
             )
     st.divider()
