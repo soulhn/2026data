@@ -218,7 +218,7 @@ if not _top_rev.empty:
     )
     _full_pct = round(_done_src['full_cnt'].sum() / _total_cnt * 100, 1) if _total_cnt > 0 else 0
     _total_actual = int(_top_rev['actual_fee'].sum())
-    _eok = round(_total_actual / 1e8, 1)
+    _eok = int(_total_actual / 1e7) / 10  # 소수 첫째 자리 버림
     mk0, mk1, mk2, mk3, mk4 = st.columns(5)
     mk0.metric("누적", f"{_eok}억")
     mk1.metric("누적 총매출", fmt_won(_total_actual))
