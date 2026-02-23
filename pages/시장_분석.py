@@ -1078,6 +1078,7 @@ with tabs[1]:
                      color='평균모집률', color_continuous_scale='Blues',
                      text='평균모집률', labels={'평균모집률': '평균 모집률 (%)', 'NCS코드': ''})
         fig.update_traces(texttemplate='%{x:.1f}%', textposition='outside')
+        fig.update_yaxes(type='category')
         fig.update_layout(height=360, margin=dict(t=10, b=30), coloraxis_showscale=False)
         st.plotly_chart(fig, use_container_width=True)
         with st.expander("📄 상세 데이터 보기"):
