@@ -779,7 +779,6 @@ if not names_df_shared.empty and top_words_shared:
 tabs = st.tabs([
     "📊 시장 개요", "🏆 순위 & 모집",
     "🎨 유형 & 일정", "📈 시계열 & 경쟁",
-    "💎 우리 과정 vs 시장",
     "☁️ 키워드 분석", "🔭 사업기회 발굴", "📑 데이터 조회"
 ])
 
@@ -1174,210 +1173,9 @@ with tabs[3]:
 
 # ─────────────────────────────────────────
 # ─────────────────────────────────────────
-# [Tab 4] 💎 우리 과정 vs 시장
+# [Tab 4] ☁️ 키워드 분석
 # ─────────────────────────────────────────
 with tabs[4]:
-    if internal_df is None:
-        st.info("HANWHA_COURSE_ID가 설정되지 않았습니다. 환경변수 또는 Streamlit Secrets에 설정하면 우리 과정과 시장을 비교할 수 있습니다.")
-    else:
-        # 내부 과정의 TRPR_ID로 시장 데이터에서 NCS 코드 매칭
-        internal_trpr_ids = internal_df['TRPR_ID'].unique().tolist()
-        if internal_trpr_ids:
-            placeholders = ','.join('?' * len(internal_trpr_ids))
-            matched = _sql_query(f"""
-                SELECT DISTINCT NCS_CD FROM TB_MARKET_TREND
-                WHERE TRPR_ID IN ({placeholders}) AND NCS_CD IS NOT NULL
-            """, params=internal_trpr_ids)
-        else:
-            matched = pd.DataFrame()
-
-        if matched.empty:
-            st.warning("시장 데이터에서 우리 과정을 찾을 수 없습니다. 필터 기간을 확인하세요.")
-        else:
-            our_ncs_codes = matched['NCS_CD'].unique()
-
-            # KPI: 시장 평균 (SQL에서 이미 가져옴)
-            st.subheader("핵심 지표 비교")
-            our_empl = internal_df['EI_EMPL_RATE_3'].dropna()
-            our_empl_valid = our_empl[our_empl > 0]
-
-            # 시장 평균값은 kpi_df에서 가져옴
-            mkt_avg_empl = kpi_df['AVG_EMPL'].iloc[0] if not kpi_df.empty else None
-            mkt_avg_trco = kpi_df['AVG_TRCO'].iloc[0] if not kpi_df.empty else None
-
-            our_trco = internal_df['TOT_TRCO']
-            our_recruit = internal_df['모집률']
-
-            # 시장 모집률 평균 (SQL)
-            mkt_recruit_df = _sql_query(f"""
-                SELECT AVG(CASE WHEN TOT_FXNUM > 0
-                    THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as AVG_RECRUIT
-                FROM TB_MARKET_TREND {where}
-            """, params=params)
-            mkt_avg_recruit = mkt_recruit_df['AVG_RECRUIT'].iloc[0] if not mkt_recruit_df.empty else None
-
-            k1, k2, k3 = st.columns(3)
-            if not our_empl_valid.empty and pd.notna(mkt_avg_empl):
-                our_avg_empl = our_empl_valid.mean()
-                k1.metric("취업률 (3개월)", f"{our_avg_empl:.1f}%", delta=f"{our_avg_empl - mkt_avg_empl:+.1f}%p vs 시장")
-            else:
-                k1.metric("취업률 (3개월)", "미제공", help="선택된 훈련 유형은 HRD-Net에서 취업률을 제공하지 않습니다.")
-
-            if not our_trco.empty and pd.notna(mkt_avg_trco):
-                our_avg_trco = our_trco.mean()
-                k2.metric("평균 훈련비", f"{int(our_avg_trco):,}원", delta=f"{int(our_avg_trco - mkt_avg_trco):,}원 vs 시장", delta_color="inverse")
-            else:
-                k2.metric("평균 훈련비", "-")
-
-            if not our_recruit.empty and pd.notna(mkt_avg_recruit):
-                our_avg_rec = our_recruit.mean()
-                k3.metric("평균 모집률", f"{our_avg_rec:.1f}%", delta=f"{our_avg_rec - mkt_avg_recruit:+.1f}%p vs 시장")
-            else:
-                k3.metric("평균 모집률", "-")
-
-            st.divider()
-
-            # 백분위 분석 — 시장 분포 통계를 SQL로 가져와서 비교
-            st.subheader("시장 내 백분위 분석")
-            pct_df = _sql_query(f"""
-                SELECT
-                    COUNT(CASE WHEN EI_EMPL_RATE_3 > 0 THEN 1 END) as EMPL_CNT,
-                    COUNT(CASE WHEN TOT_TRCO > 0 THEN 1 END) as TRCO_CNT,
-                    COUNT(CASE WHEN TOT_FXNUM > 0 AND REG_COURSE_MAN > 0 THEN 1 END) as RECRUIT_CNT
-                FROM TB_MARKET_TREND {where}
-            """, params=params)
-
-            # 간단한 백분위: SQL percentile 대신 비율 계산
-            p1, p2, p3 = st.columns(3)
-
-            if no_empl_data or our_empl_valid.empty:
-                p1.metric("취업률 백분위", "미제공", help="선택된 훈련 유형은 HRD-Net에서 취업률을 제공하지 않습니다.")
-            else:
-                below_cnt = _sql_query(f"""
-                    SELECT COUNT(*) as CNT FROM TB_MARKET_TREND {where}
-                    {"AND" if where else "WHERE"} EI_EMPL_RATE_3 > 0 AND EI_EMPL_RATE_3 < ?
-                """, params=list(params) + [float(our_empl_valid.mean())])
-                total_empl = pct_df['EMPL_CNT'].iloc[0]
-                if total_empl > 0:
-                    pct = min(100, below_cnt['CNT'].iloc[0] / total_empl * 100)
-                    p1.metric("취업률 백분위", f"상위 {100 - pct:.0f}%")
-                else:
-                    p1.metric("취업률 백분위", "-")
-
-            if not our_trco.empty:
-                below_trco = _sql_query(f"""
-                    SELECT COUNT(*) as CNT FROM TB_MARKET_TREND {where}
-                    {"AND" if where else "WHERE"} TOT_TRCO > 0 AND TOT_TRCO < ?
-                """, params=list(params) + [float(our_trco.mean())])
-                total_trco = pct_df['TRCO_CNT'].iloc[0]
-                if total_trco > 0:
-                    pct_trco = below_trco['CNT'].iloc[0] / total_trco * 100
-                    p2.metric("훈련비 백분위", f"상위 {pct_trco:.0f}% (높은 순)")
-                else:
-                    p2.metric("훈련비 백분위", "-")
-            else:
-                p2.metric("훈련비 백분위", "-")
-
-            if not our_recruit.empty:
-                below_rec = _sql_query(f"""
-                    SELECT COUNT(*) as CNT FROM TB_MARKET_TREND {where}
-                    {"AND" if where else "WHERE"} TOT_FXNUM > 0
-                    AND CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 < ?
-                """, params=list(params) + [float(our_recruit.mean())])
-                total_rec = pct_df['RECRUIT_CNT'].iloc[0]
-                if total_rec > 0:
-                    pct_rec = min(100, below_rec['CNT'].iloc[0] / total_rec * 100)
-                    p3.metric("모집률 백분위", f"상위 {100 - pct_rec:.0f}%")
-                else:
-                    p3.metric("모집률 백분위", "-")
-            else:
-                p3.metric("모집률 백분위", "-")
-
-            st.divider()
-
-            # 레이더 차트
-            st.subheader("종합 역량 레이더")
-            radar_metrics = ['취업률', '모집률', '훈련비(역순)', '정원']
-            our_vals, mkt_avg_vals, mkt_top10_vals = [], [], []
-
-            # 시장 분포 통계
-            dist_df = _sql_query(f"""
-                SELECT
-                    AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as M_EMPL,
-                    AVG(CASE WHEN TOT_FXNUM > 0 AND REG_COURSE_MAN > 0
-                        THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as M_RECRUIT,
-                    AVG(CASE WHEN TOT_TRCO > 0 THEN TOT_TRCO END) as M_TRCO,
-                    AVG(CASE WHEN TOT_FXNUM > 0 THEN TOT_FXNUM END) as M_FXNUM
-                FROM TB_MARKET_TREND {where}
-            """, params=params)
-
-            m_e = float(dist_df['M_EMPL'].iloc[0] or 0)
-            m_r = float(dist_df['M_RECRUIT'].iloc[0] or 0)
-            m_trco = float(dist_df['M_TRCO'].iloc[0] or 1)
-            m_fx = float(dist_df['M_FXNUM'].iloc[0] or 0)
-
-            o_e = our_empl_valid.mean() if not our_empl_valid.empty else 0
-            o_r = our_recruit.mean() if not our_recruit.empty else 0
-            o_t_raw = our_trco.mean() if not our_trco.empty else 0
-            o_fx = min(internal_df['TOT_FXNUM'].mean(), 100) if not internal_df['TOT_FXNUM'].empty else 0
-
-            # 훈련비 역순 정규화
-            max_trco = m_trco * 2 if m_trco > 0 else 1
-            o_t = max(0, (1 - o_t_raw / max_trco) * 100)
-            m_t = max(0, (1 - m_trco / max_trco) * 100)
-
-            if no_empl_data:
-                radar_metrics = ['모집률', '훈련비(역순)', '정원']
-                our_vals = [o_r, o_t, min(o_fx, 100)]
-                mkt_avg_vals = [m_r, m_t, min(m_fx, 100)]
-                mkt_top10_vals = [m_r * 1.3, m_t * 0.7, min(m_fx * 1.3, 100)]
-            else:
-                our_vals = [o_e, o_r, o_t, min(o_fx, 100)]
-                mkt_avg_vals = [m_e, m_r, m_t, min(m_fx, 100)]
-                mkt_top10_vals = [m_e * 1.3, m_r * 1.3, m_t * 0.7, min(m_fx * 1.3, 100)]
-
-            fig_radar = go.Figure()
-            fig_radar.add_trace(go.Scatterpolar(r=our_vals + [our_vals[0]], theta=radar_metrics + [radar_metrics[0]], fill='toself', name='우리 과정'))
-            fig_radar.add_trace(go.Scatterpolar(r=mkt_avg_vals + [mkt_avg_vals[0]], theta=radar_metrics + [radar_metrics[0]], fill='toself', name='시장 평균', opacity=0.5))
-            fig_radar.add_trace(go.Scatterpolar(r=mkt_top10_vals + [mkt_top10_vals[0]], theta=radar_metrics + [radar_metrics[0]], fill='toself', name='시장 상위 10%', opacity=0.3))
-            fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True)), title="우리 과정 vs 시장 (값이 클수록 우수)")
-            st.plotly_chart(fig_radar, use_container_width=True)
-
-            st.divider()
-
-            # 회차별 상세 비교 테이블
-            st.subheader("회차별 상세 비교")
-            detail = internal_df[['TRPR_DEGR', 'TRPR_NM', 'TR_STA_DT', 'TOT_TRCO', 'TOT_FXNUM', 'TOT_TRP_CNT', 'FINI_CNT', '수료율',
-                                   'EI_EMPL_RATE_3', 'EI_EMPL_RATE_3_LABEL', 'TOTAL_RATE_6', 'EI_EMPL_RATE_6_LABEL']].copy()
-            detail.columns = ['회차', '과정명', '시작일', '훈련비', '정원', '수강신청인원', '수료인원', '수료율(%)',
-                               '_3m', '3개월 취업률(%)', '_6m', '6개월 취업률(%)']
-            detail = detail.sort_values('회차', key=lambda x: pd.to_numeric(x, errors='coerce')).reset_index(drop=True)
-            detail['시작일'] = detail['시작일'].dt.strftime('%Y-%m-%d')
-            for num_col, lbl_col in [('_3m', '3개월 취업률(%)'), ('_6m', '6개월 취업률(%)')]:
-                detail[lbl_col] = detail.apply(
-                    lambda r, n=num_col, l=lbl_col: r[l] if r[l] else (
-                        f"{r[n]:.1f}%" if pd.notna(r[n]) and r[n] > 0 else ''
-                    ), axis=1
-                )
-            detail = detail.drop(columns=['_3m', '_6m'])
-            st.dataframe(
-                detail,
-                use_container_width=True, hide_index=True,
-                column_config={
-                    '훈련비': st.column_config.NumberColumn(format="%,.0f원"),
-                    '정원': st.column_config.NumberColumn(format="%d명"),
-                    '수강신청인원': st.column_config.NumberColumn(format="%d명"),
-                    '수료인원': st.column_config.NumberColumn(format="%d명"),
-                    '수료율(%)': st.column_config.NumberColumn(format="%.1f%%"),
-                    '3개월 취업률(%)': st.column_config.TextColumn("3개월 취업률(%)", help="숫자=취업률(%) / 개설예정·진행중·미실시·수료자없음"),
-                    '6개월 취업률(%)': st.column_config.TextColumn("6개월 취업률(%)", help="숫자=취업률(%) / 개설예정·진행중·미실시·수료자없음"),
-                }
-            )
-
-# ─────────────────────────────────────────
-# [Tab 5] ☁️ 키워드 분석
-# ─────────────────────────────────────────
-with tabs[5]:
     # §1: 키워드 빈도 Top 25
     st.subheader("🔥 과정명 트렌드 키워드 Top 25")
     st.caption("훈련과정명에서 자주 등장하는 키워드 빈도입니다.")
@@ -1422,9 +1220,9 @@ with tabs[5]:
             hide_index=True,
         )
 # ─────────────────────────────────────────
-# [Tab 6] 🔭 사업기회 발굴
+# [Tab 5] 🔭 사업기회 발굴
 # ─────────────────────────────────────────
-with tabs[6]:
+with tabs[5]:
     st.caption("수요(모집률)가 높고 공급(경쟁 과정 수)이 낮은 영역을 찾아 신규 교육사업 진입 기회를 도출합니다.")
 
     # ── 섹션 1: 지역별 수요-공급 갭 ──
@@ -1511,9 +1309,9 @@ with tabs[6]:
 
 
 # ─────────────────────────────────────────
-# [Tab 7] 📑 데이터 조회
+# [Tab 6] 📑 데이터 조회
 # ─────────────────────────────────────────
-with tabs[7]:
+with tabs[6]:
     st.subheader(f"📄 상세 데이터 ({total_count:,}건)")
 
     preview_df = load_data_preview(where, params, limit=1000)
