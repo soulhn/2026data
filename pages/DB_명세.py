@@ -55,7 +55,7 @@ SCHEMAS = {
             ("TRNEE_ID",     "TEXT",      "훈련생 코드"),
             ("TRNEE_NM",     "TEXT",      "훈련생 이름"),
             ("TRNEE_STATUS", "TEXT",      "훈련생 상태 (수강중/수료/제적 등)"),
-            ("TRNEE_TYPE",   "TEXT",      "훈련생 유형"),
+            ("TRNEE_TYPE",   "TEXT",      "훈련생 유형 코드 — C0031=근로자원격 / C0055=실업자원격 등"),
             ("BIRTH_DATE",   "TEXT",      "생년월일 (YYYYMMDD)"),
             ("TOTAL_DAYS",   "INTEGER",   "총 훈련일수"),
             ("OFLHD_CNT",    "INTEGER",   "공가일수"),
