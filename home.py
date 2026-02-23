@@ -24,21 +24,27 @@ def get_dashboard_data():
     df_course['TR_STA_DT'] = pd.to_datetime(df_course['TR_STA_DT'])
     df_course['TR_END_DT'] = pd.to_datetime(df_course['TR_END_DT'])
     for col in ['TOT_FXNUM', 'TOT_PAR_MKS']:
-        df_course[col] = pd.to_numeric(df_course[col], errors='coerce').fillna(0)
+        df_course[col] = pd.to_numeric(
+            df_course[col], errors='coerce').fillna(0)
     # 취업률: NaN 유지 (상태코드 'A'=개설예정 'B'=집계중 'C'=미실시 'D'=수료자없음 → 0과 구분)
     for col in ['EI_EMPL_RATE_3', 'EI_EMPL_RATE_6', 'HRD_EMPL_RATE_6', 'REAL_EMPL_RATE']:
         df_course[col] = pd.to_numeric(df_course[col], errors='coerce')
-    df_course['TOTAL_RATE_6'] = df_course['EI_EMPL_RATE_6'].fillna(0) + df_course['HRD_EMPL_RATE_6'].fillna(0)
+    df_course['TOTAL_RATE_6'] = df_course['EI_EMPL_RATE_6'].fillna(
+        0) + df_course['HRD_EMPL_RATE_6'].fillna(0)
     # 둘 다 NaN이면 취업률 미집계로 간주
-    no_empl = df_course['EI_EMPL_RATE_6'].isna() & df_course['HRD_EMPL_RATE_6'].isna()
+    no_empl = df_course['EI_EMPL_RATE_6'].isna(
+    ) & df_course['HRD_EMPL_RATE_6'].isna()
     df_course.loc[no_empl, 'TOTAL_RATE_6'] = pd.NA
-    df_course['FINI_CNT'] = pd.to_numeric(df_course['FINI_CNT'], errors='coerce').fillna(0)
-    df_course['TOT_TRP_CNT'] = pd.to_numeric(df_course['TOT_TRP_CNT'], errors='coerce').fillna(0)
-    df_course['수료율'] = (df_course['FINI_CNT'] / df_course['TOT_PAR_MKS'].replace(0, pd.NA) * 100).fillna(0)
+    df_course['FINI_CNT'] = pd.to_numeric(
+        df_course['FINI_CNT'], errors='coerce').fillna(0)
+    df_course['TOT_TRP_CNT'] = pd.to_numeric(
+        df_course['TOT_TRP_CNT'], errors='coerce').fillna(0)
+    df_course['수료율'] = (df_course['FINI_CNT'] /
+                        df_course['TOT_PAR_MKS'].replace(0, pd.NA) * 100).fillna(0)
     today = pd.Timestamp(datetime.now().date())
-    df_course['상태'] = df_course['TR_END_DT'].apply(lambda x: '진행중' if x >= today else '종료')
+    df_course['상태'] = df_course['TR_END_DT'].apply(
+        lambda x: '진행중' if x >= today else '종료')
     return df_course
-
 
 
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
@@ -124,8 +130,10 @@ def render_dashboard():
     kpi2.metric("누적 수강생", f"{total_trainees:,}명")
     kpi3.metric("평균 출석률", f"{avg_att:.1f}%", help="출석+지각 / 전체 출결일 (종료 기수)")
     kpi4.metric("평균 수료율", f"{avg_completion:.1f}%", help="수료인원 / 수강인원 기준")
-    kpi5.metric("평균 취업률(3개월)", f"{avg_rate_3:.1f}%" if pd.notna(avg_rate_3) else "-", help="수료 후 3개월 고용보험 가입 기준 (집계 전 기수 제외)")
-    kpi6.metric("평균 취업률(6개월)", f"{avg_rate_6:.1f}%" if pd.notna(avg_rate_6) else "-", help="6개월 고용보험 + HRD자체취업 합산 (집계 전 기수 제외)")
+    kpi5.metric("평균 취업률(3개월)", f"{avg_rate_3:.1f}%" if pd.notna(
+        avg_rate_3) else "-", help="수료 후 3개월 고용보험 가입 기준 (집계 전 기수 제외)")
+    kpi6.metric("평균 취업률(6개월)", f"{avg_rate_6:.1f}%" if pd.notna(
+        avg_rate_6) else "-", help="6개월 고용보험 + HRD자체취업 합산 (집계 전 기수 제외)")
     st.divider()
 
     # [Section 3] 기수 기록
@@ -134,15 +142,19 @@ def render_dashboard():
     s3c1, s3c2, s3c3, s3c4 = st.columns(4)
     if not df_ended.empty:
         best_comp = df_ended.loc[df_ended['수료율'].idxmax()]
-        s3c1.metric("최고 수료율", f"{best_comp['수료율']:.1f}%", f"{int(best_comp['TRPR_DEGR'])}회차")
+        s3c1.metric(
+            "최고 수료율", f"{best_comp['수료율']:.1f}%", f"{int(best_comp['TRPR_DEGR'])}회차")
         df_ended_empl = df_ended.dropna(subset=['TOTAL_RATE_6'])
         df_ended_empl = df_ended_empl[df_ended_empl['TOTAL_RATE_6'] > 0]
         if not df_ended_empl.empty:
-            best_empl = df_ended_empl.loc[df_ended_empl['TOTAL_RATE_6'].idxmax()]
-            s3c2.metric("최고 취업률 (6개월)", f"{best_empl['TOTAL_RATE_6']:.1f}%", f"{int(best_empl['TRPR_DEGR'])}회차")
+            best_empl = df_ended_empl.loc[df_ended_empl['TOTAL_RATE_6'].idxmax(
+            )]
+            s3c2.metric(
+                "최고 취업률 (6개월)", f"{best_empl['TOTAL_RATE_6']:.1f}%", f"{int(best_empl['TRPR_DEGR'])}회차")
     if not att_stats.empty:
         best_att = att_stats.loc[att_stats['ATT_RATE'].idxmax()]
-        s3c3.metric("최고 출석률", f"{best_att['ATT_RATE']:.1f}%", f"{int(best_att['TRPR_DEGR'])}회차")
+        s3c3.metric(
+            "최고 출석률", f"{best_att['ATT_RATE']:.1f}%", f"{int(best_att['TRPR_DEGR'])}회차")
         att_stats['revenue'] = att_stats['PRESENT_DAYS'] * DAILY_TRAINING_FEE
         best_rev = att_stats.loc[att_stats['revenue'].idxmax()]
         s3c4.metric("단일기수 최고 매출", f"{best_rev['revenue'] / 1e8:.2f}억원",
@@ -168,9 +180,11 @@ def render_dashboard():
     ])
     chart = alt.Chart(rank_df).mark_bar(width=60).encode(
         x=alt.X("연도:N", title="연도", axis=alt.Axis(labelFontSize=13)),
-        y=alt.Y("상위(%):Q", title="상위 % (낮을수록 우수)", scale=alt.Scale(domain=[0, 10])),
+        y=alt.Y("상위(%):Q", title="상위 % (낮을수록 우수)",
+                scale=alt.Scale(domain=[0, 10])),
         color=alt.value("#2ecc71"),
-        tooltip=[alt.Tooltip("연도:N"), alt.Tooltip("label:N", title="순위"), alt.Tooltip("상위(%):Q", title="상위 %", format=".1f")],
+        tooltip=[alt.Tooltip("연도:N"), alt.Tooltip("label:N", title="순위"), alt.Tooltip(
+            "상위(%):Q", title="상위 %", format=".1f")],
     ).properties(height=180)
     text = chart.mark_text(align="center", dy=-10, fontSize=13, fontWeight="bold").encode(
         text=alt.Text("label:N")
@@ -184,7 +198,8 @@ def render_dashboard():
     with col_left:
         st.subheader("📈 연도별 운영 규모")
         df['Year'] = df['TR_STA_DT'].dt.year
-        year_counts = df.groupby('Year')['TRPR_NM'].count().reset_index(name='과정수')
+        year_counts = df.groupby(
+            'Year')['TRPR_NM'].count().reset_index(name='과정수')
         chart = alt.Chart(year_counts).mark_bar().encode(
             x=alt.X('Year:O', title='연도'),
             y=alt.Y('과정수:Q', title='운영 과정 수'),
@@ -196,7 +211,8 @@ def render_dashboard():
     with col_right:
         st.subheader("🏆 우수 성과 과정 (Top 5)")
         st.caption("6개월 총 취업률 기준 상위 5개 과정입니다.")
-        top_courses = df[df['상태'] == '종료'].sort_values(by='TOTAL_RATE_6', ascending=False).head(5)
+        top_courses = df[df['상태'] == '종료'].sort_values(
+            by='TOTAL_RATE_6', ascending=False).head(5)
         st.dataframe(
             top_courses[['TRPR_DEGR', 'TRPR_NM', 'TOTAL_RATE_6', 'FINI_CNT']],
             column_config={
@@ -222,11 +238,11 @@ def render_dashboard():
 
 pg = st.navigation([
     st.Page(render_dashboard, title="성과 대시보드", icon="🏠"),
-    st.Page("pages/1_📈_시장_분석.py", title="시장 분석", icon="📈"),
-    st.Page("pages/2_📊_종료과정_성과.py", title="종료과정 성과", icon="📊"),
-    st.Page("pages/3_📋_현재_운영_현황.py", title="현재 운영 현황", icon="📋"),
-    st.Page("pages/4_💰_매출_분석.py", title="매출 분석", icon="💰"),
-    st.Page("pages/5_🔎_데이터_조회.py", title="데이터 조회", icon="🔎"),
-    st.Page("pages/6_🗄️_DB_명세.py", title="DB 명세", icon="🗄️"),
+    st.Page("pages/시장_분석.py", title="시장 분석", icon="📈"),
+    st.Page("pages/종료과정_성과.py", title="종료과정 성과", icon="📊"),
+    st.Page("pages/현재_운영_현황.py", title="현재 운영 현황", icon="📋"),
+    st.Page("pages/매출_분석.py", title="매출 분석", icon="💰"),
+    st.Page("pages/데이터_조회.py", title="데이터 조회", icon="🔎"),
+    st.Page("pages/DB_명세.py", title="DB 명세", icon="🗄️"),
 ])
 pg.run()
