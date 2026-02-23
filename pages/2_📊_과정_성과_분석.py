@@ -537,6 +537,10 @@ with tab_all:
     # 상태코드(A/B/C/D) 기수는 취업률 미집계 → NaN (차트에서 공백으로 표시)
     _status_mask = all_master['EI_EMPL_RATE_6'].apply(lambda x: str(x).strip() in ('A', 'B', 'C', 'D'))
     all_master.loc[_status_mask, '총_취업률'] = pd.NA
+    # 3개월 취업률 (고용보험)
+    all_master['취업률_3'] = pd.to_numeric(all_master['EI_EMPL_RATE_3'], errors='coerce')
+    _status_mask_3 = all_master['EI_EMPL_RATE_3'].apply(lambda x: str(x).strip() in ('A', 'B', 'C', 'D'))
+    all_master.loc[_status_mask_3, '취업률_3'] = pd.NA
     degr_order = all_master.sort_values('TRPR_DEGR')['기수'].tolist()
 
     lc, rc = st.columns(2)
@@ -614,14 +618,14 @@ with tab_all:
     for c in ['EXPEL_CNT', 'DROP_CNT', 'TOT_TRP_CNT']:
         all_master[c] = pd.to_numeric(all_master[c], errors='coerce').fillna(0).astype(int)
     all_master['잔여율'] = ((all_master['TOT_PAR_MKS'] - all_master['EXPEL_CNT'] - all_master['DROP_CNT']) / all_master['TOT_PAR_MKS'].replace(0, pd.NA) * 100).round(1).fillna(0)
-    summary_cols = ['기수', 'TRPR_NM', 'TR_STA_DT', 'TR_END_DT', 'TOT_TRP_CNT', 'TOT_PAR_MKS', 'EXPEL_CNT', 'DROP_CNT', '잔여율', 'FINI_CNT', '수료율', '총_취업률']
+    summary_cols = ['기수', 'TRPR_NM', 'TR_STA_DT', 'TR_END_DT', 'TOT_TRP_CNT', 'TOT_PAR_MKS', 'EXPEL_CNT', 'DROP_CNT', '잔여율', 'FINI_CNT', '수료율', '취업률_3', '총_취업률']
     st.dataframe(
         all_master[summary_cols].rename(columns={
             'TRPR_NM': '과정명', 'TR_STA_DT': '시작일', 'TR_END_DT': '종료일',
             'TOT_TRP_CNT': '수강신청', 'TOT_PAR_MKS': '수강인원',
             'EXPEL_CNT': '제적', 'DROP_CNT': '중도탈락',
             '잔여율': '잔여율(%)', 'FINI_CNT': '수료인원',
-            '수료율': '수료율(%)', '총_취업률': '취업률(%)',
+            '수료율': '수료율(%)', '취업률_3': '3개월 취업률(%)', '총_취업률': '6개월 취업률(%)',
         }),
         column_config={
             "수강신청": st.column_config.NumberColumn(format="%d명"),
@@ -631,7 +635,8 @@ with tab_all:
             "잔여율(%)": st.column_config.NumberColumn(format="%.1f%%"),
             "수료인원": st.column_config.NumberColumn(format="%d명"),
             "수료율(%)": st.column_config.NumberColumn(format="%.1f%%"),
-            "취업률(%)": st.column_config.NumberColumn(format="%.1f%%"),
+            "3개월 취업률(%)": st.column_config.NumberColumn(format="%.1f%%"),
+            "6개월 취업률(%)": st.column_config.NumberColumn(format="%.1f%%"),
         },
         use_container_width=True,
         hide_index=True,

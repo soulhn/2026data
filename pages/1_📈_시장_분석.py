@@ -1535,16 +1535,19 @@ with tabs[5]:
 
             # 회차별 상세 비교 테이블
             st.subheader("회차별 상세 비교")
-            detail = internal_df[['TRPR_DEGR', 'TRPR_NM', 'TR_STA_DT', 'TOT_TRCO', 'TOT_FXNUM', 'TOT_TRP_CNT', 'FINI_CNT', '수료율', 'EI_EMPL_RATE_3', 'EI_EMPL_RATE_3_LABEL']].copy()
-            detail.columns = ['회차', '과정명', '시작일', '훈련비', '정원', '수강신청인원', '수료인원', '수료율(%)', '취업률_num', '취업률(%)']
+            detail = internal_df[['TRPR_DEGR', 'TRPR_NM', 'TR_STA_DT', 'TOT_TRCO', 'TOT_FXNUM', 'TOT_TRP_CNT', 'FINI_CNT', '수료율',
+                                   'EI_EMPL_RATE_3', 'EI_EMPL_RATE_3_LABEL', 'EI_EMPL_RATE_6', 'EI_EMPL_RATE_6_LABEL']].copy()
+            detail.columns = ['회차', '과정명', '시작일', '훈련비', '정원', '수강신청인원', '수료인원', '수료율(%)',
+                               '_3m', '3개월 취업률(%)', '_6m', '6개월 취업률(%)']
             detail = detail.sort_values('회차', key=lambda x: pd.to_numeric(x, errors='coerce')).reset_index(drop=True)
             detail['시작일'] = detail['시작일'].dt.strftime('%Y-%m-%d')
-            detail['취업률(%)'] = detail.apply(
-                lambda r: r['취업률(%)'] if r['취업률(%)'] else (
-                    f"{r['취업률_num']:.1f}%" if pd.notna(r['취업률_num']) and r['취업률_num'] > 0 else ''
-                ), axis=1
-            )
-            detail = detail.drop(columns=['취업률_num'])
+            for num_col, lbl_col in [('_3m', '3개월 취업률(%)'), ('_6m', '6개월 취업률(%)')]:
+                detail[lbl_col] = detail.apply(
+                    lambda r, n=num_col, l=lbl_col: r[l] if r[l] else (
+                        f"{r[n]:.1f}%" if pd.notna(r[n]) and r[n] > 0 else ''
+                    ), axis=1
+                )
+            detail = detail.drop(columns=['_3m', '_6m'])
             st.dataframe(
                 detail,
                 use_container_width=True, hide_index=True,
@@ -1554,7 +1557,8 @@ with tabs[5]:
                     '수강신청인원': st.column_config.NumberColumn(format="%d명"),
                     '수료인원': st.column_config.NumberColumn(format="%d명"),
                     '수료율(%)': st.column_config.NumberColumn(format="%.1f%%"),
-                    '취업률(%)': st.column_config.TextColumn("취업률(%)", help="숫자=취업률(%) / 개설예정·진행중·미실시·수료자없음"),
+                    '3개월 취업률(%)': st.column_config.TextColumn("3개월 취업률(%)", help="숫자=취업률(%) / 개설예정·진행중·미실시·수료자없음"),
+                    '6개월 취업률(%)': st.column_config.TextColumn("6개월 취업률(%)", help="숫자=취업률(%) / 개설예정·진행중·미실시·수료자없음"),
                 }
             )
 
