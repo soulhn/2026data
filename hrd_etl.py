@@ -132,10 +132,18 @@ def run_etl():
         end_date = course.get('trEndDt', '9999-12-31')
 
         # 종료 후 7개월 초과: 취업률 확정 → API 호출 전체 스킵
+        # 단, '수강중' 상태 훈련생이 남아있으면 명부 업데이트 1회 더 실행
         if end_date < full_skip_cutoff:
-            print(f"   {trpr_degr}회차: 종료 7개월 초과({end_date}). API 호출 전체 스킵.")
-            conn.commit()
-            continue
+            cursor.execute(adapt_query(
+                "SELECT COUNT(*) FROM TB_TRAINEE_INFO WHERE TRPR_ID=? AND TRPR_DEGR=? AND TRNEE_STATUS='수강중'"
+            ), (trpr_id, trpr_degr))
+            row = cursor.fetchone()
+            still_active = (row[0] if row else 0) > 0
+            if not still_active:
+                print(f"   {trpr_degr}회차: 종료 7개월 초과({end_date}). API 호출 전체 스킵.")
+                conn.commit()
+                continue
+            print(f"   {trpr_degr}회차: 종료 7개월 초과({end_date})이나 미확정 훈련생 있음 → 명부 업데이트 진행.")
 
         cursor.execute(adapt_query("SELECT 1 FROM TB_ATTENDANCE_LOG WHERE TRPR_ID=? AND TRPR_DEGR=? LIMIT 1"), (trpr_id, trpr_degr))
         is_data_exists = cursor.fetchone() is not None
