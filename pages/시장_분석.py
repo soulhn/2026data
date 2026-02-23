@@ -173,7 +173,9 @@ def load_kpi_data(where, params):
                AVG(CASE WHEN TOT_TRCO > 0 THEN TOT_TRCO END) as AVG_TRCO,
                AVG(TOT_FXNUM) as AVG_FXNUM,
                AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as AVG_EMPL,
-               AVG(CASE WHEN STDG_SCOR > 0 THEN STDG_SCOR END) as AVG_SCORE
+               AVG(CASE WHEN STDG_SCOR > 0 THEN STDG_SCOR END) as AVG_SCORE,
+               AVG(CASE WHEN TOT_FXNUM > 0
+                   THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as AVG_RECRUIT
         FROM TB_MARKET_TREND {where}
     """, params=params)
 
@@ -702,11 +704,8 @@ if not kpi_df.empty:
     mean_fxnum = 0 if pd.isna(mean_fxnum) else mean_fxnum
     c3.metric("평균 정원", f"{int(mean_fxnum)}명")
 
-    avg_empl = kpi_df['AVG_EMPL'].iloc[0]
-    if pd.isna(avg_empl):
-        c4.metric("평균 취업률", "미제공", help="선택된 훈련 유형은 HRD-Net에서 취업률을 제공하지 않습니다.")
-    else:
-        c4.metric("평균 취업률", f"{avg_empl:.1f}%")
+    avg_recruit = kpi_df['AVG_RECRUIT'].iloc[0]
+    c4.metric("평균 모집률", f"{avg_recruit:.1f}%" if pd.notna(avg_recruit) else "-")
 
     avg_score = kpi_df['AVG_SCORE'].iloc[0]
     if pd.notna(avg_score) and avg_score > 0:
@@ -785,16 +784,6 @@ tabs = st.tabs([
 # [Tab 0] 📊 시장 개요 & 추이  (구 시장 개요 + 시계열 & 경쟁 통합)
 # ─────────────────────────────────────────
 with tabs[0]:
-    # ── KPI ──
-    kpi_data = _kpi_pre
-    if not kpi_data.empty:
-        row = kpi_data.iloc[0]
-        k1, k2, k3 = st.columns(3)
-        k1.metric("총 과정수", f"{int(row['총과정수']):,}개")
-        k2.metric("평균 모집률", f"{row['평균모집률']:.1f}%" if pd.notna(row['평균모집률']) else "-")
-        k3.metric("평균 훈련비", f"{int(row['평균훈련비'])//10000:,}만원" if pd.notna(row['평균훈련비']) else "-")
-    st.divider()
-
     # ── 월별 개설 추이 + 증감률 ──
     st.subheader("신규 과정 개설 추이")
     monthly_count = load_monthly_counts(where, params)
