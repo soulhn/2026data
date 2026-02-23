@@ -98,15 +98,16 @@ def render_dashboard():
     avg_completion = df_ended['수료율'].mean()
     avg_att = att_stats['ATT_RATE'].mean() if not att_stats.empty else 0.0
 
-    total_rev = int((att_stats['PRESENT_DAYS'] * DAILY_TRAINING_FEE).sum()) if not att_stats.empty else 0
-    rev_str = f"{total_rev // 100_000_000}억+" if total_rev > 0 else "-"
+    from utils import get_hrd_cache
+    _cached_rev = get_hrd_cache("hrd_total_revenue")
+    rev_str = f"{int(_cached_rev) // 100_000_000}억+" if _cached_rev else "-"
 
     st.subheader("📊 핵심 성과 지표")
     st.caption("종료된 전체 기수 기준 평균값입니다.")
     kpi1, kpi2, kpi3, kpi4, kpi5, kpi6, kpi7 = st.columns(7)
     kpi1.metric("총 운영 과정", f"{total_courses}개", delta=f"진행중 {active_courses}개")
     kpi2.metric("누적 수강생", f"{total_trainees:,}명")
-    kpi3.metric("누적 훈련비 매출", rev_str, help="출석+지각 일수 × 일 훈련비 단가 기준 (근사치)")
+    kpi3.metric("누적 훈련비 매출", rev_str, help="ETL 실행 시 실제 청구 로직으로 계산 (미실행 시 '-' 표시)")
     kpi4.metric("평균 출석률", f"{avg_att:.1f}%", help="출석+지각 / 전체 출결일 (종료 기수)")
     kpi5.metric("평균 수료율", f"{avg_completion:.1f}%", help="수료인원 / 수강인원 기준")
     kpi6.metric("평균 취업률(3개월)", f"{avg_rate_3:.1f}%" if pd.notna(
