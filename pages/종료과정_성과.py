@@ -690,7 +690,7 @@ with tab_all:
     if not all_attend.empty:
         all_attend['기수'] = all_attend['TRPR_DEGR'].astype(str) + '회차'
         total_per = all_attend.groupby('기수')['CNT'].sum().reset_index(name='총건수')
-        attend_per = all_attend[all_attend['ATEND_STATUS'] == '출석'][['기수', 'CNT']].copy()
+        attend_per = all_attend[all_attend['ATEND_STATUS'].isin(['출석', '지각'])].groupby('기수')['CNT'].sum().reset_index()
         attend_per.columns = ['기수', '출석건수']
         absent_total_df = all_attend[all_attend['ATEND_STATUS'] == '결석'][['기수', 'CNT']].copy()
         absent_total_df.columns = ['기수', '결석건수']
