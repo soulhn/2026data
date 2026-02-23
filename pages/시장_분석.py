@@ -844,6 +844,10 @@ with tabs[0]:
         avg_r = region_opp['평균모집률'].mean()
         med_c = region_opp['과정수'].median()
         med_r = region_opp['평균모집률'].median()
+        st.caption(
+            f"📊 모집률 — 평균: **{avg_r:.1f}%** | 중앙값: **{med_r:.1f}%** &nbsp;&nbsp;|&nbsp;&nbsp;"
+            f"🏫 과정수 — 평균: **{avg_c:.0f}개** | 중앙값: **{med_c:.0f}개**"
+        )
         # 모집률 내림차순 정렬 → 두 차트 공통 y축 순서
         region_opp = region_opp.sort_values('평균모집률', ascending=True)
         region_opp['기회'] = (region_opp['과정수'] < avg_c) & (region_opp['평균모집률'] > avg_r)
@@ -860,9 +864,9 @@ with tabs[0]:
                 text=region_opp['평균모집률'].round(1).astype(str) + '%',
                 textposition='outside',
             ))
-            fig_recruit.add_vline(x=avg_r, line_dash="dash", line_color="#7f8c8d", opacity=0.8,
+            fig_recruit.add_vline(x=avg_r, line_dash="dash", line_color="#e74c3c", opacity=0.8,
                                   annotation_text=f"평균 {avg_r:.1f}%", annotation_position="top right")
-            fig_recruit.add_vline(x=med_r, line_dash="dot", line_color="#2980b9", opacity=0.8,
+            fig_recruit.add_vline(x=med_r, line_dash="dot", line_color="#f1c40f", opacity=0.9,
                                   annotation_text=f"중앙값 {med_r:.1f}%", annotation_position="bottom right")
             fig_recruit.update_layout(
                 title='모집률 (%) — 높을수록 수요 ↑',
@@ -882,9 +886,9 @@ with tabs[0]:
                 text=region_opp['과정수'].astype(int).astype(str) + '개',
                 textposition='outside',
             ))
-            fig_supply.add_vline(x=avg_c, line_dash="dash", line_color="#7f8c8d", opacity=0.8,
+            fig_supply.add_vline(x=avg_c, line_dash="dash", line_color="#e74c3c", opacity=0.8,
                                  annotation_text=f"평균 {avg_c:.0f}개", annotation_position="top right")
-            fig_supply.add_vline(x=med_c, line_dash="dot", line_color="#2980b9", opacity=0.8,
+            fig_supply.add_vline(x=med_c, line_dash="dot", line_color="#f1c40f", opacity=0.9,
                                  annotation_text=f"중앙값 {med_c:.0f}개", annotation_position="bottom right")
             fig_supply.update_layout(
                 title='과정수 (개) — 적을수록 공급 ↓',
