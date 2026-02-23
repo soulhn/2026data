@@ -777,232 +777,31 @@ if not names_df_shared.empty and top_words_shared:
 
 # 3.2 탭 구성
 tabs = st.tabs([
-    "📊 시장 개요", "🏆 순위 & 모집",
-    "🎨 유형 & 일정", "📈 시계열 & 경쟁",
+    "📊 시장 개요 & 추이", "🏆 순위 & 유형",
     "☁️ 키워드 분석", "🔭 사업기회 발굴", "📑 데이터 조회"
 ])
 
 # ─────────────────────────────────────────
-# [Tab 0] 📊 시장 개요
+# [Tab 0] 📊 시장 개요 & 추이  (구 시장 개요 + 시계열 & 경쟁 통합)
 # ─────────────────────────────────────────
 with tabs[0]:
-    kpi_data = _kpi_pre  # 이미 위에서 로드함
+    # ── KPI ──
+    kpi_data = _kpi_pre
     if not kpi_data.empty:
         row = kpi_data.iloc[0]
         k1, k2, k3 = st.columns(3)
         k1.metric("총 과정수", f"{int(row['총과정수']):,}개")
         k2.metric("평균 모집률", f"{row['평균모집률']:.1f}%" if pd.notna(row['평균모집률']) else "-")
         k3.metric("평균 훈련비", f"{int(row['평균훈련비'])//10000:,}만원" if pd.notna(row['평균훈련비']) else "-")
-        st.divider()
-    col1, col2 = st.columns([3, 2])
-    with col1:
-        st.subheader("월별 개설 추이")
-        trend = load_monthly_counts(where, params)
-        if not trend.empty:
-            trend['YEAR_MONTH'] = pd.to_datetime(trend['YEAR_MONTH'], format='%Y-%m', errors='coerce')
-            trend = trend.dropna(subset=['YEAR_MONTH'])
-            full_range = pd.date_range(trend['YEAR_MONTH'].min(), trend['YEAR_MONTH'].max(), freq='MS')
-            trend = trend.set_index('YEAR_MONTH').reindex(full_range, fill_value=0).reset_index()
-            trend.columns = ['YEAR_MONTH', 'COUNT']
-            fig_trend = go.Figure()
-            fig_trend.add_trace(go.Scatter(
-                x=trend['YEAR_MONTH'], y=trend['COUNT'],
-                mode='lines+markers',
-                fill='tozeroy',
-                fillcolor='rgba(49,130,189,0.15)',
-                line=dict(color='#3182bd', width=2),
-                marker=dict(size=5),
-                name='개설수',
-            ))
-            fig_trend.update_layout(
-                xaxis_title='월', yaxis_title='개설 수',
-                hovermode='x unified', height=320, margin=dict(t=20, b=40),
-            )
-            st.plotly_chart(fig_trend, use_container_width=True)
-    with col2:
-        st.subheader("지역별 개설 수")
-        reg_cnt = load_region_counts(where, params)
-        if not reg_cnt.empty:
-            fig_reg_bar = px.bar(
-                reg_cnt.head(15).sort_values('개수'),
-                x='개수', y='지역', orientation='h',
-                color_discrete_sequence=['#5dade2'],
-            )
-            fig_reg_bar.update_layout(height=320, margin=dict(t=10, b=30), xaxis_title='개설 수', yaxis_title='')
-            st.plotly_chart(fig_reg_bar, use_container_width=True)
-
-# ─────────────────────────────────────────
-# [Tab 1] 🏆 순위 & 모집
-# ─────────────────────────────────────────
-with tabs[1]:
-    st.subheader("🔎 내 기관/과정의 시장 위치 찾기")
-
-    # 1. 기관별 집계
-    raw_inst = load_inst_stats(where, params)
-    if not raw_inst.empty:
-        raw_inst['평균모집률'] = (raw_inst['REG_COURSE_MAN'] / raw_inst['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
-        raw_inst['만족도(점)'] = (raw_inst['AVG_SCORE'] / 100).round(1)
-        raw_inst = raw_inst.sort_values(by='REG_COURSE_MAN', ascending=False).reset_index(drop=True)
-        raw_inst['순위'] = raw_inst.index + 1
-        inst_stats = raw_inst.rename(columns={
-            'TRAINST_NM': '기관명', 'TRPR_CNT': '개설수',
-            'TOT_FXNUM': '총모집정원', 'REG_COURSE_MAN': '총신청인원', 'AVG_EMPL': '평균취업률'
-        })
-
-    # 2. 과정별 집계
-    raw_course = load_course_agg(where, params)
-    if not raw_course.empty:
-        raw_course['통합모집률'] = (raw_course['REG_COURSE_MAN'] / raw_course['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
-        raw_course['만족도(점)'] = (raw_course['AVG_SCORE'] / 100).round(1)
-        raw_course = raw_course.sort_values(by='REG_COURSE_MAN', ascending=False).reset_index(drop=True)
-        raw_course['순위'] = raw_course.index + 1
-        course_agg = raw_course.rename(columns={
-            'TRPR_NM': '과정명', 'TRAINST_NM': '기관명', 'TRPR_CNT': '개설회차',
-            'TOT_FXNUM': '총정원', 'REG_COURSE_MAN': '총신청인원', 'AVG_EMPL': '평균취업률'
-        })
-
-    col_rank1, col_rank2 = st.columns(2)
-
-    with col_rank1:
-        if not raw_inst.empty:
-            render_ranking_table(
-                inst_stats,
-                display_cols=['순위', '기관명', '총모집정원', '총신청인원', '평균모집률', '만족도(점)'],
-                format_dict={"총모집정원": "{:,}명", "총신청인원": "{:,}명", "평균모집률": "{:.1f}%", "만족도(점)": "{:.1f}점"},
-                search_col='기관명', search_label="기관명 검색",
-                search_placeholder="기관명 입력", top_n=5,
-                title="🏫 훈련기관 순위 (총 신청인원 기준)",
-                expander_title="📋 전체 훈련기관 순위표 펼치기", st_key="rank_inst",
-            )
-
-    with col_rank2:
-        if not raw_course.empty:
-            render_ranking_table(
-                course_agg,
-                display_cols=['순위', '과정명', '기관명', '개설회차', '총정원', '총신청인원', '통합모집률', '만족도(점)'],
-                format_dict={"총정원": "{:,}명", "총신청인원": "{:,}명", "통합모집률": "{:.1f}%", "개설회차": "{:,}회", "만족도(점)": "{:.1f}점"},
-                search_col='과정명', search_label="과정명 검색",
-                search_placeholder="과정명 입력 (예: 한화시스템)", top_n=5,
-                title="📚 인기 훈련과정 (과정 통합/신청인원 기준)",
-                expander_title="📋 전체 과정 순위표 펼치기", st_key="rank_course",
-            )
-
     st.divider()
 
-    # 모집률 분석
-    st.subheader("📊 시장 전체 모집률 & 커리큘럼 분석")
-
-    row2_1, row2_2 = st.columns(2)
-
-    with row2_1:
-        st.markdown("**1️⃣ 훈련 유형(사업)별 모집 현황**")
-        type_data = load_type_agg(where, params)
-        if not type_data.empty:
-            type_data['평균모집률'] = (type_data['REG_COURSE_MAN'] / type_data['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
-            type_data = type_data.rename(columns={'TRAIN_TARGET': '훈련유형', 'CNT': '개설수', 'TOT_FXNUM': '총모집정원', 'REG_COURSE_MAN': '총신청인원'})
-            type_data = type_data.sort_values('평균모집률', ascending=False)
-            fig = px.bar(type_data, x='훈련유형', y='평균모집률', color='평균모집률', text_auto='.1f', title="유형별 모집률(%)")
-            st.plotly_chart(fig, use_container_width=True)
-            with st.expander("📄 상세 데이터 보기", expanded=True):
-                st.dataframe(type_data, use_container_width=True, hide_index=True, column_config={
-                    "총모집정원": st.column_config.NumberColumn(format="%d명"),
-                    "총신청인원": st.column_config.NumberColumn(format="%d명"),
-                    "평균모집률": st.column_config.NumberColumn(format="%.1f%%"),
-                })
-
-    with row2_2:
-        st.markdown("**2️⃣ 인기 NCS(기술)별 모집 현황**")
-        ncs_data = load_ncs_agg(where, params, min_courses=NCS_MIN_COURSES if total_count >= 100 else 1)
-        if not ncs_data.empty:
-            ncs_data['평균모집률'] = (ncs_data['REG_COURSE_MAN'] / ncs_data['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
-            ncs_top = ncs_data.head(10).rename(columns={'NCS_CD': 'NCS코드', 'CNT': '개설수', 'TOT_FXNUM': '총모집정원', 'REG_COURSE_MAN': '총신청인원'})
-            ncs_top = ncs_top.sort_values('평균모집률', ascending=False)
-            fig = px.bar(ncs_top, x='NCS코드', y='평균모집률', color='평균모집률', text_auto='.1f', title="모집률 Top 10 커리큘럼")
-            st.plotly_chart(fig, use_container_width=True)
-            with st.expander("📄 상세 데이터 보기", expanded=True):
-                st.dataframe(ncs_top, use_container_width=True, hide_index=True, column_config={
-                    "총모집정원": st.column_config.NumberColumn(format="%d명"),
-                    "총신청인원": st.column_config.NumberColumn(format="%d명"),
-                    "평균모집률": st.column_config.NumberColumn(format="%.1f%%"),
-                })
-
-# ─────────────────────────────────────────
-# [Tab 2] 🎨 유형 & 일정
-# ─────────────────────────────────────────
-with tabs[2]:
-    type_wk = load_type_counts(where, params)
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("🎓 훈련 유형별 개설 수")
-        if not type_wk.empty:
-            type_cnt = type_wk.groupby('TRAIN_TARGET')['CNT'].sum().reset_index()
-            type_cnt.columns = ['유형', '개수']
-            type_cnt = type_cnt.sort_values('개수')
-            fig_type = px.bar(type_cnt, x='개수', y='유형', orientation='h',
-                              color='개수', color_continuous_scale='Blues',
-                              labels={'개수': '개설 수', '유형': ''})
-            fig_type.update_layout(height=300, margin=dict(t=10, b=30), coloraxis_showscale=False)
-            st.plotly_chart(fig_type, use_container_width=True)
-    with c2:
-        st.subheader("📅 주말 vs 주중 개설 현황")
-        if not type_wk.empty:
-            wk_cnt = type_wk.groupby('WKEND_SE')['CNT'].sum().reset_index()
-            wk_cnt['구분'] = wk_cnt['WKEND_SE'].astype(str).map(WK_MAP).fillna('기타')
-            st.plotly_chart(px.bar(wk_cnt, x='구분', y='CNT', color='구분', text='CNT',
-                                   title="직장인 타겟(주말) 과정 수", labels={'CNT': '개수'}), use_container_width=True)
-
-    st.divider()
-    st.subheader("📊 유형별 평균 모집률")
-    st.caption("모집률 데이터가 있는 과정만 집계됩니다.")
-    if not type_perf_data.empty:
-        fig_fill = px.bar(
-            type_perf_data.dropna(subset=['평균모집률']).sort_values('평균모집률'),
-            x='평균모집률', y='유형', orientation='h',
-            color='평균모집률', color_continuous_scale='Blues',
-            text='평균모집률', labels={'평균모집률': '평균 모집률 (%)'},
-        )
-        fig_fill.update_traces(texttemplate='%{x:.1f}%', textposition='outside')
-        fig_fill.update_layout(height=320, margin=dict(t=10, b=30), coloraxis_showscale=False, title='유형별 평균 모집률')
-        st.plotly_chart(fig_fill, use_container_width=True)
-
-# ─────────────────────────────────────────
-# [Tab 3] 📈 시계열 & 경쟁
-# ─────────────────────────────────────────
-with tabs[3]:
-    # §1: 월별 훈련비 추이
-    st.subheader("월별 훈련비 추이")
-    trco_raw = load_monthly_trco_stats(where, params)
-    if not trco_raw.empty:
-        trco_raw['TOT_TRCO'] = pd.to_numeric(trco_raw['TOT_TRCO'], errors='coerce')
-        monthly_trco = trco_raw.groupby('YEAR_MONTH')['TOT_TRCO'].agg(['median', lambda x: x.quantile(0.25), lambda x: x.quantile(0.75)]).reset_index()
-        monthly_trco.columns = ['월', '중앙값', 'Q1', 'Q3']
-        monthly_trco = monthly_trco.sort_values('월')
-
-        monthly_trco['월'] = pd.to_datetime(monthly_trco['월'], format='%Y-%m', errors='coerce')
-        monthly_trco = monthly_trco.dropna(subset=['월'])
-        full_range_trco = pd.date_range(monthly_trco['월'].min(), monthly_trco['월'].max(), freq='MS')
-        monthly_trco = monthly_trco.set_index('월').reindex(full_range_trco).reset_index()
-        monthly_trco.columns = ['월', '중앙값', 'Q1', 'Q3']
-
-        fig_trco = go.Figure()
-        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['Q3'], mode='lines', name='75%', line=dict(width=0), showlegend=False, connectgaps=False))
-        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['Q1'], mode='lines', name='25~75% 범위', fill='tonexty', fillcolor='rgba(68,114,196,0.2)', line=dict(width=0), connectgaps=False))
-        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['중앙값'], mode='lines+markers', name='중앙값', line=dict(color='#4472C4', width=3), connectgaps=False))
-        fig_trco.update_layout(xaxis_title='월', yaxis_title='훈련비(원)', title='월별 훈련비 분포 (중앙값 + 사분위)')
-        st.plotly_chart(fig_trco, use_container_width=True)
-    else:
-        st.info("훈련비 데이터가 없습니다.")
-
-    st.divider()
-
-    # §2: 신규 과정 개설 수 증감률
-    st.subheader("신규 과정 개설 추이 및 증감률")
+    # ── 월별 개설 추이 + 증감률 ──
+    st.subheader("신규 과정 개설 추이")
     monthly_count = load_monthly_counts(where, params)
     if not monthly_count.empty:
         monthly_count = monthly_count.rename(columns={'COUNT': '개설수'})
         monthly_count = monthly_count.sort_values('YEAR_MONTH')
         monthly_count['전월대비(%)'] = monthly_count['개설수'].pct_change() * 100
-
         col_trend1, col_trend2 = st.columns(2)
         with col_trend1:
             fig_cnt = px.bar(monthly_count, x='YEAR_MONTH', y='개설수', text_auto=True, title='월별 신규 과정 개설 수')
@@ -1011,33 +810,81 @@ with tabs[3]:
             fig_chg = px.bar(monthly_count.dropna(subset=['전월대비(%)']), x='YEAR_MONTH', y='전월대비(%)',
                              color='전월대비(%)', color_continuous_scale='RdYlGn', text_auto='.1f', title='전월 대비 증감률(%)')
             st.plotly_chart(fig_chg, use_container_width=True)
-
     st.divider()
 
-    # §3: 지역별 Top 5 개설 추이
-    st.subheader("지역별 Top 5 과정 개설 추이")
-    top5_reg = load_region_counts(where, params)
-    if not top5_reg.empty:
-        top5_regions = top5_reg.head(5)['지역'].tolist()
-        region_trend = load_monthly_region_trend(where, params, top5_regions)
-        if not region_trend.empty:
-            region_trend['YEAR_MONTH'] = pd.to_datetime(region_trend['YEAR_MONTH'], format='%Y-%m', errors='coerce')
-            region_trend = region_trend.dropna(subset=['YEAR_MONTH'])
-            all_months = pd.date_range(region_trend['YEAR_MONTH'].min(), region_trend['YEAR_MONTH'].max(), freq='MS')
-            regions_list = region_trend['REGION'].unique()
-            idx_full = pd.MultiIndex.from_product([all_months, regions_list], names=['YEAR_MONTH', 'REGION'])
-            region_trend = region_trend.set_index(['YEAR_MONTH', 'REGION']).reindex(idx_full, fill_value=0).reset_index()
-            fig_reg = px.line(
-                region_trend, x='YEAR_MONTH', y='개설수', color='REGION',
-                markers=True, title='상위 5개 지역 월별 개설 추이',
+    # ── 월별 훈련비 추이 ──
+    st.subheader("월별 훈련비 추이")
+    trco_raw = load_monthly_trco_stats(where, params)
+    if not trco_raw.empty:
+        trco_raw['TOT_TRCO'] = pd.to_numeric(trco_raw['TOT_TRCO'], errors='coerce')
+        monthly_trco = trco_raw.groupby('YEAR_MONTH')['TOT_TRCO'].agg(['median', lambda x: x.quantile(0.25), lambda x: x.quantile(0.75)]).reset_index()
+        monthly_trco.columns = ['월', '중앙값', 'Q1', 'Q3']
+        monthly_trco = monthly_trco.sort_values('월')
+        monthly_trco['월'] = pd.to_datetime(monthly_trco['월'], format='%Y-%m', errors='coerce')
+        monthly_trco = monthly_trco.dropna(subset=['월'])
+        full_range_trco = pd.date_range(monthly_trco['월'].min(), monthly_trco['월'].max(), freq='MS')
+        monthly_trco = monthly_trco.set_index('월').reindex(full_range_trco).reset_index()
+        monthly_trco.columns = ['월', '중앙값', 'Q1', 'Q3']
+        fig_trco = go.Figure()
+        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['Q3'], mode='lines', name='75%', line=dict(width=0), showlegend=False, connectgaps=False))
+        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['Q1'], mode='lines', name='25~75% 범위', fill='tonexty', fillcolor='rgba(68,114,196,0.2)', line=dict(width=0), connectgaps=False))
+        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['중앙값'], mode='lines+markers', name='중앙값', line=dict(color='#4472C4', width=3), connectgaps=False))
+        fig_trco.update_layout(xaxis_title='월', yaxis_title='훈련비(원)', title='월별 훈련비 분포 (중앙값 + 사분위)')
+        st.plotly_chart(fig_trco, use_container_width=True)
+    else:
+        st.info("훈련비 데이터가 없습니다.")
+    st.divider()
+
+    # ── 지역별: 바차트 + Top5 시계열 ──
+    st.subheader("지역별 개설 현황")
+    reg_cnt = load_region_counts(where, params)
+    col_r1, col_r2 = st.columns([2, 3])
+    with col_r1:
+        if not reg_cnt.empty:
+            fig_reg_bar = px.bar(
+                reg_cnt.head(15).sort_values('개수'),
+                x='개수', y='지역', orientation='h',
+                color_discrete_sequence=['#5dade2'],
+                title='지역별 개설 수',
             )
-            fig_reg.update_traces(mode='lines+markers', marker=dict(size=5))
-            fig_reg.update_layout(hovermode='x unified', height=380)
-            st.plotly_chart(fig_reg, use_container_width=True)
-
+            fig_reg_bar.update_layout(height=380, margin=dict(t=40, b=30), xaxis_title='개설 수', yaxis_title='')
+            st.plotly_chart(fig_reg_bar, use_container_width=True)
+    with col_r2:
+        if not reg_cnt.empty:
+            top5_regions = reg_cnt.head(5)['지역'].tolist()
+            region_trend = load_monthly_region_trend(where, params, top5_regions)
+            if not region_trend.empty:
+                region_trend['YEAR_MONTH'] = pd.to_datetime(region_trend['YEAR_MONTH'], format='%Y-%m', errors='coerce')
+                region_trend = region_trend.dropna(subset=['YEAR_MONTH'])
+                all_months = pd.date_range(region_trend['YEAR_MONTH'].min(), region_trend['YEAR_MONTH'].max(), freq='MS')
+                regions_list = region_trend['REGION'].unique()
+                idx_full = pd.MultiIndex.from_product([all_months, regions_list], names=['YEAR_MONTH', 'REGION'])
+                region_trend = region_trend.set_index(['YEAR_MONTH', 'REGION']).reindex(idx_full, fill_value=0).reset_index()
+                fig_reg = px.line(
+                    region_trend, x='YEAR_MONTH', y='개설수', color='REGION',
+                    markers=True, title='상위 5개 지역 월별 개설 추이',
+                )
+                fig_reg.update_traces(mode='lines+markers', marker=dict(size=5))
+                fig_reg.update_layout(hovermode='x unified', height=380)
+                st.plotly_chart(fig_reg, use_container_width=True)
     st.divider()
 
-    # §4: 경쟁 심화도 (old Tab7)
+    # ── 모집률 변화 추세 ──
+    st.subheader("모집률 변화 추세")
+    recruit_trend = load_monthly_recruit(where, params)
+    if len(recruit_trend) >= 3:
+        recruit_trend = recruit_trend.sort_values('YEAR_MONTH')
+        recent_3 = recruit_trend.tail(3)['모집률'].values
+        if recent_3[-1] < recent_3[0]:
+            st.error(f"최근 3개월 모집률 하락 추세 감지: {recent_3[0]:.1f}% → {recent_3[-1]:.1f}%")
+        else:
+            st.success(f"최근 3개월 모집률 안정/상승: {recent_3[0]:.1f}% → {recent_3[-1]:.1f}%")
+        fig_rec_trend = px.line(recruit_trend, x='YEAR_MONTH', y='모집률', markers=True, title='월별 평균 모집률 추이')
+        fig_rec_trend.update_xaxes(type='category')
+        st.plotly_chart(fig_rec_trend, use_container_width=True)
+    st.divider()
+
+    # ── 경쟁 심화도 ──
     st.subheader("⚔️ 경쟁 심화도 분석")
     if internal_df is None:
         st.info("HANWHA_COURSE_ID가 설정되지 않았습니다. 시장 전체 경쟁 분석만 표시합니다.")
@@ -1054,7 +901,6 @@ with tabs[3]:
         else:
             our_ncs_codes_comp = []
 
-    # 우리 NCS 코드 경쟁 과정 수 시계열
     if our_ncs_codes_comp:
         st.subheader("우리 NCS 분야 경쟁 과정 수 추이")
         comp_monthly = load_competition_monthly(where, params, our_ncs_codes_comp)
@@ -1065,7 +911,6 @@ with tabs[3]:
             st.plotly_chart(fig_comp, use_container_width=True)
         st.divider()
 
-    # 공급-수요 매트릭스
     st.subheader("NCS별 공급-수요 매트릭스")
     st.caption("과정수(공급) vs 모집률(수요) - 우측 하단은 과잉공급 위험 영역")
     ncs_supply = load_ncs_agg(where, params, min_courses=3)
@@ -1086,33 +931,14 @@ with tabs[3]:
         fig_matrix.update_traces(textposition='top center')
         fig_matrix.update_layout(showlegend=True)
         st.plotly_chart(fig_matrix, use_container_width=True)
-
-        # 과잉공급 경고
         oversupply = ncs_supply[(ncs_supply['과정수'] > avg_count) & (ncs_supply['평균모집률'] < avg_recruit)]
         if not oversupply.empty:
             st.warning(f"과잉공급 위험 NCS ({len(oversupply)}개): {', '.join(oversupply['NCS_CD'].tolist())}")
     else:
         st.info("분석할 NCS 데이터가 부족합니다.")
-
     st.divider()
 
-    # 모집률 하락 추세 경고
-    st.subheader("모집률 변화 추세")
-    recruit_trend = load_monthly_recruit(where, params)
-    if len(recruit_trend) >= 3:
-        recruit_trend = recruit_trend.sort_values('YEAR_MONTH')
-        recent_3 = recruit_trend.tail(3)['모집률'].values
-        if recent_3[-1] < recent_3[0]:
-            st.error(f"최근 3개월 모집률 하락 추세 감지: {recent_3[0]:.1f}% → {recent_3[-1]:.1f}%")
-        else:
-            st.success(f"최근 3개월 모집률 안정/상승: {recent_3[0]:.1f}% → {recent_3[-1]:.1f}%")
-        fig_rec_trend = px.line(recruit_trend, x='YEAR_MONTH', y='모집률', markers=True, title='월별 평균 모집률 추이')
-        fig_rec_trend.update_xaxes(type='category')
-        st.plotly_chart(fig_rec_trend, use_container_width=True)
-
-    st.divider()
-
-    # §5: 기관 경쟁력 매트릭스 (old Tab9)
+    # ── 기관 경쟁력 매트릭스 ──
     st.subheader("🏢 훈련기관 경쟁력 매트릭스")
     st.caption("버블 크기: 개설 과정 수 | X축: 평균 모집률 | Y축: 평균 취업률. 우측 상단이 고성과·고수요 기관입니다.")
     inst_all = load_inst_stats(where, params)
@@ -1121,7 +947,6 @@ with tabs[3]:
         inst_all['AVG_EMPL'] = pd.to_numeric(inst_all['AVG_EMPL'], errors='coerce').fillna(0)
         inst_plot = inst_all[inst_all['AVG_EMPL'] > 0].copy()
         inst_plot = inst_plot.rename(columns={'TRAINST_NM': '기관명', 'TRPR_CNT': '개설수', 'AVG_EMPL': '평균취업률'})
-        # 상위 50개만 표시 (너무 많으면 느림)
         inst_plot = inst_plot.nlargest(50, '개설수')
         if not inst_plot.empty:
             fig_scatter_inst = px.scatter(
@@ -1130,7 +955,6 @@ with tabs[3]:
                 color='평균취업률', color_continuous_scale='RdYlGn',
                 labels={'평균모집률': '평균 모집률 (%)', '평균취업률': '평균 취업률 (%)'},
             )
-            # 사분면 기준선 (중앙값)
             med_fill_inst = inst_plot['평균모집률'].median()
             med_empl_inst = inst_plot['평균취업률'].median()
             fig_scatter_inst.add_hline(y=med_empl_inst, line_dash='dash', line_color='gray', line_width=1)
@@ -1147,7 +971,6 @@ with tabs[3]:
                         '평균취업률': st.column_config.NumberColumn(format="%.1f%%"),
                     })
         elif no_empl_data:
-            # 취업률 미제공 유형: 만족도-모집률 기준 대체 차트
             st.info("ℹ️ 선택된 훈련 유형은 취업률 데이터가 없습니다. 대신 만족도-모집률 기준으로 기관 경쟁력을 분석합니다.")
             inst_all['평균만족도'] = (pd.to_numeric(inst_all['AVG_SCORE'], errors='coerce').fillna(0) / 100).round(1)
             inst_alt = inst_all[inst_all['평균만족도'] > 0].rename(columns={'TRAINST_NM': '기관명', 'TRPR_CNT': '개설수'})
@@ -1172,10 +995,116 @@ with tabs[3]:
         st.info("기관 분석 데이터가 없습니다.")
 
 # ─────────────────────────────────────────
+# [Tab 1] 🏆 순위 & 유형  (구 순위 & 모집 + 유형 & 일정 통합)
 # ─────────────────────────────────────────
-# [Tab 4] ☁️ 키워드 분석
+with tabs[1]:
+    st.subheader("🔎 내 기관/과정의 시장 위치 찾기")
+
+    raw_inst = load_inst_stats(where, params)
+    if not raw_inst.empty:
+        raw_inst['평균모집률'] = (raw_inst['REG_COURSE_MAN'] / raw_inst['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
+        raw_inst['만족도(점)'] = (raw_inst['AVG_SCORE'] / 100).round(1)
+        raw_inst = raw_inst.sort_values(by='REG_COURSE_MAN', ascending=False).reset_index(drop=True)
+        raw_inst['순위'] = raw_inst.index + 1
+        inst_stats = raw_inst.rename(columns={
+            'TRAINST_NM': '기관명', 'TRPR_CNT': '개설수',
+            'TOT_FXNUM': '총모집정원', 'REG_COURSE_MAN': '총신청인원', 'AVG_EMPL': '평균취업률'
+        })
+
+    raw_course = load_course_agg(where, params)
+    if not raw_course.empty:
+        raw_course['통합모집률'] = (raw_course['REG_COURSE_MAN'] / raw_course['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
+        raw_course['만족도(점)'] = (raw_course['AVG_SCORE'] / 100).round(1)
+        raw_course = raw_course.sort_values(by='REG_COURSE_MAN', ascending=False).reset_index(drop=True)
+        raw_course['순위'] = raw_course.index + 1
+        course_agg = raw_course.rename(columns={
+            'TRPR_NM': '과정명', 'TRAINST_NM': '기관명', 'TRPR_CNT': '개설회차',
+            'TOT_FXNUM': '총정원', 'REG_COURSE_MAN': '총신청인원', 'AVG_EMPL': '평균취업률'
+        })
+
+    col_rank1, col_rank2 = st.columns(2)
+    with col_rank1:
+        if not raw_inst.empty:
+            render_ranking_table(
+                inst_stats,
+                display_cols=['순위', '기관명', '총모집정원', '총신청인원', '평균모집률', '만족도(점)'],
+                format_dict={"총모집정원": "{:,}명", "총신청인원": "{:,}명", "평균모집률": "{:.1f}%", "만족도(점)": "{:.1f}점"},
+                search_col='기관명', search_label="기관명 검색",
+                search_placeholder="기관명 입력", top_n=5,
+                title="🏫 훈련기관 순위 (총 신청인원 기준)",
+                expander_title="📋 전체 훈련기관 순위표 펼치기", st_key="rank_inst",
+            )
+    with col_rank2:
+        if not raw_course.empty:
+            render_ranking_table(
+                course_agg,
+                display_cols=['순위', '과정명', '기관명', '개설회차', '총정원', '총신청인원', '통합모집률', '만족도(점)'],
+                format_dict={"총정원": "{:,}명", "총신청인원": "{:,}명", "통합모집률": "{:.1f}%", "개설회차": "{:,}회", "만족도(점)": "{:.1f}점"},
+                search_col='과정명', search_label="과정명 검색",
+                search_placeholder="과정명 입력 (예: 한화시스템)", top_n=5,
+                title="📚 인기 훈련과정 (과정 통합/신청인원 기준)",
+                expander_title="📋 전체 과정 순위표 펼치기", st_key="rank_course",
+            )
+    st.divider()
+
+    # ── 훈련 유형별 개설 수 + 주말/주중 ──
+    type_wk = load_type_counts(where, params)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("🎓 훈련 유형별 개설 수")
+        if not type_wk.empty:
+            type_cnt = type_wk.groupby('TRAIN_TARGET')['CNT'].sum().reset_index()
+            type_cnt.columns = ['유형', '개수']
+            type_cnt = type_cnt.sort_values('개수')
+            fig_type = px.bar(type_cnt, x='개수', y='유형', orientation='h',
+                              color='개수', color_continuous_scale='Blues',
+                              labels={'개수': '개설 수', '유형': ''})
+            fig_type.update_layout(height=300, margin=dict(t=10, b=30), coloraxis_showscale=False)
+            st.plotly_chart(fig_type, use_container_width=True)
+    with c2:
+        st.subheader("📅 주말 vs 주중 개설 현황")
+        if not type_wk.empty:
+            wk_cnt = type_wk.groupby('WKEND_SE')['CNT'].sum().reset_index()
+            wk_cnt['구분'] = wk_cnt['WKEND_SE'].astype(str).map(WK_MAP).fillna('기타')
+            st.plotly_chart(px.bar(wk_cnt, x='구분', y='CNT', color='구분', text='CNT',
+                                   title="직장인 타겟(주말) 과정 수", labels={'CNT': '개수'}), use_container_width=True)
+    st.divider()
+
+    # ── 유형별 평균 모집률 ──
+    st.subheader("📊 유형별 평균 모집률")
+    st.caption("모집률 데이터가 있는 과정만 집계됩니다.")
+    if not type_perf_data.empty:
+        fig_fill = px.bar(
+            type_perf_data.dropna(subset=['평균모집률']).sort_values('평균모집률'),
+            x='평균모집률', y='유형', orientation='h',
+            color='평균모집률', color_continuous_scale='Blues',
+            text='평균모집률', labels={'평균모집률': '평균 모집률 (%)'},
+        )
+        fig_fill.update_traces(texttemplate='%{x:.1f}%', textposition='outside')
+        fig_fill.update_layout(height=320, margin=dict(t=10, b=30), coloraxis_showscale=False, title='유형별 평균 모집률')
+        st.plotly_chart(fig_fill, use_container_width=True)
+    st.divider()
+
+    # ── NCS별 모집 현황 ──
+    st.subheader("📊 인기 NCS(기술)별 모집 현황")
+    ncs_data = load_ncs_agg(where, params, min_courses=NCS_MIN_COURSES if total_count >= 100 else 1)
+    if not ncs_data.empty:
+        ncs_data['평균모집률'] = (ncs_data['REG_COURSE_MAN'] / ncs_data['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
+        ncs_top = ncs_data.head(10).rename(columns={'NCS_CD': 'NCS코드', 'CNT': '개설수', 'TOT_FXNUM': '총모집정원', 'REG_COURSE_MAN': '총신청인원'})
+        ncs_top = ncs_top.sort_values('평균모집률', ascending=False)
+        fig = px.bar(ncs_top, x='NCS코드', y='평균모집률', color='평균모집률', text_auto='.1f', title="모집률 Top 10 커리큘럼")
+        st.plotly_chart(fig, use_container_width=True)
+        with st.expander("📄 상세 데이터 보기", expanded=True):
+            st.dataframe(ncs_top, use_container_width=True, hide_index=True, column_config={
+                "총모집정원": st.column_config.NumberColumn(format="%d명"),
+                "총신청인원": st.column_config.NumberColumn(format="%d명"),
+                "평균모집률": st.column_config.NumberColumn(format="%.1f%%"),
+            })
+
 # ─────────────────────────────────────────
-with tabs[4]:
+# [Tab 2] ☁️ 키워드 분석
+# ─────────────────────────────────────────
+with tabs[2]:
     # §1: 키워드 빈도 Top 25
     st.subheader("🔥 과정명 트렌드 키워드 Top 25")
     st.caption("훈련과정명에서 자주 등장하는 키워드 빈도입니다.")
@@ -1220,9 +1149,9 @@ with tabs[4]:
             hide_index=True,
         )
 # ─────────────────────────────────────────
-# [Tab 5] 🔭 사업기회 발굴
+# [Tab 3] 🔭 사업기회 발굴
 # ─────────────────────────────────────────
-with tabs[5]:
+with tabs[3]:
     st.caption("수요(모집률)가 높고 공급(경쟁 과정 수)이 낮은 영역을 찾아 신규 교육사업 진입 기회를 도출합니다.")
 
     # ── 섹션 1: 지역별 수요-공급 갭 ──
@@ -1309,9 +1238,9 @@ with tabs[5]:
 
 
 # ─────────────────────────────────────────
-# [Tab 6] 📑 데이터 조회
+# [Tab 4] 📑 데이터 조회
 # ─────────────────────────────────────────
-with tabs[6]:
+with tabs[4]:
     st.subheader(f"📄 상세 데이터 ({total_count:,}건)")
 
     preview_df = load_data_preview(where, params, limit=1000)
