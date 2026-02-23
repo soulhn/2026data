@@ -1404,18 +1404,6 @@ with tabs[5]:
             orientation='v', x=1.01, y=1, font=dict(size=11)
         ))
         st.plotly_chart(fig_yr, use_container_width=True)
-
-        st.caption("히트맵: 색이 진할수록 해당 연도에 많이 등장한 키워드입니다.")
-        _pivot = kwd_year_df.pivot(index='키워드', columns='연도', values='비율(천건당)').fillna(0)
-        _pivot = _pivot.loc[_pivot.sum(axis=1).sort_values(ascending=False).index]
-        fig_heat = px.imshow(
-            _pivot,
-            color_continuous_scale='Blues',
-            labels=dict(x='연도', y='키워드', color='비율(천건당)'),
-            aspect='auto',
-        )
-        fig_heat.update_layout(height=420, margin=dict(t=10, b=20))
-        st.plotly_chart(fig_heat, use_container_width=True)
     else:
         st.info("연도별 트렌드 분석에 필요한 데이터가 부족합니다 (2개 연도 이상 필요).")
 
