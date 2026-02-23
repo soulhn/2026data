@@ -132,10 +132,11 @@ def run_etl():
         cursor.execute(adapt_query("SELECT 1 FROM TB_ATTENDANCE_LOG WHERE TRPR_ID=? AND TRPR_DEGR=? LIMIT 1"), (trpr_id, trpr_degr))
         is_data_exists = cursor.fetchone() is not None
 
-        if (end_date < update_cutoff_date) and is_data_exists:
-            print(f"   {trpr_degr}회차: 종료된 과정({end_date})이며 DB 데이터 존재함. Skip.")
-            continue  
-            
+        # 종료된 과정은 출결 수집만 스킵 — 명부(TRNEE_STATUS)는 항상 업데이트
+        skip_attendance = (end_date < update_cutoff_date) and is_data_exists
+        if skip_attendance:
+            print(f"   {trpr_degr}회차: 종료된 과정({end_date}). 출결 스킵, 명부 상태 업데이트 진행.")
+
         try:
             res_roster = session.get(BASE_URL_DETAIL, params={
                 "returnType": "JSON", "authKey": API_KEY, "outType": "2",
@@ -179,6 +180,10 @@ def run_etl():
                 print(f"   >> {trpr_degr}회차 명부: {len(trainee_rows)}건 수집 완료")
         except Exception as e:
             print(f"   ⚠️ {trpr_degr}회차 명부 수집 실패: {e}")
+
+        if skip_attendance:
+            conn.commit()
+            continue  # 출결 수집 스킵 (종료 과정 + 데이터 존재)
 
         target_months = get_month_list(course.get('trStaDt'), course.get('trEndDt'))
         print(f"   >> {trpr_degr}회차 출결: {len(target_months)}개월 수집 시작")
