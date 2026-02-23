@@ -743,49 +743,29 @@ else:
     kwd_shared = pd.DataFrame()
     top_words_shared = []
 
-# 키워드별 통합 통계 (빈도 + 취업률 + 트렌드)
-kwd_stats_df = pd.DataFrame()
-kwd_trend_df = pd.DataFrame()
-if not names_df_shared.empty and top_words_shared:
-    names_df_shared['EI_EMPL_RATE_3'] = pd.to_numeric(names_df_shared['EI_EMPL_RATE_3'], errors='coerce')
-    _names_valid = names_df_shared[names_df_shared['EI_EMPL_RATE_3'] > 0].copy()
-    _kwd_stat_rows = []
-    for _w, _cnt in _freq_shared.most_common(30):
-        _empl_vals = _names_valid.loc[
-            _names_valid['TRPR_NM'].str.contains(_w, na=False), 'EI_EMPL_RATE_3'
-        ].dropna()
-        _kwd_stat_rows.append({
-            '키워드': _w, '빈도': _cnt,
-            '평균취업률': round(_empl_vals.mean(), 1) if len(_empl_vals) >= 3 else None,
-            '유효과정수': len(_empl_vals),
-        })
-    kwd_stats_df = pd.DataFrame(_kwd_stat_rows)
-
-    # 트렌드 분석: YEAR_MONTH 기반 최근 vs 이전 기간 비교
-    if 'YEAR_MONTH' in names_df_shared.columns:
-        _all_ym = sorted(names_df_shared['YEAR_MONTH'].dropna().unique())
-        if len(_all_ym) >= 4:
-            _mid_ym = _all_ym[len(_all_ym) // 2]
-            _recent_nm = names_df_shared[names_df_shared['YEAR_MONTH'] >= _mid_ym]['TRPR_NM']
-            _prev_nm   = names_df_shared[names_df_shared['YEAR_MONTH'] <  _mid_ym]['TRPR_NM']
-            _r_words = [w for w in ' '.join(_recent_nm.dropna().astype(str)).split()
-                        if len(w) > 1 and w not in _stops]
-            _p_words = [w for w in ' '.join(_prev_nm.dropna().astype(str)).split()
-                        if len(w) > 1 and w not in _stops]
-            _r_cnt = Counter(_r_words); _p_cnt = Counter(_p_words)
-            _r_tot = max(len(_r_words), 1); _p_tot = max(len(_p_words), 1)
-            _trend_rows = []
-            for _w, _ in (Counter(_r_words) + Counter(_p_words)).most_common(50):
-                _r_rate = _r_cnt.get(_w, 0) / _r_tot * 1000
-                _p_rate = _p_cnt.get(_w, 0) / _p_tot * 1000
-                _trend_rows.append({
-                    '키워드': _w,
-                    '최근 등장': _r_cnt.get(_w, 0),
-                    '이전 등장': _p_cnt.get(_w, 0),
-                    '변화율(%)': round((_r_rate - _p_rate) / (_p_rate + 0.1) * 100, 0),
+# 연도별 키워드 트렌드 계산
+kwd_year_df = pd.DataFrame()
+if not names_df_shared.empty and top_words_shared and 'YEAR_MONTH' in names_df_shared.columns:
+    _ym_valid = names_df_shared['YEAR_MONTH'].dropna()
+    if not _ym_valid.empty:
+        names_df_shared['_year'] = _ym_valid.str[:4]
+        _years = sorted(names_df_shared['_year'].dropna().unique())
+        _top_kws = [w for w, _ in _freq_shared.most_common(15)]
+        _year_rows = []
+        for _yr in _years:
+            _yr_names = names_df_shared[names_df_shared['_year'] == _yr]['TRPR_NM']
+            _yr_words = [w for w in ' '.join(_yr_names.dropna().astype(str)).split()
+                         if len(w) > 1 and w not in _stops]
+            _yr_total = max(len(_yr_words), 1)
+            _yr_cnt = Counter(_yr_words)
+            for _kw in _top_kws:
+                _year_rows.append({
+                    '연도': _yr,
+                    '키워드': _kw,
+                    '빈도': _yr_cnt.get(_kw, 0),
+                    '비율(천건당)': round(_yr_cnt.get(_kw, 0) / _yr_total * 1000, 2),
                 })
-            kwd_trend_df = pd.DataFrame(_trend_rows)
-
+        kwd_year_df = pd.DataFrame(_year_rows)
 # 자격증 데이터: K-디지털 트레이닝 등 주요 사업유형에 해당 없음 → 제거
 
 # 3.2 탭 구성
@@ -1489,6 +1469,283 @@ with tabs[5]:
                 '빈도': st.column_config.NumberColumn('빈도', format="%d"),
                 '평균취업률': st.column_config.NumberColumn('평균 취업률(%)', format="%.1f"),
                 '유효과정수': st.column_config.NumberColumn('취업률 집계 과정수', format="%d"),
+            },
+            use_container_width=True,
+            hide_index=True,
+        )
+# ─────────────────────────────────────────
+# [Tab 6] 🔭 사업기회 발굴
+# ─────────────────────────────────────────
+with tabs[6]:
+    st.caption("수요(모집률)가 높고 공급(경쟁 과정 수)이 낮은 영역을 찾아 신규 교육사업 진입 기회를 도출합니다.")
+
+    # 우리 NCS 코드 (한 번만 조회)
+    _our_ncs_opp = []
+    if internal_df is not None:
+        _ids_opp = internal_df['TRPR_ID'].unique().tolist()
+        if _ids_opp:
+            _ph = ','.join('?' * len(_ids_opp))
+            _m = _sql_query(
+                f"SELECT DISTINCT NCS_CD FROM TB_MARKET_TREND WHERE TRPR_ID IN ({_ph}) AND NCS_CD IS NOT NULL",
+                params=_ids_opp
+            )
+            _our_ncs_opp = _m['NCS_CD'].dropna().unique().tolist() if not _m.empty else []
+
+    # ── 섹션 1: 지역별 수요-공급 갭 ──
+    st.subheader("📍 지역별 수요-공급 갭")
+    st.caption("좌상단(과정 적고 모집률 높음) = 공급 부족 지역 → 신규 진입 기회")
+
+    with st.spinner("📍 지역별 수요-공급 갭 분석 중..."):
+        region_opp = load_region_opp(where, params)
+    if not region_opp.empty:
+        for col in ['과정수', '총신청인원', '평균모집률', '평균취업률']:
+            region_opp[col] = pd.to_numeric(region_opp[col], errors='coerce').fillna(0)
+        avg_c = region_opp['과정수'].mean()
+        avg_r = region_opp['평균모집률'].mean()
+
+        fig_reg_opp = px.scatter(
+            region_opp, x='과정수', y='평균모집률',
+            size='총신청인원', text='REGION',
+            color='평균취업률', color_continuous_scale='RdYlGn',
+            labels={'REGION': '지역', '과정수': '공급(과정 수)', '평균모집률': '수요(모집률 %)'},
+            title='지역별 공급(과정 수) vs 수요(모집률)'
+        )
+        fig_reg_opp.add_hline(y=avg_r, line_dash="dash", line_color="gray", opacity=0.5)
+        fig_reg_opp.add_vline(x=avg_c, line_dash="dash", line_color="gray", opacity=0.5)
+        fig_reg_opp.add_annotation(
+            x=region_opp['과정수'].quantile(0.1), y=region_opp['평균모집률'].quantile(0.85),
+            text="🟢 고수요·저공급 (진입 기회)", showarrow=False, font=dict(color='green', size=11)
+        )
+        fig_reg_opp.add_annotation(
+            x=region_opp['과정수'].quantile(0.85), y=region_opp['평균모집률'].quantile(0.1),
+            text="🔴 과잉공급 (경쟁 심화)", showarrow=False, font=dict(color='red', size=11)
+        )
+        fig_reg_opp.update_traces(textposition='top center')
+        st.plotly_chart(fig_reg_opp, use_container_width=True)
+
+        opp_regions = region_opp[
+            (region_opp['과정수'] < avg_c) & (region_opp['평균모집률'] > avg_r)
+        ].sort_values('평균모집률', ascending=False)
+        if not opp_regions.empty:
+            st.success("🎯 **진입 기회 지역**: " + ", ".join(opp_regions['REGION'].tolist()))
+    else:
+        st.info("지역 데이터가 부족합니다.")
+
+    st.divider()
+
+    # ── 섹션 2: 성장 중인 NCS 분야 ──
+    st.subheader("📈 성장 중인 NCS 분야")
+    st.caption("최근 6개월 개설 수 증가율 (이전 6개월 대비) — 빠르게 성장하는 분야 = 선제 진입 기회")
+
+    with st.spinner("📈 NCS 성장 분야 분석 중..."):
+        ncs_growth = load_ncs_growth(where, params)
+    if not ncs_growth.empty:
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            top_up = ncs_growth[ncs_growth['증가율(%)'] > 0].head(10)
+            if not top_up.empty:
+                fig_up = px.bar(
+                    top_up, x='증가율(%)', y='NCS_CD', orientation='h',
+                    color='증가율(%)', color_continuous_scale='Greens',
+                    text='증가율(%)', title='🚀 급성장 NCS Top 10',
+                    labels={'NCS_CD': 'NCS 분야'}
+                )
+                fig_up.update_layout(yaxis={'categoryorder': 'total ascending'}, height=350)
+                st.plotly_chart(fig_up, use_container_width=True)
+            else:
+                st.caption("급성장 NCS 분야 없음")
+        with col_g2:
+            top_dn = ncs_growth[ncs_growth['증가율(%)'] < 0].tail(10)
+            if not top_dn.empty:
+                fig_dn = px.bar(
+                    top_dn, x='증가율(%)', y='NCS_CD', orientation='h',
+                    color='증가율(%)', color_continuous_scale='Reds_r',
+                    text='증가율(%)', title='📉 수요 감소 NCS Top 10',
+                    labels={'NCS_CD': 'NCS 분야'}
+                )
+                fig_dn.update_layout(yaxis={'categoryorder': 'total descending'}, height=350)
+                st.plotly_chart(fig_dn, use_container_width=True)
+            else:
+                st.caption("수요 감소 NCS 분야 없음")
+        with st.expander("전체 NCS 성장률 데이터"):
+            st.dataframe(ncs_growth, use_container_width=True, hide_index=True,
+                         column_config={'증가율(%)': st.column_config.NumberColumn(format="%.1f%%")})
+    else:
+        st.info("NCS 성장 분석 데이터가 부족합니다. (최소 2건 이상 NCS 코드가 필요합니다)")
+
+    st.divider()
+
+    # ── 섹션 3: 고성과·저경쟁 NCS 매트릭스 (취업률 데이터 필요) ──
+    if no_empl_data:
+        st.info("ℹ️ 선택된 훈련 유형은 취업률 데이터가 없어 NCS 기회 매트릭스 및 종합 기회지수를 제공하지 않습니다.")
+    else:
+        st.subheader("🎯 고성과·저경쟁 NCS 기회 매트릭스")
+        st.caption("좌상단(경쟁 적고 취업률 높음) = 신규 진입 최적 영역. 버블 크기 = 모집률")
+
+        with st.spinner("🎯 NCS 기회 매트릭스 분석 중..."):
+            ncs_mat = load_ncs_opp_matrix(where, params)
+        if not ncs_mat.empty:
+            for col in ['경쟁과정수', '평균취업률', '평균모집률']:
+                ncs_mat[col] = pd.to_numeric(ncs_mat[col], errors='coerce')
+            ncs_mat = ncs_mat.dropna(subset=['평균취업률', '평균모집률'])
+
+            if not ncs_mat.empty:
+                ncs_mat = ncs_mat.copy()
+                ncs_mat['분류'] = ncs_mat['NCS_CD'].apply(
+                    lambda x: '우리 분야' if x in _our_ncs_opp else '시장'
+                )
+                fig_mat = px.scatter(
+                    ncs_mat, x='경쟁과정수', y='평균취업률',
+                    size='평균모집률', text='NCS_CD',
+                    color='분류', color_discrete_map={'우리 분야': 'red', '시장': 'steelblue'},
+                    labels={'경쟁과정수': '경쟁 강도 (과정 수)', '평균취업률': '성과 (취업률 %)'},
+                    title='NCS별 경쟁강도 vs 취업률 (버블 크기 = 모집률)'
+                )
+                med_comp = ncs_mat['경쟁과정수'].median()
+                med_empl_mat = ncs_mat['평균취업률'].median()
+                fig_mat.add_hline(y=med_empl_mat, line_dash="dash", line_color="gray", opacity=0.5)
+                fig_mat.add_vline(x=med_comp, line_dash="dash", line_color="gray", opacity=0.5)
+                fig_mat.add_annotation(
+                    x=ncs_mat['경쟁과정수'].quantile(0.1), y=ncs_mat['평균취업률'].quantile(0.9),
+                    text="🌟 최적 진입 영역", showarrow=False, font=dict(color='green', size=12)
+                )
+                fig_mat.update_traces(textposition='top center')
+                st.plotly_chart(fig_mat, use_container_width=True)
+
+                best_ncs = ncs_mat[
+                    (ncs_mat['경쟁과정수'] < med_comp) & (ncs_mat['평균취업률'] > med_empl_mat)
+                ].sort_values('평균취업률', ascending=False)
+                if not best_ncs.empty:
+                    st.success("🌟 **최적 진입 영역 NCS**: " + ", ".join(best_ncs['NCS_CD'].head(8).tolist()))
+        else:
+            st.info("기회 매트릭스 데이터가 부족합니다.")
+            ncs_mat = pd.DataFrame()
+
+        st.divider()
+
+        # ── 섹션 4: 종합 기회 지수 ──
+        st.subheader("🏆 종합 사업기회 지수 Top 15")
+        st.caption("취업률(40점) + 모집률(40점) − 경쟁도(20점) 기준 정규화 합산")
+
+        if not ncs_mat.empty and len(ncs_mat) >= 3:
+            score_df = ncs_mat.copy()
+
+            def _minmax(s):
+                lo, hi = s.min(), s.max()
+                return (s - lo) / (hi - lo) if hi > lo else pd.Series(0.5, index=s.index)
+
+            score_df['기회지수'] = (
+                _minmax(score_df['평균취업률']) * 40
+                + _minmax(score_df['평균모집률']) * 40
+                - _minmax(score_df['경쟁과정수']) * 20
+            ).round(1)
+            top15 = score_df.nlargest(15, '기회지수').copy()
+            top15['순위'] = range(1, len(top15) + 1)
+            if _our_ncs_opp:
+                top15['비고'] = top15['NCS_CD'].apply(lambda x: '⭐ 우리 분야' if x in _our_ncs_opp else '')
+
+            disp_cols = ['순위', 'NCS_CD', '기회지수', '평균취업률', '평균모집률', '경쟁과정수']
+            if '비고' in top15.columns:
+                disp_cols.append('비고')
+            st.dataframe(
+                top15[disp_cols].reset_index(drop=True),
+                use_container_width=True, hide_index=True,
+                column_config={
+                    '기회지수': st.column_config.ProgressColumn('기회지수 (80점 만점)', min_value=0, max_value=80, format="%.1f"),
+                    '평균취업률': st.column_config.NumberColumn(format="%.1f%%"),
+                    '평균모집률': st.column_config.NumberColumn(format="%.1f%%"),
+                    '경쟁과정수': st.column_config.NumberColumn(format="%d개"),
+                }
+            )
+        else:
+            st.info("종합 기회지수 산출에 데이터가 부족합니다.")
+
+# ─────────────────────────────────────────
+# [Tab 7] 📑 데이터 조회
+# ─────────────────────────────────────────
+with tabs[7]:
+    st.subheader(f"📄 상세 데이터 ({total_count:,}건)")
+
+    preview_df = load_data_preview(where, params, limit=1000)
+    if not preview_df.empty:
+        # 모집률 계산
+        preview_df['TOT_FXNUM'] = pd.to_numeric(preview_df['TOT_FXNUM'], errors='coerce').fillna(0)
+        preview_df['REG_COURSE_MAN'] = pd.to_numeric(preview_df['REG_COURSE_MAN'], errors='coerce').fillna(0)
+        preview_df['모집률'] = (preview_df['REG_COURSE_MAN'] / preview_df['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
+        # 주말구분 매핑
+        preview_df['주말구분_명'] = preview_df['WKEND_SE'].astype(str).map(WK_MAP).fillna('기타')
+
+    display_df = preview_df.rename(columns=COLUMN_MAP) if not preview_df.empty else pd.DataFrame()
+    priority = ['과정명', '훈련기관명', '훈련유형', '지역', '주말구분', '훈련비(원)', '정원(명)', '등록인원', '모집률(%)', '취업률(3개월)', '개설일']
+    cols = [c for c in priority if c in display_df.columns] + [c for c in display_df.columns if c not in priority]
+    st.warning("⚠️ 상위 1,000건만 표시됩니다. 전체 데이터는 CSV로 다운로드하세요.")
+    if not display_df.empty:
+        st.dataframe(display_df[cols], use_container_width=True, height=600)
+
+    # CSV 다운로드 (전체 데이터)
+    if st.button("📥 CSV 다운로드 준비"):
+        full_df = load_data_full_csv(where, params)
+        if not full_df.empty:
+            full_df['TOT_FXNUM'] = pd.to_numeric(full_df['TOT_FXNUM'], errors='coerce').fillna(0)
+            full_df['REG_COURSE_MAN'] = pd.to_numeric(full_df['REG_COURSE_MAN'], errors='coerce').fillna(0)
+            full_df['모집률'] = (full_df['REG_COURSE_MAN'] / full_df['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
+            csv_df = full_df.rename(columns=COLUMN_MAP)
+            csv_cols = [c for c in priority if c in csv_df.columns] + [c for c in csv_df.columns if c not in priority]
+            csv = csv_df[csv_cols].to_csv(index=False).encode('utf-8-sig')
+            st.download_button("📥 전체 데이터 다운로드 (CSV)", csv, "market_analysis.csv", "text/csv")# [Tab 5] ☁️ 키워드 분석
+# ─────────────────────────────────────────
+with tabs[5]:
+    # §1: 키워드 빈도 Top 25
+    st.subheader("🔥 과정명 트렌드 키워드 Top 25")
+    st.caption("훈련과정명에서 자주 등장하는 키워드 빈도입니다.")
+    if not kwd_shared.empty:
+        fig_kwd = px.bar(kwd_shared.sort_values('빈도'), x='빈도', y='키워드', orientation='h',
+                         color='빈도', color_continuous_scale='Blues')
+        fig_kwd.update_layout(height=520, coloraxis_showscale=False, margin=dict(t=10, b=20))
+        st.plotly_chart(fig_kwd, use_container_width=True)
+    else:
+        st.info("키워드 데이터가 없습니다.")
+
+    st.divider()
+
+    # §2: 연도별 트렌드 키워드
+    st.subheader("📈 연도별 키워드 트렌드")
+    st.caption("Top 15 키워드의 연도별 등장 비율(천 단어당)입니다. 선이 올라갈수록 해당 연도에 많이 쓰인 키워드입니다.")
+    if not kwd_year_df.empty and len(kwd_year_df['연도'].unique()) >= 2:
+        fig_yr = px.line(
+            kwd_year_df, x='연도', y='비율(천건당)', color='키워드',
+            markers=True,
+            labels={'비율(천건당)': '등장 비율 (천 단어당)', '연도': '연도'},
+        )
+        fig_yr.update_layout(height=420, legend=dict(
+            orientation='v', x=1.01, y=1, font=dict(size=11)
+        ))
+        st.plotly_chart(fig_yr, use_container_width=True)
+
+        st.caption("히트맵: 색이 진할수록 해당 연도에 많이 등장한 키워드입니다.")
+        _pivot = kwd_year_df.pivot(index='키워드', columns='연도', values='비율(천건당)').fillna(0)
+        _pivot = _pivot.loc[_pivot.sum(axis=1).sort_values(ascending=False).index]
+        fig_heat = px.imshow(
+            _pivot,
+            color_continuous_scale='Blues',
+            labels=dict(x='연도', y='키워드', color='비율(천건당)'),
+            aspect='auto',
+        )
+        fig_heat.update_layout(height=420, margin=dict(t=10, b=20))
+        st.plotly_chart(fig_heat, use_container_width=True)
+    else:
+        st.info("연도별 트렌드 분석에 필요한 데이터가 부족합니다 (2개 연도 이상 필요).")
+
+    st.divider()
+
+    # §3: 키워드별 빈도 통계 테이블
+    st.subheader("📋 키워드별 빈도 통계")
+    if not kwd_shared.empty:
+        st.dataframe(
+            kwd_shared.sort_values('빈도', ascending=False),
+            column_config={
+                '키워드': '키워드',
+                '빈도': st.column_config.NumberColumn('빈도 (샘플 8000건 기준)', format="%d"),
             },
             use_container_width=True,
             hide_index=True,
