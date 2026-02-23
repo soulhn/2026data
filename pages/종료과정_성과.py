@@ -119,6 +119,33 @@ def get_all_course_master():
     )
 
 
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
+def get_all_trainee_demographics():
+    today = datetime.now().strftime('%Y-%m-%d')
+    return load_data(
+        "SELECT t.TRPR_DEGR, t.BIRTH_DATE, c.TR_STA_DT, t.TRNEE_TYPE "
+        "FROM TB_TRAINEE_INFO t "
+        "JOIN TB_COURSE_MASTER c ON t.TRPR_ID = c.TRPR_ID AND t.TRPR_DEGR = c.TRPR_DEGR "
+        "WHERE c.TR_END_DT < ?",
+        params=[today],
+    )
+
+
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
+def get_all_degr_absent_avg():
+    today = datetime.now().strftime('%Y-%m-%d')
+    return load_data(
+        "SELECT a.TRPR_DEGR, "
+        "CAST(SUM(CASE WHEN a.ATEND_STATUS = '결석' THEN 1 ELSE 0 END) AS FLOAT) / "
+        "NULLIF(COUNT(DISTINCT a.TRNEE_ID), 0) AS 평균_결석일 "
+        "FROM TB_ATTENDANCE_LOG a "
+        "JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
+        "WHERE c.TR_END_DT < ? "
+        "GROUP BY a.TRPR_DEGR",
+        params=[today],
+    )
+
+
 def parse_time_to_minutes(t):
     """HH:MM 형태의 시간을 분으로 변환"""
     try:
@@ -530,90 +557,25 @@ with tab_indiv:
 
 with tab_all:
     st.subheader("📊 전체 기수 비교 분석")
-    st.caption("수료된 전체 기수의 성과를 한눈에 비교합니다.")
+    st.caption("종료된 전체 기수의 성과를 한눈에 비교합니다.")
     all_master = get_all_course_master()
     if all_master.empty:
         st.warning("종료된 과정 데이터가 없습니다.")
         st.stop()
 
+    # --- 기본 지표 계산 ---
     all_master['기수'] = all_master['TRPR_DEGR'].astype(str) + '회차'
     all_master['수료율'] = (all_master['FINI_CNT'] / all_master['TOT_PAR_MKS'] * 100).round(1)
     all_master['EI_취업률_6'] = all_master['EI_EMPL_RATE_6'].apply(safe_float)
     all_master['HRD_취업률_6'] = all_master['HRD_EMPL_RATE_6'].apply(safe_float)
     all_master['총_취업률'] = all_master['EI_취업률_6'] + all_master['HRD_취업률_6']
-    # 상태코드(A/B/C/D) 기수는 취업률 미집계 → NaN (차트에서 공백으로 표시)
     _status_mask = all_master['EI_EMPL_RATE_6'].apply(lambda x: str(x).strip() in ('A', 'B', 'C', 'D'))
     all_master.loc[_status_mask, '총_취업률'] = pd.NA
-    # 3개월 취업률 (고용보험)
     all_master['취업률_3'] = pd.to_numeric(all_master['EI_EMPL_RATE_3'], errors='coerce')
     _status_mask_3 = all_master['EI_EMPL_RATE_3'].apply(lambda x: str(x).strip() in ('A', 'B', 'C', 'D'))
     all_master.loc[_status_mask_3, '취업률_3'] = pd.NA
     degr_order = all_master.sort_values('TRPR_DEGR')['기수'].tolist()
 
-    lc, rc = st.columns(2)
-    with lc:
-        st.markdown("##### 기수별 수료율")
-        st.altair_chart(
-            alt.Chart(all_master).mark_bar(color='#3498db').encode(
-                x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
-                y=alt.Y('수료율:Q', axis=alt.Axis(title=['수', '료', '율', '(%)'], titleAngle=0)),
-                tooltip=['기수', '수료율', 'FINI_CNT', 'TOT_PAR_MKS'],
-            ).properties(height=350),
-            use_container_width=True,
-        )
-    with rc:
-        st.markdown("##### 기수별 총 취업률 (6개월)")
-        st.altair_chart(
-            alt.Chart(all_master).mark_bar(color='#2ecc71').encode(
-                x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
-                y=alt.Y('총_취업률:Q', axis=alt.Axis(title=['취', '업', '률', '(%)'], titleAngle=0)),
-                tooltip=['기수', '총_취업률', 'EI_취업률_6', 'HRD_취업률_6'],
-            ).properties(height=350),
-            use_container_width=True,
-        )
-
-    st.divider()
-    all_attend = get_all_degr_attendance()
-    if not all_attend.empty:
-        all_attend['기수'] = all_attend['TRPR_DEGR'].astype(str) + '회차'
-        total_per = all_attend.groupby('기수')['CNT'].sum().reset_index()
-        total_per.columns = ['기수', '총건수']
-        absent_per = all_attend[all_attend['ATEND_STATUS'] == '결석'][['기수', 'CNT']].copy()
-        absent_per.columns = ['기수', '결석건수']
-        attend_per = all_attend[all_attend['ATEND_STATUS'] == '출석'][['기수', 'CNT']].copy()
-        attend_per.columns = ['기수', '출석건수']
-        comp = (
-            total_per.merge(absent_per, on='기수', how='left')
-            .merge(attend_per, on='기수', how='left').fillna(0)
-        )
-        comp['출석률'] = (comp['출석건수'] / comp['총건수'] * 100).round(1)
-
-        lc2, rc2 = st.columns(2)
-        with lc2:
-            st.markdown("##### 기수별 결석 건수")
-            st.altair_chart(
-                alt.Chart(comp).mark_bar(color='#e74c3c').encode(
-                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y('결석건수:Q', axis=alt.Axis(title=['결', '석', '건', '수'], titleAngle=0)),
-                    tooltip=['기수', '결석건수', '총건수'],
-                ).properties(height=350),
-                use_container_width=True,
-            )
-        with rc2:
-            st.markdown("##### 기수별 출석률 추이")
-            st.altair_chart(
-                alt.Chart(comp).mark_line(
-                    point=alt.OverlayMarkDef(size=80), color='#3498db'
-                ).encode(
-                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y('출석률:Q', axis=alt.Axis(title=['출', '석', '률', '(%)'], titleAngle=0)),
-                    tooltip=['기수', '출석률'],
-                ).properties(height=350),
-                use_container_width=True,
-            )
-
-    st.markdown("##### 종합 비교 테이블")
-    # 제적/중도탈락 인원 집계
     trainee_stats = load_data("""
         SELECT TRPR_ID, TRPR_DEGR,
                SUM(CASE WHEN TRNEE_STATUS = '제적' THEN 1 ELSE 0 END) AS EXPEL_CNT,
@@ -624,7 +586,158 @@ with tab_all:
     all_master = all_master.merge(trainee_stats, on=['TRPR_ID', 'TRPR_DEGR'], how='left')
     for c in ['EXPEL_CNT', 'DROP_CNT', 'TOT_TRP_CNT']:
         all_master[c] = pd.to_numeric(all_master[c], errors='coerce').fillna(0).astype(int)
-    all_master['잔여율'] = ((all_master['TOT_PAR_MKS'] - all_master['EXPEL_CNT'] - all_master['DROP_CNT']) / all_master['TOT_PAR_MKS'].replace(0, pd.NA) * 100).round(1).fillna(0)
+    all_master['잔여율'] = (
+        (all_master['TOT_PAR_MKS'] - all_master['EXPEL_CNT'] - all_master['DROP_CNT']) /
+        all_master['TOT_PAR_MKS'].replace(0, pd.NA) * 100
+    ).round(1).fillna(0)
+    all_master['중도탈락률'] = (
+        all_master['DROP_CNT'] / all_master['TOT_PAR_MKS'].replace(0, pd.NA) * 100
+    ).round(1).fillna(0)
+
+    # 출결 데이터 사전 계산
+    all_attend = get_all_degr_attendance()
+    comp = pd.DataFrame()
+    absent_total_df = pd.DataFrame()
+    if not all_attend.empty:
+        all_attend['기수'] = all_attend['TRPR_DEGR'].astype(str) + '회차'
+        total_per = all_attend.groupby('기수')['CNT'].sum().reset_index(name='총건수')
+        attend_per = all_attend[all_attend['ATEND_STATUS'] == '출석'][['기수', 'CNT']].copy()
+        attend_per.columns = ['기수', '출석건수']
+        absent_total_df = all_attend[all_attend['ATEND_STATUS'] == '결석'][['기수', 'CNT']].copy()
+        absent_total_df.columns = ['기수', '결석건수']
+        comp = total_per.merge(attend_per, on='기수', how='left').fillna(0)
+        comp['출석률'] = (comp['출석건수'] / comp['총건수'] * 100).round(1)
+
+    # === Section 1: 성과 지표 ===
+    st.markdown("#### 🏆 성과 지표")
+    lc, rc = st.columns(2)
+    with lc:
+        st.markdown("##### 기수별 수료율")
+        st.altair_chart(
+            alt.Chart(all_master).mark_bar(color='#3498db').encode(
+                x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
+                y=alt.Y('수료율:Q', axis=alt.Axis(title=['수', '료', '율', '(%)'], titleAngle=0)),
+                tooltip=['기수', '수료율', 'FINI_CNT', 'TOT_PAR_MKS'],
+            ).properties(height=300),
+            use_container_width=True,
+        )
+    with rc:
+        st.markdown("##### 기수별 총 취업률 (6개월)")
+        st.altair_chart(
+            alt.Chart(all_master).mark_bar(color='#2ecc71').encode(
+                x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
+                y=alt.Y('총_취업률:Q', axis=alt.Axis(title=['취', '업', '률', '(%)'], titleAngle=0)),
+                tooltip=['기수', '총_취업률', 'EI_취업률_6', 'HRD_취업률_6'],
+            ).properties(height=300),
+            use_container_width=True,
+        )
+    st.divider()
+
+    # === Section 2: 수강생 구성 변화 ===
+    st.markdown("#### 👥 수강생 구성 변화")
+    demo_df = get_all_trainee_demographics()
+    if not demo_df.empty:
+        demo_df['나이'] = demo_df.apply(
+            lambda r: calculate_age_at_training(r['BIRTH_DATE'], r['TR_STA_DT']), axis=1
+        )
+        demo_df['연령대'] = demo_df['나이'].apply(
+            lambda x: f"{int(x // 10 * 10)}대" if pd.notnull(x) else "미상"
+        )
+        demo_df['TRNEE_TYPE'] = demo_df['TRNEE_TYPE'].map(TRNEE_TYPE_MAP).fillna(demo_df['TRNEE_TYPE'])
+        demo_df['기수'] = demo_df['TRPR_DEGR'].astype(str) + '회차'
+
+        dc1, dc2 = st.columns(2)
+        with dc1:
+            st.markdown("##### 기수별 연령대 구성")
+            age_stack = demo_df.groupby(['기수', '연령대']).size().reset_index(name='인원')
+            st.altair_chart(
+                alt.Chart(age_stack).mark_bar().encode(
+                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y('인원:Q', stack='normalize',
+                            axis=alt.Axis(format='%', title=['비', '율'], titleAngle=0)),
+                    color=alt.Color('연령대:N', title='연령대'),
+                    tooltip=['기수', '연령대', '인원'],
+                ).properties(height=300),
+                use_container_width=True,
+            )
+        with dc2:
+            st.markdown("##### 기수별 훈련생 유형 구성")
+            type_stack = demo_df.groupby(['기수', 'TRNEE_TYPE']).size().reset_index(name='인원')
+            type_stack = type_stack.rename(columns={'TRNEE_TYPE': '유형'})
+            st.altair_chart(
+                alt.Chart(type_stack).mark_bar().encode(
+                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y('인원:Q', stack='normalize',
+                            axis=alt.Axis(format='%', title=['비', '율'], titleAngle=0)),
+                    color=alt.Color('유형:N', title='유형'),
+                    tooltip=['기수', '유형', '인원'],
+                ).properties(height=300),
+                use_container_width=True,
+            )
+    st.divider()
+
+    # === Section 3: 출결 현황 ===
+    st.markdown("#### 📅 출결 현황")
+    ac1, ac2 = st.columns(2)
+    with ac1:
+        st.markdown("##### 기수별 출석률 추이")
+        if not comp.empty:
+            st.altair_chart(
+                alt.Chart(comp).mark_line(
+                    point=alt.OverlayMarkDef(size=80), color='#3498db'
+                ).encode(
+                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y('출석률:Q', axis=alt.Axis(title=['출', '석', '률', '(%)'], titleAngle=0)),
+                    tooltip=['기수', '출석률'],
+                ).properties(height=300),
+                use_container_width=True,
+            )
+    with ac2:
+        st.markdown("##### 기수별 1인당 평균 결석일")
+        absent_avg_df = get_all_degr_absent_avg()
+        if not absent_avg_df.empty:
+            absent_avg_df['기수'] = absent_avg_df['TRPR_DEGR'].astype(str) + '회차'
+            absent_avg_df['평균_결석일'] = absent_avg_df['평균_결석일'].round(1)
+            st.altair_chart(
+                alt.Chart(absent_avg_df).mark_bar(color='#e74c3c').encode(
+                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y('평균_결석일:Q', axis=alt.Axis(title=['평', '균', '결', '석', '일'], titleAngle=0)),
+                    tooltip=['기수', '평균_결석일'],
+                ).properties(height=300),
+                use_container_width=True,
+            )
+    st.divider()
+
+    # === Section 4: 이탈 현황 ===
+    st.markdown("#### 📉 이탈 현황")
+    ic1, ic2 = st.columns(2)
+    with ic1:
+        st.markdown("##### 기수별 중도탈락률")
+        st.altair_chart(
+            alt.Chart(all_master).mark_line(
+                point=alt.OverlayMarkDef(size=80), color='#e67e22'
+            ).encode(
+                x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
+                y=alt.Y('중도탈락률:Q', axis=alt.Axis(title=['중', '도', '탈', '락', '률', '(%)'], titleAngle=0)),
+                tooltip=['기수', '중도탈락률', 'DROP_CNT'],
+            ).properties(height=300),
+            use_container_width=True,
+        )
+    with ic2:
+        st.markdown("##### 기수별 결석 건수")
+        if not absent_total_df.empty:
+            st.altair_chart(
+                alt.Chart(absent_total_df).mark_bar(color='#c0392b').encode(
+                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y('결석건수:Q', axis=alt.Axis(title=['결', '석', '건', '수'], titleAngle=0)),
+                    tooltip=['기수', '결석건수'],
+                ).properties(height=300),
+                use_container_width=True,
+            )
+    st.divider()
+
+    # === Section 5: 종합 비교 테이블 ===
+    st.markdown("##### 종합 비교 테이블")
     summary_cols = ['기수', 'TRPR_NM', 'TR_STA_DT', 'TR_END_DT', 'TOT_TRP_CNT', 'TOT_PAR_MKS', 'EXPEL_CNT', 'DROP_CNT', '잔여율', 'FINI_CNT', '수료율', '취업률_3', '총_취업률']
     st.dataframe(
         all_master[summary_cols].rename(columns={
@@ -648,3 +761,4 @@ with tab_all:
         use_container_width=True,
         hide_index=True,
     )
+    st.caption("💡 특정 기수를 심층 분석하려면 사이드바에서 회차를 선택 후 '📌 개별 기수 분석' 탭을 확인하세요.")
