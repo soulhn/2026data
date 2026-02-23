@@ -588,7 +588,7 @@ with tab_indiv:
                                         scale=alt.Scale(range=["#e74c3c", "#f39c12", "#2ecc71"]),
                                         title="출석률(%)"),
                         tooltip=["학생", "주차", "출석률"],
-                    ).properties(height=max(100, len(dropout_ids) * 30))
+                    ).properties(height=max(150, len(dropout_ids) * 50))
                     text_layer = alt.Chart(do_heat).mark_text(fontSize=11).encode(
                         x=alt.X("주차:N", sort=week_order),
                         y=alt.Y("학생:N"),
