@@ -801,29 +801,6 @@ with tabs[0]:
             st.plotly_chart(fig_chg, use_container_width=True)
     st.divider()
 
-    # ── 월별 훈련비 추이 ──
-    st.subheader("월별 훈련비 추이")
-    trco_raw = load_monthly_trco_stats(where, params)
-    if not trco_raw.empty:
-        trco_raw['TOT_TRCO'] = pd.to_numeric(trco_raw['TOT_TRCO'], errors='coerce')
-        monthly_trco = trco_raw.groupby('YEAR_MONTH')['TOT_TRCO'].agg(['median', lambda x: x.quantile(0.25), lambda x: x.quantile(0.75)]).reset_index()
-        monthly_trco.columns = ['월', '중앙값', 'Q1', 'Q3']
-        monthly_trco = monthly_trco.sort_values('월')
-        monthly_trco['월'] = pd.to_datetime(monthly_trco['월'], format='%Y-%m', errors='coerce')
-        monthly_trco = monthly_trco.dropna(subset=['월'])
-        full_range_trco = pd.date_range(monthly_trco['월'].min(), monthly_trco['월'].max(), freq='MS')
-        monthly_trco = monthly_trco.set_index('월').reindex(full_range_trco).reset_index()
-        monthly_trco.columns = ['월', '중앙값', 'Q1', 'Q3']
-        fig_trco = go.Figure()
-        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['Q3'], mode='lines', name='75%', line=dict(width=0), showlegend=False, connectgaps=False))
-        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['Q1'], mode='lines', name='25~75% 범위', fill='tonexty', fillcolor='rgba(68,114,196,0.2)', line=dict(width=0), connectgaps=False))
-        fig_trco.add_trace(go.Scatter(x=monthly_trco['월'], y=monthly_trco['중앙값'], mode='lines+markers', name='중앙값', line=dict(color='#4472C4', width=3), connectgaps=False))
-        fig_trco.update_layout(xaxis_title='월', yaxis_title='훈련비(원)', title='월별 훈련비 분포 (중앙값 + 사분위)')
-        st.plotly_chart(fig_trco, use_container_width=True)
-    else:
-        st.info("훈련비 데이터가 없습니다.")
-    st.divider()
-
     # ── 지역별: 바차트 + Top5 시계열 ──
     st.subheader("지역별 개설 현황")
     reg_cnt = load_region_counts(where, params)
