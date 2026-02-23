@@ -71,14 +71,6 @@ def _render_project_intro():
     st.divider()
 
 
-    mi1, mi2 = st.columns(2)
-    mi1.metric("총 운영 기수", "25기", "2023.07 ~ 현재")
-    mi2.metric("누적 훈련비 매출", "100억+", "1~25기 합산")
-    st.caption("📍 연도별 전국 순위는 아래 시장 포지셔닝 섹션에서 확인하세요.")
-
-    st.divider()
-
-
 def render_dashboard():
     _render_project_intro()
     check_password()
@@ -106,16 +98,20 @@ def render_dashboard():
     avg_completion = df_ended['수료율'].mean()
     avg_att = att_stats['ATT_RATE'].mean() if not att_stats.empty else 0.0
 
+    total_rev = int((att_stats['PRESENT_DAYS'] * DAILY_TRAINING_FEE).sum()) if not att_stats.empty else 0
+    rev_str = f"{total_rev // 100_000_000}억+" if total_rev > 0 else "-"
+
     st.subheader("📊 핵심 성과 지표")
     st.caption("종료된 전체 기수 기준 평균값입니다.")
-    kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
+    kpi1, kpi2, kpi3, kpi4, kpi5, kpi6, kpi7 = st.columns(7)
     kpi1.metric("총 운영 과정", f"{total_courses}개", delta=f"진행중 {active_courses}개")
     kpi2.metric("누적 수강생", f"{total_trainees:,}명")
-    kpi3.metric("평균 출석률", f"{avg_att:.1f}%", help="출석+지각 / 전체 출결일 (종료 기수)")
-    kpi4.metric("평균 수료율", f"{avg_completion:.1f}%", help="수료인원 / 수강인원 기준")
-    kpi5.metric("평균 취업률(3개월)", f"{avg_rate_3:.1f}%" if pd.notna(
+    kpi3.metric("누적 훈련비 매출", rev_str, help="출석+지각 일수 × 일 훈련비 단가 기준 (근사치)")
+    kpi4.metric("평균 출석률", f"{avg_att:.1f}%", help="출석+지각 / 전체 출결일 (종료 기수)")
+    kpi5.metric("평균 수료율", f"{avg_completion:.1f}%", help="수료인원 / 수강인원 기준")
+    kpi6.metric("평균 취업률(3개월)", f"{avg_rate_3:.1f}%" if pd.notna(
         avg_rate_3) else "-", help="수료 후 3개월 고용보험 가입 기준 (집계 전 기수 제외)")
-    kpi6.metric("평균 취업률(6개월)", f"{avg_rate_6:.1f}%" if pd.notna(
+    kpi7.metric("평균 취업률(6개월)", f"{avg_rate_6:.1f}%" if pd.notna(
         avg_rate_6) else "-", help="6개월 고용보험 + HRD자체취업 합산 (집계 전 기수 제외)")
     st.divider()
 
