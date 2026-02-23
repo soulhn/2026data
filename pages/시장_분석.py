@@ -789,7 +789,7 @@ if not names_df_shared.empty and top_words_shared:
                     '연도': _yr,
                     '키워드': _kw,
                     '빈도': _yr_cnt.get(_kw, 0),
-                    '비율(천건당)': round(_yr_cnt.get(_kw, 0) / _yr_total * 1000, 2),
+                    '비율(천건당)': round(_yr_cnt.get(_kw, 0) / _yr_total * 100, 2),
                 })
         kwd_year_df = pd.DataFrame(_year_rows)
 # 자격증 데이터: K-디지털 트레이닝 등 주요 사업유형에 해당 없음 → 제거
@@ -1139,17 +1139,17 @@ with tabs[2]:
 
     # §2: 연도별 트렌드 키워드
     st.subheader("📈 연도별 키워드 트렌드")
-    st.caption("Top 15 키워드의 연도별 등장 비율(천 단어당)입니다. 선이 올라갈수록 해당 연도에 많이 쓰인 키워드입니다.")
+    st.caption("Top 15 키워드의 연도별 등장 비율(%)입니다. 선이 올라갈수록 해당 연도에 많이 쓰인 키워드입니다.")
     if not kwd_year_df.empty and len(kwd_year_df['연도'].unique()) >= 2:
         fig_yr = px.line(
             kwd_year_df, x='연도', y='비율(천건당)', color='키워드',
             markers=True,
-            labels={'비율(천건당)': '등장 비율 (천 단어당)', '연도': '연도'},
+            labels={'비율(천건당)': '등장 비율 (%)', '연도': '연도'},
         )
         fig_yr.update_layout(height=420, legend=dict(
             orientation='v', x=1.01, y=1, font=dict(size=11)
         ))
-        _vert_ytitle(fig_yr, '등장 비율 (천건당)')
+        _vert_ytitle(fig_yr, '등장 비율 (%)')
         st.plotly_chart(fig_yr, use_container_width=True)
     else:
         st.info("연도별 트렌드 분석에 필요한 데이터가 부족합니다 (2개 연도 이상 필요).")
