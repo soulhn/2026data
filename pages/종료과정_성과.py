@@ -585,7 +585,7 @@ with tab_indiv:
                         x=alt.X("주차:N", sort=week_order, title="기준 주차", axis=alt.Axis(labelAngle=0)),
                         y=alt.Y("학생:N", title="이탈자"),
                         color=alt.Color("출석률:Q",
-                                        scale=alt.Scale(scheme="rdylgn", domain=[0, 100]),
+                                        scale=alt.Scale(scheme="rdylgn"),
                                         title="출석률(%)"),
                         tooltip=["학생", "주차", "출석률"],
                     ).properties(height=max(100, len(dropout_ids) * 30))
