@@ -1071,10 +1071,14 @@ with tabs[1]:
     if not ncs_data.empty:
         ncs_data['평균모집률'] = (ncs_data['REG_COURSE_MAN'] / ncs_data['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
         ncs_top = ncs_data.head(10).rename(columns={'NCS_CD': 'NCS코드', 'CNT': '개설수', 'TOT_FXNUM': '총모집정원', 'REG_COURSE_MAN': '총신청인원'})
-        ncs_top = ncs_top.sort_values('평균모집률', ascending=False)
-        fig = px.bar(ncs_top, x='NCS코드', y='평균모집률', color='평균모집률', text_auto='.1f', title="모집률 Top 10 커리큘럼")
+        ncs_top = ncs_top.sort_values('평균모집률', ascending=True)
+        fig = px.bar(ncs_top, x='평균모집률', y='NCS코드', orientation='h',
+                     color='평균모집률', color_continuous_scale='Blues',
+                     text='평균모집률', labels={'평균모집률': '평균 모집률 (%)', 'NCS코드': ''})
+        fig.update_traces(texttemplate='%{x:.1f}%', textposition='outside')
+        fig.update_layout(height=360, margin=dict(t=10, b=30), coloraxis_showscale=False)
         st.plotly_chart(fig, use_container_width=True)
-        with st.expander("📄 상세 데이터 보기", expanded=True):
+        with st.expander("📄 상세 데이터 보기"):
             st.dataframe(ncs_top, use_container_width=True, hide_index=True, column_config={
                 "총모집정원": st.column_config.NumberColumn(format="%d명"),
                 "총신청인원": st.column_config.NumberColumn(format="%d명"),
