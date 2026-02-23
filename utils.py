@@ -242,12 +242,15 @@ def get_billing_periods(start_date, end_date):
     return periods
 
 
-def calc_revenue(attend_days, training_days):
+def calc_revenue(attend_days, training_days, period_training_days=None):
     """단위기간 수강생 매출 계산.
 
     Args:
-        attend_days:   해당 기간 출석 일수 (출석+지각+입실중, 조퇴 제외)
-        training_days: 해당 기간 총 훈련일수 (공휴일 제외 실제 수업일)
+        attend_days:          해당 기간 출석 일수 (출석+지각+입실중, 조퇴 제외)
+        training_days:        수강생 개인 훈련일수 (출석률 계산 분모)
+                              중도 입과자는 실제 수강 개시일 이후 훈련일수로 계산.
+        period_training_days: 단위기간 전체 훈련일수 (전액 기준; None이면 training_days 사용)
+                              full_fee = period_training_days × DAILY_TRAINING_FEE
 
     Returns:
         tuple: (fee:int, rate:float, status:str)
@@ -255,11 +258,16 @@ def calc_revenue(attend_days, training_days):
     """
     from config import DAILY_TRAINING_FEE, REVENUE_FULL_THRESHOLD
 
-    if training_days <= 0:
+    eff_period = period_training_days if period_training_days is not None else training_days
+
+    if eff_period <= 0:
         return (0, 0.0, "해당없음")
 
+    if training_days <= 0:
+        return (0, 0.0, "미청구")
+
     rate = round(attend_days / training_days, 3)
-    full_fee = training_days * DAILY_TRAINING_FEE
+    full_fee = eff_period * DAILY_TRAINING_FEE
 
     if rate >= REVENUE_FULL_THRESHOLD:
         fee = full_fee
