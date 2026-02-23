@@ -282,3 +282,4 @@ def calc_revenue(attend_days, training_days, period_training_days=None):
         fee = 0
         status = "미청구"
 
+    return (fee, rate, status)
