@@ -834,37 +834,33 @@ with tabs[0]:
 
     # ── 지역별 수요-공급 갭 ──
     st.subheader("📍 지역별 수요-공급 갭")
-    st.caption("좌상단(과정 적고 모집률 높음) = 공급 부족 지역 → 신규 진입 기회")
-    with st.spinner("📍 지역별 수요-공급 갭 분석 중..."):
+    st.caption("모집률 높고 과정수 적은 지역(🟢) = 공급 부족 → 신규 진입 기회")
+    with st.spinner("📍 지역별 분석 중..."):
         region_opp = load_region_opp(where, params)
     if not region_opp.empty:
         for col in ['과정수', '총신청인원', '평균모집률']:
             region_opp[col] = pd.to_numeric(region_opp[col], errors='coerce').fillna(0)
         avg_c = region_opp['과정수'].mean()
         avg_r = region_opp['평균모집률'].mean()
-        fig_reg_opp = px.scatter(
-            region_opp, x='과정수', y='평균모집률',
-            size='총신청인원', text='REGION',
-            color_discrete_sequence=['#5dade2'],
-            labels={'REGION': '지역', '과정수': '공급(과정 수)', '평균모집률': '수요(모집률 %)'},
-            title='지역별 공급(과정 수) vs 수요(모집률)'
+        region_opp = region_opp.sort_values('평균모집률', ascending=True)
+        region_opp['기회'] = (region_opp['과정수'] < avg_c) & (region_opp['평균모집률'] > avg_r)
+        colors = ['#2ecc71' if v else '#5dade2' for v in region_opp['기회']]
+        fig_reg = go.Figure(go.Bar(
+            x=region_opp['평균모집률'],
+            y=region_opp['REGION'],
+            orientation='h',
+            marker_color=colors,
+            text=region_opp['평균모집률'].round(1).astype(str) + '%',
+            textposition='outside',
+        ))
+        fig_reg.add_vline(x=avg_r, line_dash="dash", line_color="gray", opacity=0.6)
+        fig_reg.update_layout(
+            title='지역별 모집률 (🟢 = 진입 기회)',
+            xaxis_title='모집률 (%)',
+            height=max(300, len(region_opp) * 28),
         )
-        fig_reg_opp.add_hline(y=avg_r, line_dash="dash", line_color="gray", opacity=0.5)
-        fig_reg_opp.add_vline(x=avg_c, line_dash="dash", line_color="gray", opacity=0.5)
-        fig_reg_opp.add_annotation(
-            x=region_opp['과정수'].quantile(0.1), y=region_opp['평균모집률'].quantile(0.85),
-            text="🟢 고수요·저공급 (진입 기회)", showarrow=False, font=dict(color='green', size=11)
-        )
-        fig_reg_opp.add_annotation(
-            x=region_opp['과정수'].quantile(0.85), y=region_opp['평균모집률'].quantile(0.1),
-            text="🔴 과잉공급 (경쟁 심화)", showarrow=False, font=dict(color='red', size=11)
-        )
-        fig_reg_opp.update_traces(textposition='top center')
-        _vert_ytitle(fig_reg_opp, '모집률 (%)')
-        st.plotly_chart(fig_reg_opp, use_container_width=True)
-        opp_regions = region_opp[
-            (region_opp['과정수'] < avg_c) & (region_opp['평균모집률'] > avg_r)
-        ].sort_values('평균모집률', ascending=False)
+        st.plotly_chart(fig_reg, use_container_width=True)
+        opp_regions = region_opp[region_opp['기회']].sort_values('평균모집률', ascending=False)
         if not opp_regions.empty:
             st.success("🎯 **진입 기회 지역**: " + ", ".join(opp_regions['REGION'].tolist()))
     else:
