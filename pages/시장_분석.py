@@ -1190,6 +1190,7 @@ with tabs[3]:
     with st.spinner("📈 NCS 성장 분야 분석 중..."):
         ncs_growth = load_ncs_growth(where, params)
     if not ncs_growth.empty:
+        ncs_growth['NCS_CD'] = ncs_growth['NCS_CD'].apply(lambda x: str(int(float(x))) if pd.notna(x) and str(x) not in ('', 'nan') else '')
         col_g1, col_g2 = st.columns(2)
         with col_g1:
             top_up = ncs_growth[ncs_growth['증가율(%)'] > 0].head(10)
@@ -1200,6 +1201,7 @@ with tabs[3]:
                     text='증가율(%)', title='🚀 급성장 NCS Top 10',
                     labels={'NCS_CD': 'NCS 분야'}
                 )
+                fig_up.update_yaxes(type='category')
                 fig_up.update_layout(yaxis={'categoryorder': 'total ascending'}, height=350)
                 st.plotly_chart(fig_up, use_container_width=True)
             else:
@@ -1213,6 +1215,7 @@ with tabs[3]:
                     text='증가율(%)', title='📉 수요 감소 NCS Top 10',
                     labels={'NCS_CD': 'NCS 분야'}
                 )
+                fig_dn.update_yaxes(type='category')
                 fig_dn.update_layout(yaxis={'categoryorder': 'total descending'}, height=350)
                 st.plotly_chart(fig_dn, use_container_width=True)
             else:
