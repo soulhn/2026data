@@ -251,57 +251,6 @@ def run_etl():
     conn.close()
     print(f"[ETL Summary] 성공: {total_success:,}건, 실패: {total_errors:,}건")
     print("[Complete] 스마트 ETL 수집 완료! (최신 데이터만 업데이트됨)")
-    _cache_total_revenue()
 
 if __name__ == "__main__":
     run_etl()
-
-def _cache_total_revenue():
-    """ETL 완료 후 누적 훈련비 매출을 계산해 TB_MARKET_CACHE에 저장."""
-    from utils import load_data, set_hrd_cache
-    from config import DAILY_TRAINING_FEE, REVENUE_FULL_THRESHOLD
-    from utils import get_billing_periods, calc_revenue
-    try:
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        courses = load_data(
-            "SELECT TRPR_ID, TRPR_DEGR, TR_STA_DT, TR_END_DT FROM TB_COURSE_MASTER WHERE TR_END_DT < ?",
-            params=[today_str]
-        )
-        if courses.empty:
-            return
-        total = 0
-        for _, row in courses.iterrows():
-            periods = get_billing_periods(row["TR_STA_DT"], row["TR_END_DT"])
-            logs = load_data(
-                "SELECT TRNEE_ID, ATEND_DT, ATEND_STATUS FROM TB_ATTENDANCE_LOG "
-                "WHERE TRPR_ID=? AND TRPR_DEGR=?",
-                params=[row["TRPR_ID"], int(row["TRPR_DEGR"])]
-            )
-            trainees = load_data(
-                "SELECT TRNEE_ID, TRNEE_STATUS FROM TB_TRAINEE_INFO "
-                "WHERE TRPR_ID=? AND TRPR_DEGR=?",
-                params=[row["TRPR_ID"], int(row["TRPR_DEGR"])]
-            )
-            if logs.empty or trainees.empty:
-                continue
-            import pandas as _pd
-            dropout_ids = set(trainees[trainees["TRNEE_STATUS"].str.contains("중도탈락", na=False)]["TRNEE_ID"])
-            period_total = 0
-            for p in periods:
-                p_logs = logs[(logs["ATEND_DT"] >= str(p["start"])) & (logs["ATEND_DT"] <= str(p["end"]))]
-                p_days = p["training_days"]
-                period_raw = 0
-                for tid in logs["TRNEE_ID"].unique():
-                    s_logs = p_logs[p_logs["TRNEE_ID"] == tid]
-                    attend = int(s_logs["ATEND_STATUS"].isin(["출석","지각"]).sum())
-                    s_total = int(logs[logs["TRNEE_ID"] == tid]["ATEND_DT"].between(str(p["start"]), str(p["end"])).sum()) or p_days
-                    has_dropout = tid in dropout_ids
-                    td = p_days if has_dropout else min(s_total, p_days)
-                    fee, _, _ = calc_revenue(attend, td, p_days)
-                    period_raw += fee
-                period_total += (period_raw // 10) * 10
-            total += period_total
-        set_hrd_cache("hrd_total_revenue", total)
-        print(f"[캐시] hrd_total_revenue: {total:,}원 저장 완료")
-    except Exception as e:
-        print(f"[캐시] hrd_total_revenue 실패: {e}")
