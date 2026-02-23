@@ -265,7 +265,7 @@ def calc_revenue(attend_days, training_days):
         fee = full_fee
         status = "전액"
     elif rate > 0:
-        fee = int(full_fee * rate)
+        fee = attend_days * DAILY_TRAINING_FEE
         status = "비례"
     else:
         fee = 0
