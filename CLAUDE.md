@@ -69,7 +69,6 @@ market_etl.py (매일 21시) →                    ←    https://playdata.stre
 | 💎 우리 과정 vs 시장 | 핵심지표 비교, 백분위, 레이더차트, 회차별 테이블 | 취업률 항목 "미제공", 레이더 3축 |
 | ☁️ 키워드 & 자격증 | 키워드 빈도, 자격증 과정수(color=훈련비), 전체 테이블 | 정상 작동 |
 | 🔭 사업기회 발굴 | 지역별 수요-공급 갭, NCS 성장, NCS 기회매트릭스, 기회지수 | §1·2만 표시, §3·4 안내 |
-| 📑 데이터 조회 | 1000건 미리보기 + CSV 다운로드 | 정상 작동 |
 
 - **공통 사전 로드**: `type_perf_data`, `kwd_shared`/`top_words_shared`, `cert_stats_shared`를 탭 생성 전에 한 번만 계산 → 취업률 탭·자격증 탭 공유
 - **헬퍼 함수 2개**: `render_ranking_table()`, `render_scatter_with_overlay()` — 탭 간 중복 코드 통합

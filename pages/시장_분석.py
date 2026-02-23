@@ -533,36 +533,6 @@ def load_ncs_opp_matrix(where, params):
     """, params=params)
 
 
-@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
-def load_data_preview(where, params, limit=1000):
-    """Tab 12: 데이터 조회용."""
-    return _sql_query(f"""
-        SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TRAINST_NM,
-               TR_STA_DT, TR_END_DT, NCS_CD, TRNG_AREA_CD,
-               TOT_FXNUM, TOT_TRCO, COURSE_MAN, REG_COURSE_MAN,
-               EI_EMPL_RATE_3, EI_EMPL_RATE_6, EI_EMPL_CNT_3,
-               STDG_SCOR, GRADE, ADDRESS,
-               TRAIN_TARGET, WKEND_SE,
-               YEAR_MONTH, REGION
-        FROM TB_MARKET_TREND {where}
-        ORDER BY TR_STA_DT DESC LIMIT ?
-    """, params=list(params) + [limit])
-
-
-@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
-def load_data_full_csv(where, params):
-    """Tab 12: CSV 다운로드용 전체 데이터."""
-    return _sql_query(f"""
-        SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TRAINST_NM,
-               TR_STA_DT, TR_END_DT, NCS_CD, TRNG_AREA_CD,
-               TOT_FXNUM, TOT_TRCO, COURSE_MAN, REG_COURSE_MAN,
-               EI_EMPL_RATE_3, EI_EMPL_RATE_6, EI_EMPL_CNT_3,
-               STDG_SCOR, GRADE, ADDRESS,
-               TRAIN_TARGET, WKEND_SE,
-               YEAR_MONTH, REGION
-        FROM TB_MARKET_TREND {where}
-        ORDER BY TR_STA_DT DESC
-    """, params=params)
 
 
 # ==========================================
@@ -797,7 +767,7 @@ if not names_df_shared.empty and top_words_shared:
 # 3.2 탭 구성
 tabs = st.tabs([
     "📊 시장 개요 & 사업 기회", "🏆 순위 & 유형",
-    "☁️ 키워드 분석", "📑 데이터 조회"
+    "☁️ 키워드 분석"
 ])
 
 # ─────────────────────────────────────────
@@ -1168,36 +1138,3 @@ with tabs[2]:
             use_container_width=True,
             hide_index=True,
         )
-# ─────────────────────────────────────────
-# [Tab 3] 📑 데이터 조회
-# ─────────────────────────────────────────
-with tabs[3]:
-    st.subheader(f"📄 상세 데이터 ({total_count:,}건)")
-
-    preview_df = load_data_preview(where, params, limit=1000)
-    if not preview_df.empty:
-        # 모집률 계산
-        preview_df['TOT_FXNUM'] = pd.to_numeric(preview_df['TOT_FXNUM'], errors='coerce').fillna(0)
-        preview_df['REG_COURSE_MAN'] = pd.to_numeric(preview_df['REG_COURSE_MAN'], errors='coerce').fillna(0)
-        preview_df['모집률'] = (preview_df['REG_COURSE_MAN'] / preview_df['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
-        # 주말구분 매핑
-        preview_df['주말구분_명'] = preview_df['WKEND_SE'].astype(str).map(WK_MAP).fillna('기타')
-
-    display_df = preview_df.rename(columns=COLUMN_MAP) if not preview_df.empty else pd.DataFrame()
-    priority = ['과정명', '훈련기관명', '훈련유형', '지역', '주말구분', '훈련비(원)', '정원(명)', '등록인원', '모집률(%)', '취업률(3개월)', '개설일']
-    cols = [c for c in priority if c in display_df.columns] + [c for c in display_df.columns if c not in priority]
-    st.warning("⚠️ 상위 1,000건만 표시됩니다. 전체 데이터는 CSV로 다운로드하세요.")
-    if not display_df.empty:
-        st.dataframe(display_df[cols], use_container_width=True, height=600)
-
-    # CSV 다운로드 (전체 데이터)
-    if st.button("📥 CSV 다운로드 준비"):
-        full_df = load_data_full_csv(where, params)
-        if not full_df.empty:
-            full_df['TOT_FXNUM'] = pd.to_numeric(full_df['TOT_FXNUM'], errors='coerce').fillna(0)
-            full_df['REG_COURSE_MAN'] = pd.to_numeric(full_df['REG_COURSE_MAN'], errors='coerce').fillna(0)
-            full_df['모집률'] = (full_df['REG_COURSE_MAN'] / full_df['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
-            csv_df = full_df.rename(columns=COLUMN_MAP)
-            csv_cols = [c for c in priority if c in csv_df.columns] + [c for c in csv_df.columns if c not in priority]
-            csv = csv_df[csv_cols].to_csv(index=False).encode('utf-8-sig')
-            st.download_button("📥 전체 데이터 다운로드 (CSV)", csv, "market_analysis.csv", "text/csv")
