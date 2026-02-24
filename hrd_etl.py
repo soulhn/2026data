@@ -91,19 +91,14 @@ def run_etl():
         print(f"\n[{idx}/{len(course_list)}] {trpr_degr}회차 처리 시작...")
 
         ei_rate = course.get('eiEmplRate3')
-        real_rate = None
-        try:
-            if ei_rate and ei_rate not in ['A', 'B', 'C', 'D', 'null']: real_rate = float(ei_rate)
-        except (ValueError, TypeError) as e:
-            print(f"   {trpr_degr}회차 취업률 변환 실패 (ei_rate={ei_rate}): {e}")
 
         cursor.execute(adapt_query('''
             INSERT INTO TB_COURSE_MASTER (
                 TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT,
                 TOT_TRCO, FINI_CNT, TOT_FXNUM, TOT_PAR_MKS, TOT_TRP_CNT, INST_INO,
                 EI_EMPL_RATE_3, EI_EMPL_CNT_3, EI_EMPL_RATE_6, EI_EMPL_CNT_6,
-                HRD_EMPL_RATE_6, HRD_EMPL_CNT_6, REAL_EMPL_RATE
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                HRD_EMPL_RATE_6, HRD_EMPL_CNT_6
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(TRPR_ID, TRPR_DEGR) DO UPDATE SET
                 TRPR_NM=excluded.TRPR_NM,
                 TOT_TRCO=excluded.TOT_TRCO,
@@ -117,15 +112,14 @@ def run_etl():
                 EI_EMPL_CNT_6=excluded.EI_EMPL_CNT_6,
                 HRD_EMPL_RATE_6=excluded.HRD_EMPL_RATE_6,
                 HRD_EMPL_CNT_6=excluded.HRD_EMPL_CNT_6,
-                REAL_EMPL_RATE=excluded.REAL_EMPL_RATE,
                 COLLECTED_AT=CURRENT_TIMESTAMP
         '''), (
-            course.get('trprId'), trpr_degr, course.get('trprNm'), 
+            course.get('trprId'), trpr_degr, course.get('trprNm'),
             course.get('trStaDt'), course.get('trEndDt'),
             course.get('totTrco'), course.get('finiCnt'),
             course.get('totFxnum'), course.get('totParMks'), course.get('totTrpCnt'), course.get('instIno'),
             ei_rate, course.get('eiEmplCnt3'), course.get('eiEmplRate6'), course.get('eiEmplCnt6'),
-            course.get('hrdEmplRate6'), course.get('hrdEmplCnt6'), real_rate
+            course.get('hrdEmplRate6'), course.get('hrdEmplCnt6')
         ))
 
         trpr_id = course.get('trprId')
