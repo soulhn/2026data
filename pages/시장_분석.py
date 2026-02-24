@@ -10,7 +10,7 @@ import os
 
 # 🚀 상위 폴더의 utils.py를 가져오기 위한 경로 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, get_connection, is_pg, load_data as _load_data, adapt_query
+from utils import check_password, get_connection, is_pg, load_data as _load_data, adapt_query, calc_employment_rate_6
 from config import (
     CACHE_TTL_MARKET, COST_BINS, COST_BIN_LABELS,
     SCATTER_SAMPLE_LIMIT, REGRESSION_SAMPLE_LIMIT,
@@ -549,11 +549,12 @@ def load_internal_courses():
             lambda v: EMPL_CODE_MAP.get(v, '')
         )
         internal[c] = pd.to_numeric(internal[c], errors='coerce')
-    # HRD 6개월 (고용보험 미가입) 합산 → home.py와 동일 방식
+    # HRD 6개월 (고용보험 미가입) 합산
     internal['HRD_EMPL_RATE_6'] = pd.to_numeric(internal['HRD_EMPL_RATE_6'], errors='coerce')
-    internal['TOTAL_RATE_6'] = internal['EI_EMPL_RATE_6'].fillna(0) + internal['HRD_EMPL_RATE_6'].fillna(0)
-    _no6 = internal['EI_EMPL_RATE_6'].isna() & internal['HRD_EMPL_RATE_6'].isna()
-    internal.loc[_no6, 'TOTAL_RATE_6'] = pd.NA
+    # 6개월 총 취업률 = EI_6 + HRD_6 합산 (특수코드/둘다결측 → NA)
+    internal['TOTAL_RATE_6'] = internal.apply(
+        lambda r: calc_employment_rate_6(r['EI_EMPL_RATE_6'], r['HRD_EMPL_RATE_6']), axis=1
+    )
     internal['모집률'] = (internal['TOT_TRP_CNT'] / internal['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0)
     internal['FINI_CNT'] = pd.to_numeric(internal['FINI_CNT'], errors='coerce').fillna(0)
     internal['수료율'] = (internal['FINI_CNT'] / internal['TOT_PAR_MKS'].replace(0, pd.NA) * 100).fillna(0)

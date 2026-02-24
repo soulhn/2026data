@@ -180,6 +180,129 @@ def safe_int(val, default=None):
         return default
 
 
+# ── 출석률 표준 계산 (매출_분析.py 기준) ──
+# 출석 불인정 상태만 제외 → 나머지 전체 출석으로 인정
+# (공가 종류가 다양해서 포함 방식보다 제외 방식이 정확)
+NOT_ATTEND_STATUSES = frozenset({'결석', '중도탈락미출석', '100분의50미만출석'})
+
+
+def _attendance_penalty(status: str) -> int:
+    """지각/조퇴/외출 패널티 포인트 반환 (3개 누적 = 가상 결석 1일)."""
+    if not isinstance(status, str):
+        return 0
+    return ('지각' in status) + ('조퇴' in status) + ('외출' in status)
+
+
+def calc_attendance_rate(att_df) -> float:
+    """출석률 계산 (매출_분析.py 기준).
+
+    groupby().apply() 패턴으로 기수/학생 단위 모두 사용 가능.
+
+    Args:
+        att_df: TB_ATTENDANCE_LOG 서브셋. 컬럼: ATEND_STATUS, ATEND_DT 필수.
+
+    Returns:
+        float: 0.0~100.0 범위 출석률. 훈련일이 없으면 0.0.
+
+    Note:
+        - NOT_ATTEND_STATUSES(결석/중도탈락미출석/100분의50미만출석) 제외 방식 사용
+        - 패널티: 지각+조퇴+외출 3개 누적 → 1일 차감
+        - 분모: 중도탈락미출석 제외한 고유 훈련일수
+    """
+    if att_df.empty:
+        return 0.0
+    dates = pd.to_datetime(att_df['ATEND_DT'], errors='coerce').dt.date
+    statuses = att_df['ATEND_STATUS']
+    training_days = dates[statuses != '중도탈락미출석'].nunique()
+    if training_days == 0:
+        return 0.0
+    present_mask = ~statuses.isin(NOT_ATTEND_STATUSES)
+    base_attend = dates[present_mask].nunique()
+    penalty = int(statuses[present_mask].apply(_attendance_penalty).sum())
+    attend_days = max(0, base_attend - penalty // 3)
+    return round(attend_days / training_days * 100, 1)
+
+
+def calc_attendance_rate_from_counts(
+    total: int,
+    absent: int,
+    dropout_absent: int,
+    lt50: int,
+    late: int,
+    early_leave: int,
+    out: int,
+) -> float:
+    """집계된 상태별 카운트로 출석률 계산 (매출_분析.py 기준).
+
+    get_all_degr_attendance() 등 사전 집계 결과에 사용.
+
+    Args:
+        total:          전체 기록 수
+        absent:         결석 수
+        dropout_absent: 중도탈락미출석 수 (분모에서도 제외)
+        lt50:           100분의50미만출석 수
+        late:           지각 수 (패널티 포인트)
+        early_leave:    조퇴 수 (패널티 포인트)
+        out:            외출 수 (패널티 포인트)
+
+    Returns:
+        float: 0.0~100.0 범위 출석률.
+    """
+    training_days = total - dropout_absent
+    if training_days <= 0:
+        return 0.0
+    base = total - absent - dropout_absent - lt50
+    penalty_points = late + early_leave + out
+    attend_days = max(0, base - penalty_points // 3)
+    return round(attend_days / training_days * 100, 1)
+
+
+def calc_employment_rate_6(ei6_val, hrd6_val):
+    """6개월 총 취업률 = EI_EMPL_RATE_6 + HRD_EMPL_RATE_6 합산.
+
+    home.py, 시장_분析.py, 종료과정_성과.py에서 각각 중복 구현하던 로직을 통일.
+
+    Args:
+        ei6_val:  EI_EMPL_RATE_6 원본값 (str/float/NaN/None 모두 수용)
+        hrd6_val: HRD_EMPL_RATE_6 원본값
+
+    Returns:
+        float | pd.NA:
+            - 어느 한쪽이라도 A/B/C/D 특수코드면 pd.NA
+            - 둘 다 결측이면 pd.NA
+            - 나머지는 float 합산값
+    """
+    from config import EMPL_CODE_MAP
+    ei6_s = str(ei6_val).strip() if ei6_val is not None else ''
+    hrd6_s = str(hrd6_val).strip() if hrd6_val is not None else ''
+    if ei6_s in EMPL_CODE_MAP or hrd6_s in EMPL_CODE_MAP:
+        return pd.NA
+    _EMPTY = ('', 'nan', 'None', 'NaN', '<NA>')
+    if ei6_s in _EMPTY and hrd6_s in _EMPTY:
+        return pd.NA
+    return safe_float(ei6_s) + safe_float(hrd6_s)
+
+
+def parse_empl_rate(val):
+    """취업률 단일 컬럼 값 파싱.
+
+    Args:
+        val: EI_EMPL_RATE_3 / EI_EMPL_RATE_6 / HRD_EMPL_RATE_6 원본값
+
+    Returns:
+        tuple: (numeric_or_None, label_or_None)
+               숫자 → (float, None)
+               A/B/C/D 특수코드 → (None, '진행중' 등 레이블)
+               빈값/NaN → (None, None)
+    """
+    from config import EMPL_CODE_MAP
+    s = str(val).strip() if val is not None else ''
+    if s in EMPL_CODE_MAP:
+        return (None, EMPL_CODE_MAP[s])
+    f = safe_float(s, default=None)
+    return (f, None)
+
+
 def get_billing_periods(start_date, end_date):
     """개강일 기준 월 단위 청구 기간 목록 반환.
 

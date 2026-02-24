@@ -2,7 +2,11 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 from datetime import datetime
-from utils import load_data, check_password
+from utils import (
+    load_data, check_password,
+    calc_attendance_rate, NOT_ATTEND_STATUSES, _attendance_penalty,
+    calc_employment_rate_6,
+)
 from config import CACHE_TTL_DEFAULT, CACHE_TTL_REALTIME, DAILY_TRAINING_FEE
 
 st.set_page_config(
@@ -27,14 +31,13 @@ def get_dashboard_data():
         df_course[col] = pd.to_numeric(
             df_course[col], errors='coerce').fillna(0)
     # 취업률: NaN 유지 (상태코드 'A'=개설예정 'B'=집계중 'C'=미실시 'D'=수료자없음 → 0과 구분)
+    # REAL_EMPL_RATE = EI_EMPL_RATE_3 (3개월 고용보험) 동일값
     for col in ['EI_EMPL_RATE_3', 'EI_EMPL_RATE_6', 'HRD_EMPL_RATE_6', 'REAL_EMPL_RATE']:
         df_course[col] = pd.to_numeric(df_course[col], errors='coerce')
-    df_course['TOTAL_RATE_6'] = df_course['EI_EMPL_RATE_6'].fillna(
-        0) + df_course['HRD_EMPL_RATE_6'].fillna(0)
-    # 둘 다 NaN이면 취업률 미집계로 간주
-    no_empl = df_course['EI_EMPL_RATE_6'].isna(
-    ) & df_course['HRD_EMPL_RATE_6'].isna()
-    df_course.loc[no_empl, 'TOTAL_RATE_6'] = pd.NA
+    # 6개월 총 취업률 = EI_6 + HRD_6 합산 (특수코드/둘다결측 → NA)
+    df_course['TOTAL_RATE_6'] = df_course.apply(
+        lambda r: calc_employment_rate_6(r['EI_EMPL_RATE_6'], r['HRD_EMPL_RATE_6']), axis=1
+    )
     df_course['FINI_CNT'] = pd.to_numeric(
         df_course['FINI_CNT'], errors='coerce').fillna(0)
     df_course['TOT_TRP_CNT'] = pd.to_numeric(
@@ -49,19 +52,32 @@ def get_dashboard_data():
 
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def get_attendance_stats():
-    """종료된 기수별 출결 통계 집계"""
+    """종료된 기수별 출결 통계 집계 (매출_분析.py 기준).
+
+    출석률 = (NOT_ATTEND_STATUSES 제외 일수 - 지각·조퇴·외출 패널티) / 중도탈락미출석 제외 훈련일수
+    """
     today_str = datetime.now().strftime('%Y-%m-%d')
-    return load_data(
-        "SELECT a.TRPR_DEGR, COUNT(*) AS TOTAL_DAYS, "
-        "SUM(CASE WHEN a.ATEND_STATUS IN ('출석', '지각') THEN 1 ELSE 0 END) AS PRESENT_DAYS, "
-        "CAST(SUM(CASE WHEN a.ATEND_STATUS IN ('출석', '지각') THEN 1 ELSE 0 END) AS FLOAT) "
-        "/ NULLIF(COUNT(*), 0) * 100 AS ATT_RATE "
+    att_df = load_data(
+        "SELECT a.TRPR_DEGR, a.ATEND_STATUS, a.ATEND_DT "
         "FROM TB_ATTENDANCE_LOG a "
         "INNER JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
-        "WHERE c.TR_END_DT < ? "
-        "GROUP BY a.TRPR_DEGR",
-        params=[today_str]
+        "WHERE c.TR_END_DT < ?",
+        params=[today_str],
     )
+    if att_df.empty:
+        return pd.DataFrame(columns=['TRPR_DEGR', 'ATT_RATE', 'PRESENT_DAYS'])
+    att_df['ATEND_DT'] = pd.to_datetime(att_df['ATEND_DT'], errors='coerce').dt.date
+
+    def _stats(grp):
+        rate = calc_attendance_rate(grp)
+        training_days = grp[grp['ATEND_STATUS'] != '중도탈락미출석']['ATEND_DT'].nunique()
+        present = grp[~grp['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)]
+        base = present['ATEND_DT'].nunique()
+        penalty = int(present['ATEND_STATUS'].apply(_attendance_penalty).sum())
+        present_days = max(0, base - penalty // 3)
+        return pd.Series({'ATT_RATE': rate, 'PRESENT_DAYS': present_days})
+
+    return att_df.groupby('TRPR_DEGR').apply(_stats).reset_index()
 
 
 def _render_project_intro():
@@ -103,12 +119,12 @@ def render_dashboard():
     kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
     kpi1.metric("총 운영 과정", f"{total_courses}개", delta=f"진행중 {active_courses}개")
     kpi2.metric("누적 수강생", f"{total_trainees:,}명")
-    kpi3.metric("평균 출석률", f"{avg_att:.1f}%", help="출석+지각 / 전체 출결일 (종료 기수)")
+    kpi3.metric("평균 출석률", f"{avg_att:.1f}%", help="결석/중도탈락미출석/100분의50미만출석 제외, 지각·조퇴·외출 3개 누적 시 1일 차감 (종료 기수)")
     kpi4.metric("평균 수료율", f"{avg_completion:.1f}%", help="수료인원 / 수강인원 기준")
     kpi5.metric("평균 취업률(3개월)", f"{avg_rate_3:.1f}%" if pd.notna(
-        avg_rate_3) else "-", help="수료 후 3개월 고용보험 가입 기준 (집계 전 기수 제외)")
+        avg_rate_3) else "-", help="수료 후 3개월 고용보험 가입률 (EI_EMPL_RATE_3 기준, 집계 전 기수 제외)")
     kpi6.metric("평균 취업률(6개월)", f"{avg_rate_6:.1f}%" if pd.notna(
-        avg_rate_6) else "-", help="6개월 고용보험 + HRD자체취업 합산 (집계 전 기수 제외)")
+        avg_rate_6) else "-", help="고용보험(EI_6) + HRD 자체 취업(HRD_6) 합산 (집계 전 기수 제외)")
     st.divider()
 
     # [Section 3] 기수 기록
