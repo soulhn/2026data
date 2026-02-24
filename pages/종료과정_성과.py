@@ -11,7 +11,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import (
     load_data, calculate_age_at_training, safe_float, check_password,
     calc_attendance_rate_from_counts, calc_employment_rate_6, parse_empl_rate,
-    is_completed, parse_time_to_minutes, NOT_ATTEND_STATUSES, calc_recruit_rate,
+    is_completed, parse_time_to_minutes, NOT_ATTEND_STATUSES,
 )
 from config import CACHE_TTL_DEFAULT, EMPL_CODE_MAP, RISK_ABSENT, TRNEE_TYPE_MAP
 
@@ -740,89 +740,38 @@ with tab_all:
         comp = _piv.apply(_comp_rate, axis=1).reset_index()
         comp.columns = ['기수', '출석률']
 
-    # === Section 1: 성과 지표 ===
-    st.markdown("#### 🏆 성과 지표")
-    lc, rc = st.columns(2)
-    with lc:
-        st.markdown("##### 기수별 수료율")
-        st.altair_chart(
-            alt.Chart(all_master).mark_bar(color='#3498db').encode(
-                x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
-                y=alt.Y('수료율:Q', axis=alt.Axis(title=['수', '료', '율', '(%)'], titleAngle=0)),
-                tooltip=['기수', '수료율', 'FINI_CNT', 'TOT_PAR_MKS'],
-            ).properties(height=300),
-            use_container_width=True,
-        )
-    with rc:
-        st.markdown("##### 기수별 총 취업률 (6개월)")
-        st.altair_chart(
-            alt.Chart(all_master).mark_bar(color='#2ecc71').encode(
-                x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
-                y=alt.Y('총_취업률:Q', axis=alt.Axis(title=['취', '업', '률', '(%)'], titleAngle=0)),
-                tooltip=['기수', '총_취업률', 'EI_취업률_6', 'HRD_취업률_6'],
-            ).properties(height=300),
-            use_container_width=True,
-        )
-    st.divider()
+    # === 서브탭 구성 ===
+    sub_perf, sub_drop, sub_data = st.tabs(["성과 지표", "이탈 분석", "상세 데이터"])
 
-    # === Section 2: 수강생 구성 변화 ===
-    st.markdown("#### 👥 수강생 구성 변화")
-    demo_df = get_all_trainee_demographics()
-    if not demo_df.empty:
-        demo_df['나이'] = demo_df.apply(
-            lambda r: calculate_age_at_training(r['BIRTH_DATE'], r['TR_STA_DT']), axis=1
-        )
-        demo_df['연령대'] = demo_df['나이'].apply(
-            lambda x: f"{int(x // 10 * 10)}대" if pd.notnull(x) else "미상"
-        )
-        demo_df['TRNEE_TYPE'] = demo_df['TRNEE_TYPE'].map(TRNEE_TYPE_MAP).fillna(demo_df['TRNEE_TYPE'])
-        demo_df['기수'] = demo_df['TRPR_DEGR'].astype(str) + '회차'
-
-        dc1, dc2 = st.columns(2)
-        with dc1:
-            st.markdown("##### 기수별 연령대 구성")
-            age_stack = demo_df.groupby(['기수', '연령대']).size().reset_index(name='인원')
-            st.altair_chart(
-                alt.Chart(age_stack).mark_bar().encode(
-                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y('인원:Q', stack='normalize',
-                            axis=alt.Axis(format='%', title=['비', '율'], titleAngle=0)),
-                    color=alt.Color('연령대:N', title='연령대'),
-                    tooltip=['기수', '연령대', '인원'],
-                ).properties(height=300),
-                use_container_width=True,
-            )
-        with dc2:
-            st.markdown("##### 기수별 훈련생 유형 구성")
-            type_stack = demo_df.groupby(['기수', 'TRNEE_TYPE']).size().reset_index(name='인원')
-            type_stack = type_stack.rename(columns={'TRNEE_TYPE': '유형'})
-            st.altair_chart(
-                alt.Chart(type_stack).mark_bar().encode(
-                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y('인원:Q', stack='normalize',
-                            axis=alt.Axis(format='%', title=['비', '율'], titleAngle=0)),
-                    color=alt.Color('유형:N', title='유형'),
-                    tooltip=['기수', '유형', '인원'],
-                ).properties(height=300),
-                use_container_width=True,
-            )
-    st.divider()
-
-    # === Section 3: 출결 & 취업률 연관 분석 ===
-    st.markdown("#### 📅 출결과 취업률의 관계")
+    # 공통 데이터 사전 계산
     absent_avg_df = get_all_degr_absent_avg()
     if not absent_avg_df.empty:
         absent_avg_df['기수'] = absent_avg_df['TRPR_DEGR'].astype(str) + '회차'
         absent_avg_df['평균_결석일'] = absent_avg_df['평균_결석일'].round(1)
 
-    if not comp.empty:
-        _corr_base = comp[['기수', '출석률']].merge(
-            all_master[['기수', '총_취업률']].dropna(subset=['총_취업률']),
-            on='기수', how='inner'
-        )
+    # ──────────────────────────────────────────────
+    # 서브탭 1: 성과 지표
+    # ──────────────────────────────────────────────
+    with sub_perf:
+        # (A) KPI 요약 메트릭
+        avg_comp_rate = all_master['수료율'].mean()
+        avg_attend = comp['출석률'].mean() if not comp.empty else None
+        avg_empl = all_master['총_취업률'].mean()
+        avg_dropout = all_master['중도탈락률'].mean()
 
-        ac1, ac2 = st.columns(2)
-        with ac1:
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        kpi1.metric("평균 수료율", f"{avg_comp_rate:.1f}%")
+        kpi2.metric("평균 출석률", f"{avg_attend:.1f}%" if avg_attend is not None else "–")
+        kpi3.metric("평균 취업률", f"{avg_empl:.1f}%" if pd.notna(avg_empl) else "–")
+        kpi4.metric("평균 중도탈락률", f"{avg_dropout:.1f}%")
+        st.divider()
+
+        # (B) 출석률 & 취업률 추이 (dual-line)
+        if not comp.empty:
+            _corr_base = comp[['기수', '출석률']].merge(
+                all_master[['기수', '총_취업률']].dropna(subset=['총_취업률']),
+                on='기수', how='inner'
+            )
             st.markdown("##### 기수별 출석률 & 취업률 추이")
             st.caption("두 지표 모두 % 기준 — 기수별 흐름 비교")
             if not _corr_base.empty:
@@ -843,45 +792,80 @@ with tab_all:
                     ).properties(height=300),
                     use_container_width=True,
                 )
-        with ac2:
-            st.markdown("##### 출석률 vs 취업률 상관관계")
-            st.caption("각 점 = 기수. 출석률이 높을수록 취업률도 높은지 확인")
-            if not _corr_base.empty:
-                _scatter = alt.Chart(_corr_base).mark_circle(size=90, color='#9b59b6').encode(
-                    x=alt.X('출석률:Q', title='출석률(%)'),
-                    y=alt.Y('총_취업률:Q', title='6개월 취업률(%)'),
-                    tooltip=['기수', '출석률', '총_취업률'],
-                )
-                _labels = alt.Chart(_corr_base).mark_text(dy=-12, fontSize=11, color='#555').encode(
-                    x=alt.X('출석률:Q'),
-                    y=alt.Y('총_취업률:Q'),
-                    text=alt.Text('기수:N'),
-                )
+            st.divider()
+
+        # (C) 수료율 bar | 평균 결석일 bar
+        c_left, c_right = st.columns(2)
+        with c_left:
+            st.markdown("##### 기수별 수료율")
+            st.altair_chart(
+                alt.Chart(all_master).mark_bar(color='#3498db').encode(
+                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y('수료율:Q', axis=alt.Axis(title=['수', '료', '율', '(%)'], titleAngle=0)),
+                    tooltip=['기수', '수료율', 'FINI_CNT', 'TOT_PAR_MKS'],
+                ).properties(height=300),
+                use_container_width=True,
+            )
+        with c_right:
+            st.markdown("##### 기수별 1인당 평균 결석일")
+            if not absent_avg_df.empty:
                 st.altair_chart(
-                    (_scatter + _labels).interactive().properties(height=300),
+                    alt.Chart(absent_avg_df).mark_bar(color='#e74c3c').encode(
+                        x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
+                        y=alt.Y('평균_결석일:Q', axis=alt.Axis(title=['평', '균', '결', '석', '일'], titleAngle=0)),
+                        tooltip=['기수', '평균_결석일'],
+                    ).properties(height=300),
                     use_container_width=True,
                 )
         st.divider()
 
-    # 1인당 평균 결석일
-    ac3, ac4 = st.columns(2)
-    with ac3:
-        st.markdown("##### 기수별 1인당 평균 결석일")
-        if not absent_avg_df.empty:
-            st.altair_chart(
-                alt.Chart(absent_avg_df).mark_bar(color='#e74c3c').encode(
-                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y('평균_결석일:Q', axis=alt.Axis(title=['평', '균', '결', '석', '일'], titleAngle=0)),
-                    tooltip=['기수', '평균_결석일'],
-                ).properties(height=280),
-                use_container_width=True,
+        # (D) 수강생 구성 변화 (연령대 | 유형)
+        demo_df = get_all_trainee_demographics()
+        if not demo_df.empty:
+            demo_df['나이'] = demo_df.apply(
+                lambda r: calculate_age_at_training(r['BIRTH_DATE'], r['TR_STA_DT']), axis=1
             )
-    st.divider()
+            demo_df['연령대'] = demo_df['나이'].apply(
+                lambda x: f"{int(x // 10 * 10)}대" if pd.notnull(x) else "미상"
+            )
+            demo_df['TRNEE_TYPE'] = demo_df['TRNEE_TYPE'].map(TRNEE_TYPE_MAP).fillna(demo_df['TRNEE_TYPE'])
+            demo_df['기수'] = demo_df['TRPR_DEGR'].astype(str) + '회차'
 
-    # === Section 4: 이탈 현황 ===
-    st.markdown("#### 📉 이탈 현황")
-    ic1, ic2 = st.columns(2)
-    with ic1:
+            st.markdown("##### 수강생 구성 변화")
+            dc1, dc2 = st.columns(2)
+            with dc1:
+                st.markdown("###### 기수별 연령대 구성")
+                age_stack = demo_df.groupby(['기수', '연령대']).size().reset_index(name='인원')
+                st.altair_chart(
+                    alt.Chart(age_stack).mark_bar().encode(
+                        x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
+                        y=alt.Y('인원:Q', stack='normalize',
+                                axis=alt.Axis(format='%', title=['비', '율'], titleAngle=0)),
+                        color=alt.Color('연령대:N', title='연령대'),
+                        tooltip=['기수', '연령대', '인원'],
+                    ).properties(height=300),
+                    use_container_width=True,
+                )
+            with dc2:
+                st.markdown("###### 기수별 훈련생 유형 구성")
+                type_stack = demo_df.groupby(['기수', 'TRNEE_TYPE']).size().reset_index(name='인원')
+                type_stack = type_stack.rename(columns={'TRNEE_TYPE': '유형'})
+                st.altair_chart(
+                    alt.Chart(type_stack).mark_bar().encode(
+                        x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
+                        y=alt.Y('인원:Q', stack='normalize',
+                                axis=alt.Axis(format='%', title=['비', '율'], titleAngle=0)),
+                        color=alt.Color('유형:N', title='유형'),
+                        tooltip=['기수', '유형', '인원'],
+                    ).properties(height=300),
+                    use_container_width=True,
+                )
+
+    # ──────────────────────────────────────────────
+    # 서브탭 2: 이탈 분석
+    # ──────────────────────────────────────────────
+    with sub_drop:
+        # (E) 중도탈락률 line
         st.markdown("##### 기수별 중도탈락률")
         st.altair_chart(
             alt.Chart(all_master).mark_line(
@@ -893,191 +877,139 @@ with tab_all:
             ).properties(height=300),
             use_container_width=True,
         )
-    with ic2:
-        st.markdown("##### 기수별 결석 건수")
-        if not absent_total_df.empty:
-            st.altair_chart(
-                alt.Chart(absent_total_df).mark_bar(color='#c0392b').encode(
-                    x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y('결석건수:Q', axis=alt.Axis(title=['결', '석', '건', '수'], titleAngle=0)),
-                    tooltip=['기수', '결석건수'],
-                ).properties(height=300),
-                use_container_width=True,
-            )
-    st.divider()
+        st.divider()
 
-    # === Section 5: 종합 비교 테이블 ===
-    st.markdown("##### 종합 비교 테이블")
-    summary_cols = ['기수', 'TRPR_NM', 'TR_STA_DT', 'TR_END_DT', 'TOT_TRP_CNT', 'TOT_PAR_MKS', 'EXPEL_CNT', 'DROP_CNT', '잔여율', 'FINI_CNT', '수료율', '취업률_3', '총_취업률']
-    st.dataframe(
-        all_master[summary_cols].rename(columns={
-            'TRPR_NM': '과정명', 'TR_STA_DT': '시작일', 'TR_END_DT': '종료일',
-            'TOT_TRP_CNT': '수강신청', 'TOT_PAR_MKS': '수강인원',
-            'EXPEL_CNT': '제적', 'DROP_CNT': '중도탈락',
-            '잔여율': '잔여율(%)', 'FINI_CNT': '수료인원',
-            '수료율': '수료율(%)', '취업률_3': '3개월 취업률(%)', '총_취업률': '6개월 취업률(%)',
-        }),
-        column_config={
-            "수강신청": st.column_config.NumberColumn(format="%d명"),
-            "수강인원": st.column_config.NumberColumn(format="%d명"),
-            "제적": st.column_config.NumberColumn(format="%d명"),
-            "중도탈락": st.column_config.NumberColumn(format="%d명"),
-            "잔여율(%)": st.column_config.NumberColumn(format="%.1f%%"),
-            "수료인원": st.column_config.NumberColumn(format="%d명"),
-            "수료율(%)": st.column_config.NumberColumn(format="%.1f%%"),
-            "3개월 취업률(%)": st.column_config.NumberColumn(format="%.1f%%"),
-            "6개월 취업률(%)": st.column_config.NumberColumn(format="%.1f%%"),
-        },
-        use_container_width=True,
-        hide_index=True,
-    )
-    st.caption("💡 특정 기수를 심층 분석하려면 사이드바에서 회차를 선택 후 '📌 개별 기수 분석' 탭을 확인하세요.")
-    st.divider()
-
-    # === Section 6: 기수별 성과 레이더 차트 (A-2) ===
-    st.markdown("#### 🕸️ 기수별 성과 레이더 차트")
-    all_master['모집률'] = calc_recruit_rate(
-        all_master['TOT_PAR_MKS'], all_master['TOT_FXNUM']
-    ).round(1)
-
-    radar_data = all_master[['기수', '수료율', '총_취업률', '모집률']].copy()
-    radar_data = radar_data.rename(columns={'총_취업률': '취업률(6개월)'})
-    if not comp.empty:
-        radar_data = radar_data.merge(comp[['기수', '출석률']], on='기수', how='left')
-    else:
-        radar_data['출석률'] = 0.0
-
-    avail_degr = sorted(
-        radar_data['기수'].unique(), key=lambda x: int(x.replace('회차', ''))
-    )
-    default_degr = avail_degr[:3]
-    selected_radar = st.multiselect(
-        "비교할 기수 선택 (2~5개)", avail_degr, default=default_degr, key='radar_degr'
-    )
-
-    radar_metrics = ['출석률', '수료율', '취업률(6개월)', '모집률']
-    if len(selected_radar) >= 2:
-        fig_radar = go.Figure()
-        for degr_label in selected_radar:
-            row = radar_data[radar_data['기수'] == degr_label]
-            if row.empty:
-                continue
-            row = row.iloc[0]
-            values = []
-            for m in radar_metrics:
-                v = row.get(m)
-                values.append(0 if pd.isna(v) else round(float(v), 1))
-            fig_radar.add_trace(go.Scatterpolar(
-                r=values + [values[0]],
-                theta=radar_metrics + [radar_metrics[0]],
-                fill='toself', opacity=0.5,
-                name=degr_label,
-            ))
-        fig_radar.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-            height=500,
-        )
-        st.plotly_chart(fig_radar, use_container_width=True)
-        has_na = radar_data[radar_data['기수'].isin(selected_radar)]['취업률(6개월)'].isna().any()
-        if has_na:
-            st.caption("⚠️ 취업률 데이터가 없는 기수는 해당 축이 0으로 표시됩니다.")
-    elif len(selected_radar) == 1:
-        st.info("비교를 위해 2개 이상의 기수를 선택해주세요.")
-    st.divider()
-
-    # === Section 7: 이탈 타이밍 생존곡선 (A-5) ===
-    st.markdown("#### 📉 이탈 타이밍 생존곡선")
-    st.caption("중도탈락자의 마지막 출석일 기준으로 잔류율 변화와 이탈 시점 분포를 보여줍니다.")
-    dropout_timing = get_dropout_timing()
-    if not dropout_timing.empty:
-        dropout_timing['LAST_ATTEND_DT'] = pd.to_datetime(dropout_timing['LAST_ATTEND_DT'])
-        dropout_timing['TR_STA_DT'] = pd.to_datetime(dropout_timing['TR_STA_DT'])
-        dropout_timing['이탈경과일'] = (
-            dropout_timing['LAST_ATTEND_DT'] - dropout_timing['TR_STA_DT']
-        ).dt.days
-        dropout_timing['기수'] = dropout_timing['TRPR_DEGR'].astype(str) + '회차'
-        dropout_timing = dropout_timing[dropout_timing['이탈경과일'] >= 0]
-
+        # (F) 잔류율 곡선 | 이탈 분포 히스토그램
+        dropout_timing = get_dropout_timing()
         if not dropout_timing.empty:
-            surv_col, hist_col = st.columns(2)
-            with surv_col:
-                st.markdown("##### 잔류율 곡선")
-                fig_surv = go.Figure()
-                for degr_label in sorted(
-                    dropout_timing['기수'].unique(),
-                    key=lambda x: int(x.replace('회차', '')),
-                ):
-                    sub = dropout_timing[dropout_timing['기수'] == degr_label]
-                    tot = int(sub['TOT_PAR_MKS'].iloc[0])
-                    if tot <= 0:
-                        continue
-                    dropout_days = sorted(sub['이탈경과일'].tolist())
-                    times = [0]
-                    survival = [100.0]
-                    cum_drop = 0
-                    for d in dropout_days:
-                        cum_drop += 1
-                        times.append(d)
-                        survival.append(round((tot - cum_drop) / tot * 100, 1))
-                    fig_surv.add_trace(go.Scatter(
-                        x=times, y=survival, mode='lines',
-                        line_shape='hv', name=degr_label, opacity=0.8,
-                    ))
-                fig_surv.update_layout(
-                    xaxis_title='개강 후 경과일', yaxis_title='잔류율 (%)',
-                    height=400, yaxis_range=[0, 105],
-                )
-                st.plotly_chart(fig_surv, use_container_width=True)
-            with hist_col:
-                st.markdown("##### 이탈 시점 분포")
-                fig_hist = px.histogram(
-                    dropout_timing, x='이탈경과일', color='기수',
-                    barmode='overlay', opacity=0.6,
-                    labels={'이탈경과일': '개강 후 경과일'},
-                )
-                fig_hist.update_layout(height=400)
-                st.plotly_chart(fig_hist, use_container_width=True)
+            dropout_timing['LAST_ATTEND_DT'] = pd.to_datetime(dropout_timing['LAST_ATTEND_DT'])
+            dropout_timing['TR_STA_DT'] = pd.to_datetime(dropout_timing['TR_STA_DT'])
+            dropout_timing['이탈경과일'] = (
+                dropout_timing['LAST_ATTEND_DT'] - dropout_timing['TR_STA_DT']
+            ).dt.days
+            dropout_timing['기수'] = dropout_timing['TRPR_DEGR'].astype(str) + '회차'
+            dropout_timing = dropout_timing[dropout_timing['이탈경과일'] >= 0]
 
-            st.markdown("##### 기수별 이탈 시점 요약")
-            drop_summary = dropout_timing.groupby('기수').agg(
-                이탈자수=('TRNEE_ID', 'count'),
-                평균_이탈일=('이탈경과일', 'mean'),
-                중앙값_이탈일=('이탈경과일', 'median'),
-                최소_이탈일=('이탈경과일', 'min'),
-                최대_이탈일=('이탈경과일', 'max'),
+            if not dropout_timing.empty:
+                surv_col, hist_col = st.columns(2)
+                with surv_col:
+                    st.markdown("##### 잔류율 곡선")
+                    fig_surv = go.Figure()
+                    for degr_label in sorted(
+                        dropout_timing['기수'].unique(),
+                        key=lambda x: int(x.replace('회차', '')),
+                    ):
+                        sub = dropout_timing[dropout_timing['기수'] == degr_label]
+                        tot = int(sub['TOT_PAR_MKS'].iloc[0])
+                        if tot <= 0:
+                            continue
+                        dropout_days = sorted(sub['이탈경과일'].tolist())
+                        times = [0]
+                        survival = [100.0]
+                        cum_drop = 0
+                        for d in dropout_days:
+                            cum_drop += 1
+                            times.append(d)
+                            survival.append(round((tot - cum_drop) / tot * 100, 1))
+                        fig_surv.add_trace(go.Scatter(
+                            x=times, y=survival, mode='lines',
+                            line_shape='hv', name=degr_label, opacity=0.8,
+                        ))
+                    fig_surv.update_layout(
+                        xaxis_title='개강 후 경과일', yaxis_title='잔류율 (%)',
+                        height=400, yaxis_range=[0, 105],
+                    )
+                    st.plotly_chart(fig_surv, use_container_width=True)
+                with hist_col:
+                    st.markdown("##### 이탈 시점 분포")
+                    fig_hist = px.histogram(
+                        dropout_timing, x='이탈경과일', color='기수',
+                        barmode='overlay', opacity=0.6,
+                        labels={'이탈경과일': '개강 후 경과일'},
+                    )
+                    fig_hist.update_layout(height=400)
+                    st.plotly_chart(fig_hist, use_container_width=True)
+                st.divider()
+
+                # (G) 이탈 시점 요약 테이블
+                st.markdown("##### 기수별 이탈 시점 요약")
+                drop_summary = dropout_timing.groupby('기수').agg(
+                    이탈자수=('TRNEE_ID', 'count'),
+                    평균_이탈일=('이탈경과일', 'mean'),
+                    중앙값_이탈일=('이탈경과일', 'median'),
+                    최소_이탈일=('이탈경과일', 'min'),
+                    최대_이탈일=('이탈경과일', 'max'),
+                ).reset_index()
+                drop_summary['평균_이탈일'] = drop_summary['평균_이탈일'].round(1)
+                drop_summary['중앙값_이탈일'] = drop_summary['중앙값_이탈일'].round(1)
+                st.dataframe(drop_summary, use_container_width=True, hide_index=True)
+        else:
+            st.info("이탈 타이밍 데이터가 없습니다.")
+        st.divider()
+
+        # (H) 주간 출결 추세 (multi-line)
+        st.markdown("##### 기수 간 주간 출결 추세")
+        st.caption("각 기수의 개강일 기준 상대 주차별 출석률 변화를 비교합니다.")
+        weekly_raw = get_weekly_attendance_raw()
+        if not weekly_raw.empty:
+            weekly_raw['ATEND_DT'] = pd.to_datetime(weekly_raw['ATEND_DT'])
+            weekly_raw['TR_STA_DT'] = pd.to_datetime(weekly_raw['TR_STA_DT'])
+            weekly_raw['경과일'] = (weekly_raw['ATEND_DT'] - weekly_raw['TR_STA_DT']).dt.days
+            weekly_raw['상대주차'] = weekly_raw['경과일'] // 7 + 1
+            weekly_raw = weekly_raw[weekly_raw['상대주차'].between(1, 30)]
+            weekly_raw['출석여부'] = ~weekly_raw['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)
+            weekly_raw['기수'] = weekly_raw['TRPR_DEGR'].astype(str) + '회차'
+            weekly_rate = weekly_raw.groupby(['기수', '상대주차']).agg(
+                주간출석률=('출석여부', lambda x: round(x.mean() * 100, 1))
             ).reset_index()
-            drop_summary['평균_이탈일'] = drop_summary['평균_이탈일'].round(1)
-            drop_summary['중앙값_이탈일'] = drop_summary['중앙값_이탈일'].round(1)
-            st.dataframe(drop_summary, use_container_width=True, hide_index=True)
-    else:
-        st.info("이탈 타이밍 데이터가 없습니다.")
-    st.divider()
+            weekly_rate['상대주차'] = weekly_rate['상대주차'].astype(int)
+            fig_weekly = px.line(
+                weekly_rate.sort_values(['기수', '상대주차']),
+                x='상대주차', y='주간출석률', color='기수',
+                markers=True,
+                labels={'상대주차': '상대 주차', '주간출석률': '주간 출석률 (%)'},
+            )
+            fig_weekly.update_xaxes(type='category')
+            fig_weekly.update_layout(height=400, yaxis_range=[0, 105])
+            st.plotly_chart(fig_weekly, use_container_width=True)
+            st.caption("💡 주간 단위에서는 지각·조퇴 패널티 미적용 (누적 기반이므로)")
+        else:
+            st.info("주간 출결 데이터가 없습니다.")
 
-    # === Section 8: 기수 간 주간 출결 추세 (A-6) ===
-    st.markdown("#### 📈 기수 간 주간 출결 추세")
-    st.caption("각 기수의 개강일 기준 상대 주차별 출석률 변화를 비교합니다.")
-    weekly_raw = get_weekly_attendance_raw()
-    if not weekly_raw.empty:
-        weekly_raw['ATEND_DT'] = pd.to_datetime(weekly_raw['ATEND_DT'])
-        weekly_raw['TR_STA_DT'] = pd.to_datetime(weekly_raw['TR_STA_DT'])
-        weekly_raw['경과일'] = (weekly_raw['ATEND_DT'] - weekly_raw['TR_STA_DT']).dt.days
-        weekly_raw['상대주차'] = weekly_raw['경과일'] // 7 + 1
-        weekly_raw = weekly_raw[weekly_raw['상대주차'].between(1, 30)]
-        weekly_raw['출석여부'] = ~weekly_raw['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)
-        weekly_raw['기수'] = weekly_raw['TRPR_DEGR'].astype(str) + '회차'
-        weekly_rate = weekly_raw.groupby(['기수', '상대주차']).agg(
-            주간출석률=('출석여부', lambda x: round(x.mean() * 100, 1))
-        ).reset_index()
-        weekly_rate['상대주차'] = weekly_rate['상대주차'].astype(int)
-        fig_weekly = px.line(
-            weekly_rate.sort_values(['기수', '상대주차']),
-            x='상대주차', y='주간출석률', color='기수',
-            markers=True,
-            labels={'상대주차': '상대 주차', '주간출석률': '주간 출석률 (%)'},
+    # ──────────────────────────────────────────────
+    # 서브탭 3: 상세 데이터
+    # ──────────────────────────────────────────────
+    with sub_data:
+        # (I) 종합 비교 테이블 (+출석률)
+        st.markdown("##### 종합 비교 테이블")
+        _tbl = all_master.copy()
+        if not comp.empty:
+            _tbl = _tbl.merge(comp[['기수', '출석률']], on='기수', how='left')
+        else:
+            _tbl['출석률'] = pd.NA
+        summary_cols = ['기수', 'TRPR_NM', 'TR_STA_DT', 'TR_END_DT', 'TOT_TRP_CNT', 'TOT_PAR_MKS', 'EXPEL_CNT', 'DROP_CNT', '잔여율', 'FINI_CNT', '수료율', '출석률', '취업률_3', '총_취업률']
+        st.dataframe(
+            _tbl[summary_cols].rename(columns={
+                'TRPR_NM': '과정명', 'TR_STA_DT': '시작일', 'TR_END_DT': '종료일',
+                'TOT_TRP_CNT': '수강신청', 'TOT_PAR_MKS': '수강인원',
+                'EXPEL_CNT': '제적', 'DROP_CNT': '중도탈락',
+                '잔여율': '잔여율(%)', 'FINI_CNT': '수료인원',
+                '수료율': '수료율(%)', '출석률': '출석률(%)',
+                '취업률_3': '3개월 취업률(%)', '총_취업률': '6개월 취업률(%)',
+            }),
+            column_config={
+                "수강신청": st.column_config.NumberColumn(format="%d명"),
+                "수강인원": st.column_config.NumberColumn(format="%d명"),
+                "제적": st.column_config.NumberColumn(format="%d명"),
+                "중도탈락": st.column_config.NumberColumn(format="%d명"),
+                "잔여율(%)": st.column_config.NumberColumn(format="%.1f%%"),
+                "수료인원": st.column_config.NumberColumn(format="%d명"),
+                "수료율(%)": st.column_config.NumberColumn(format="%.1f%%"),
+                "출석률(%)": st.column_config.NumberColumn(format="%.1f%%"),
+                "3개월 취업률(%)": st.column_config.NumberColumn(format="%.1f%%"),
+                "6개월 취업률(%)": st.column_config.NumberColumn(format="%.1f%%"),
+            },
+            use_container_width=True,
+            hide_index=True,
         )
-        fig_weekly.update_xaxes(type='category')
-        fig_weekly.update_layout(height=400, yaxis_range=[0, 105])
-        st.plotly_chart(fig_weekly, use_container_width=True)
-        st.caption("💡 주간 단위에서는 지각·조퇴 패널티 미적용 (누적 기반이므로)")
-    else:
-        st.info("주간 출결 데이터가 없습니다.")
+        st.caption("💡 특정 기수를 심층 분석하려면 사이드바에서 회차를 선택 후 '개별 기수 분석' 탭을 확인하세요.")
