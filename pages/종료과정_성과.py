@@ -612,20 +612,20 @@ with tab_indiv:
                         rows_bar.append({"그룹": label, "출결 상태": status, "비율": round(cnt / total * 100, 1)})
                 bar_df = pd.DataFrame(rows_bar)
                 if not bar_df.empty:
-                    fig_bar = px.bar(
-                        bar_df, x="출결 상태", y="비율", color="그룹",
-                        barmode="group", text="비율",
-                        labels={"비율": "비율 (%)"},
-                        color_discrete_map={"중도탈락": "#e74c3c", "수료": "#3498db"},
-                        category_orders={"출결 상태": target_statuses},
+                    bars = alt.Chart(bar_df).mark_bar().encode(
+                        x=alt.X("출결 상태:N", sort=target_statuses, title="출결 상태",
+                                axis=alt.Axis(labelAngle=0)),
+                        y=alt.Y("비율:Q", axis=alt.Axis(title=["비", "율", "(%)"], titleAngle=0)),
+                        color=alt.Color("그룹:N", scale=alt.Scale(
+                            domain=["중도탈락", "수료"], range=["#e74c3c", "#3498db"])),
+                        xOffset="그룹:N",
+                        tooltip=["그룹", "출결 상태", "비율"],
                     )
-                    fig_bar.update_layout(height=350, xaxis_title="")
-                    fig_bar.update_layout(yaxis=dict(
-                        title=dict(text="비<br>율<br>(%)", font_size=13, standoff=0),
-                        title_standoff=0,
-                    ))
-                    fig_bar.update_traces(textposition="outside", texttemplate="%{text}%")
-                    st.plotly_chart(fig_bar, use_container_width=True)
+                    text_layer = bars.mark_text(dy=-8, fontSize=11).encode(
+                        text=alt.Text("비율:Q", format=".1f"),
+                    )
+                    st.altair_chart((bars + text_layer).properties(height=350),
+                                   use_container_width=True)
                 st.divider()
 
                 # (4) 이탈 전 2달 평균 출결 지표
@@ -964,20 +964,21 @@ with tab_all:
             status_agg['비율'] = (status_agg['CNT'] / status_agg['TOTAL'] * 100).round(1)
             status_agg = status_agg[status_agg['ATEND_STATUS'].isin(target_statuses)]
             if not status_agg.empty:
-                fig_bar = px.bar(
-                    status_agg, x='ATEND_STATUS', y='비율', color='그룹',
-                    barmode='group', text='비율',
-                    labels={'ATEND_STATUS': '출결 상태', '비율': '비율 (%)'},
-                    color_discrete_map={'중도탈락': '#e74c3c', '수료': '#3498db'},
-                    category_orders={'ATEND_STATUS': target_statuses},
+                status_agg.rename(columns={'ATEND_STATUS': '출결 상태'}, inplace=True)
+                bars = alt.Chart(status_agg).mark_bar().encode(
+                    x=alt.X('출결 상태:N', sort=target_statuses, title='출결 상태',
+                            axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y('비율:Q', axis=alt.Axis(title=['비', '율', '(%)'], titleAngle=0)),
+                    color=alt.Color('그룹:N', scale=alt.Scale(
+                        domain=['중도탈락', '수료'], range=['#e74c3c', '#3498db'])),
+                    xOffset='그룹:N',
+                    tooltip=['그룹', '출결 상태', '비율'],
                 )
-                fig_bar.update_layout(height=350, xaxis_title='')
-                fig_bar.update_layout(yaxis=dict(
-                    title=dict(text='비<br>율<br>(%)', font_size=13, standoff=0),
-                    title_standoff=0,
-                ))
-                fig_bar.update_traces(textposition='outside', texttemplate='%{text}%')
-                st.plotly_chart(fig_bar, use_container_width=True)
+                text_layer = bars.mark_text(dy=-8, fontSize=11).encode(
+                    text=alt.Text('비율:Q', format='.1f'),
+                )
+                st.altair_chart((bars + text_layer).properties(height=350),
+                               use_container_width=True)
             else:
                 st.info("비교할 출결 데이터가 없습니다.")
         else:
