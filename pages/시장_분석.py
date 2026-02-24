@@ -364,31 +364,6 @@ def load_region_opp(where, params):
     """, params=params)
 
 
-@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
-def load_internal_with_market():
-    """내부 과정 + 시장 메타데이터 JOIN."""
-    return _sql_query(
-        "SELECT c.TRPR_ID, c.TRPR_DEGR, c.TRPR_NM, c.TR_STA_DT, c.TR_END_DT, "
-        "c.TOT_FXNUM, c.TOT_PAR_MKS, "
-        "m.NCS_CD, m.REGION, m.STDG_SCOR, m.REG_COURSE_MAN "
-        "FROM TB_COURSE_MASTER c "
-        "LEFT JOIN TB_MARKET_TREND m "
-        "ON c.TRPR_ID = m.TRPR_ID AND c.TRPR_DEGR = m.TRPR_DEGR "
-        "ORDER BY CAST(c.TRPR_DEGR AS INTEGER)"
-    )
-
-
-@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
-def load_market_percentile_data(where, params):
-    """시장 모집률·만족도·NCS 원시 분포."""
-    return _sql_query(
-        f"SELECT CAST(REG_COURSE_MAN AS REAL) / NULLIF(TOT_FXNUM, 0) * 100 as RECRUIT_RATE, "
-        f"STDG_SCOR, NCS_CD "
-        f"FROM TB_MARKET_TREND {where}",
-        params=params,
-    )
-
-
 
 # ==========================================
 # 1. 설정 및 데이터 로드
@@ -571,7 +546,7 @@ if not names_df_shared.empty and top_words_shared:
 # 3.2 탭 구성
 tabs = st.tabs([
     "📊 시장 개요 & 사업 기회", "🏆 순위 & 유형",
-    "☁️ 키워드 분석", "🏢 내부 vs 시장"
+    "☁️ 키워드 분석",
 ])
 
 # ─────────────────────────────────────────
@@ -904,147 +879,3 @@ with tabs[2]:
             hide_index=True,
         )
 
-# ─────────────────────────────────────────
-# [Tab 3] 🏢 내부 vs 시장
-# ─────────────────────────────────────────
-with tabs[3]:
-    st.subheader("🏢 내부 과정 vs 시장 벤치마크")
-    st.caption("내부 과정의 모집률·만족도를 시장 전체 분포와 비교합니다. (취업률은 시장 데이터 91%가 NULL이므로 제외)")
-
-    # 현재 시장 기준 표시
-    _criteria = []
-    _criteria.append(f"**기간**: {start_date} ~ {end_date}")
-    _criteria.append(f"**훈련유형**: {', '.join(sel_types) if sel_types else '전체'}")
-    _criteria.append(f"**지역**: {sel_region}")
-    if sel_wkend:
-        _criteria.append(f"**주중/주말**: {', '.join(sel_wkend)}")
-    if sel_grade:
-        _criteria.append(f"**기관등급**: {', '.join(sel_grade)}")
-    if sel_ncs != '전체':
-        _criteria.append(f"**NCS**: {sel_ncs}")
-    if search_kwd:
-        _criteria.append(f"**키워드**: {search_kwd}")
-    st.info(f"**시장 기준** (사이드바 필터 반영): {' · '.join(_criteria)}")
-
-    internal = load_internal_with_market()
-    market_dist = load_market_percentile_data(where, params)
-
-    if internal.empty:
-        st.warning("내부 과정 데이터가 없습니다.")
-    elif market_dist.empty:
-        st.warning("시장 분포 데이터가 없습니다.")
-    else:
-        internal['모집률'] = calc_recruit_rate(
-            pd.to_numeric(internal['TOT_PAR_MKS'], errors='coerce').fillna(0),
-            pd.to_numeric(internal['TOT_FXNUM'], errors='coerce').fillna(0),
-        ).round(1)
-        internal['기수'] = internal['TRPR_DEGR'].astype(str) + '회차'
-        market_recruit = market_dist['RECRUIT_RATE'].dropna()
-        market_recruit = market_recruit[(market_recruit >= 0) & (market_recruit <= 200)]
-
-        if market_recruit.empty:
-            st.warning("시장 모집률 데이터가 없습니다.")
-        else:
-            # ── 모집률 히스토그램 ──
-            st.markdown("##### 모집률 비교: 내부 과정 vs 시장 분포")
-            fig_recruit = go.Figure()
-            fig_recruit.add_trace(go.Histogram(
-                x=market_recruit, nbinsx=50, name='시장 전체',
-                marker_color='#d5d8dc', opacity=0.7,
-            ))
-            _colors = px.colors.qualitative.Set2
-            for i, (_, row) in enumerate(internal.iterrows()):
-                rate = row['모집률']
-                label = row['기수']
-                color = _colors[i % len(_colors)]
-                fig_recruit.add_vline(x=rate, line_dash='dash', line_color=color, line_width=2)
-                pct = (market_recruit < rate).mean() * 100
-                fig_recruit.add_annotation(
-                    x=rate, y=1, yref='paper',
-                    text=f"{row['TRPR_DEGR']}",
-                    showarrow=True, arrowhead=2,
-                    font=dict(color=color, size=11),
-                )
-            fig_recruit.update_layout(
-                xaxis_title='모집률 (%)', yaxis_title='과정 수',
-                height=400, barmode='overlay',
-            )
-            st.plotly_chart(fig_recruit, use_container_width=True)
-
-            # ── 백분위 요약 테이블 ──
-            st.markdown("##### 백분위 요약")
-            pct_rows = []
-            for _, row in internal.iterrows():
-                rate = row['모집률']
-                pct = (market_recruit < rate).mean() * 100
-                pct_rows.append({
-                    '기수': row['기수'],
-                    '모집률 (%)': round(rate, 1),
-                    '시장 백분위': f"상위 {100-pct:.0f}%",
-                    '시장 중앙값 (%)': round(float(market_recruit.median()), 1),
-                })
-            st.dataframe(pd.DataFrame(pct_rows), use_container_width=True, hide_index=True)
-
-        # ── 만족도 비교 ──
-        market_score = market_dist['STDG_SCOR'].dropna()
-        market_score = market_score[market_score > 1000]
-        internal_w_score = internal[
-            internal['STDG_SCOR'].notna()
-            & (pd.to_numeric(internal['STDG_SCOR'], errors='coerce') > 1000)
-        ].copy()
-        internal_w_score['STDG_SCOR'] = pd.to_numeric(internal_w_score['STDG_SCOR'], errors='coerce')
-
-        if not market_score.empty and not internal_w_score.empty:
-            st.divider()
-            st.markdown("##### 만족도 비교: 내부 과정 vs 시장 분포")
-            market_score_100 = market_score / 100
-            fig_score = go.Figure()
-            fig_score.add_trace(go.Histogram(
-                x=market_score_100, nbinsx=50, name='시장 전체',
-                marker_color='#d5d8dc', opacity=0.7,
-            ))
-            for i, (_, row) in enumerate(internal_w_score.iterrows()):
-                score = row['STDG_SCOR'] / 100
-                label = row['기수']
-                color = _colors[i % len(_colors)]
-                fig_score.add_vline(x=score, line_dash='dash', line_color=color, line_width=2)
-                pct = (market_score_100 < score).mean() * 100
-                fig_score.add_annotation(
-                    x=score, y=1, yref='paper',
-                    text=f"{row['TRPR_DEGR']}",
-                    showarrow=True, arrowhead=2,
-                    font=dict(color=color, size=11),
-                )
-            fig_score.update_layout(
-                xaxis_title='만족도 (100점 환산)', yaxis_title='과정 수',
-                height=400, barmode='overlay',
-            )
-            st.plotly_chart(fig_score, use_container_width=True)
-
-        # ── 동일 NCS 내 비교 ──
-        internal_ncs = internal[internal['NCS_CD'].notna() & (internal['NCS_CD'] != '')]
-        if not internal_ncs.empty and not market_dist.empty:
-            st.divider()
-            st.markdown("##### 동일 NCS 내 위치 비교")
-            st.caption("내부 과정과 같은 NCS 코드 내에서의 모집률 백분위입니다.")
-            ncs_rows = []
-            for _, row in internal_ncs.iterrows():
-                ncs = row['NCS_CD']
-                rate = row['모집률']
-                ncs_market = market_dist[market_dist['NCS_CD'] == ncs]['RECRUIT_RATE'].dropna()
-                ncs_market = ncs_market[(ncs_market >= 0) & (ncs_market <= 200)]
-                if len(ncs_market) < 5:
-                    continue
-                pct = (ncs_market < rate).mean() * 100
-                ncs_rows.append({
-                    '기수': row['기수'],
-                    'NCS 코드': ncs,
-                    '모집률 (%)': round(rate, 1),
-                    'NCS 내 백분위': f"상위 {100-pct:.0f}%",
-                    'NCS 중앙값 (%)': round(float(ncs_market.median()), 1),
-                    'NCS 내 과정 수': len(ncs_market),
-                })
-            if ncs_rows:
-                st.dataframe(pd.DataFrame(ncs_rows), use_container_width=True, hide_index=True)
-            else:
-                st.info("동일 NCS 코드의 시장 데이터가 부족합니다 (최소 5개 이상 필요).")
