@@ -10,12 +10,11 @@ import os
 
 # 🚀 상위 폴더의 utils.py를 가져오기 위한 경로 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, get_connection, is_pg, load_data as _load_data, adapt_query, calc_employment_rate_6
+from utils import check_password, get_connection, is_pg, load_data as _load_data, adapt_query
 from config import (
     CACHE_TTL_MARKET, COST_BINS, COST_BIN_LABELS,
     SCATTER_SAMPLE_LIMIT, REGRESSION_SAMPLE_LIMIT,
     NCS_MIN_COURSES, CERT_MIN_COURSES, CERT_EMPL_MIN_COURSES, TOP_CERTS_LIMIT,
-    EMPL_CODE_MAP,
 )
 
 # ==========================================
@@ -53,40 +52,6 @@ def render_ranking_table(stats_df, display_cols, format_dict, search_col, search
             use_container_width=True, hide_index=True
         )
 
-
-def render_scatter_with_overlay(market_sample, internal_scatter, x_col, y_col,
-                                title, x_label, y_label, name_col='TRPR_NM',
-                                quadrant_labels=None):
-    """시장 산점도 + 우리 과정 오버레이 + 4분면 라인."""
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=market_sample[x_col], y=market_sample[y_col],
-        mode='markers', name='시장 과정', opacity=0.4,
-        marker=dict(size=6, color='steelblue'),
-        text=market_sample[name_col], hoverinfo='text+x+y'
-    ))
-    if internal_scatter is not None and not internal_scatter.empty:
-        fig.add_trace(go.Scatter(
-            x=internal_scatter[x_col], y=internal_scatter[y_col],
-            mode='markers', name='우리 과정',
-            marker=dict(size=15, color='red', symbol='star'),
-            text=internal_scatter[name_col], hoverinfo='text+x+y'
-        ))
-    med_x = market_sample[x_col].median()
-    med_y = market_sample[y_col].median()
-    fig.add_hline(y=med_y, line_dash="dash", line_color="gray", opacity=0.5)
-    fig.add_vline(x=med_x, line_dash="dash", line_color="gray", opacity=0.5)
-
-    annotations = []
-    if quadrant_labels:
-        for label_cfg in quadrant_labels:
-            annotations.append(dict(
-                x=label_cfg['x'], y=label_cfg['y'], text=label_cfg['text'],
-                showarrow=False, font=dict(color=label_cfg.get('color', 'gray'), size=12)
-            ))
-    fig.update_layout(xaxis_title=x_label, yaxis_title=y_label, title=title, annotations=annotations)
-    st.plotly_chart(fig, use_container_width=True)
-    return med_x, med_y
 
 
 def _vert_ytitle(fig, text, margin_l=80, xshift=-50):
@@ -192,7 +157,6 @@ def load_kpi_data(where, params):
         SELECT COUNT(*) as CNT,
                AVG(CASE WHEN TOT_TRCO > 0 THEN TOT_TRCO END) as AVG_TRCO,
                AVG(TOT_FXNUM) as AVG_FXNUM,
-               AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as AVG_EMPL,
                AVG(CASE WHEN STDG_SCOR > 0 THEN STDG_SCOR END) as AVG_SCORE,
                AVG(CASE WHEN TOT_FXNUM > 0
                    THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as AVG_RECRUIT
@@ -253,7 +217,6 @@ def load_inst_stats(where, params):
                COUNT(*) as TRPR_CNT,
                COALESCE(SUM(TOT_FXNUM), 0) as TOT_FXNUM,
                COALESCE(SUM(REG_COURSE_MAN), 0) as REG_COURSE_MAN,
-               AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as AVG_EMPL,
                AVG(CASE WHEN STDG_SCOR > 0 THEN STDG_SCOR END) as AVG_SCORE
         FROM TB_MARKET_TREND {where}
         GROUP BY TRAINST_NM
@@ -268,7 +231,6 @@ def load_course_agg(where, params):
                COUNT(*) as TRPR_CNT,
                COALESCE(SUM(TOT_FXNUM), 0) as TOT_FXNUM,
                COALESCE(SUM(REG_COURSE_MAN), 0) as REG_COURSE_MAN,
-               AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as AVG_EMPL,
                AVG(CASE WHEN STDG_SCOR > 0 THEN STDG_SCOR END) as AVG_SCORE
         FROM TB_MARKET_TREND {where}
         GROUP BY TRPR_NM, TRAINST_NM
@@ -307,20 +269,6 @@ def load_ncs_agg(where, params, min_courses=5):
         ORDER BY CNT DESC
     """, params=list(params) + [min_courses])
 
-
-@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
-def load_monthly_empl(where, params):
-    """Tab 6: 월별 평균 취업률."""
-    if where == "":
-        _c = get_market_cache("monthly_empl")
-        if _c is not None:
-            return _c
-    return _sql_query(f"""
-        SELECT YEAR_MONTH as 월, AVG(EI_EMPL_RATE_3) as 평균취업률
-        FROM TB_MARKET_TREND {where}
-          {"AND" if where else "WHERE"} EI_EMPL_RATE_3 > 0
-        GROUP BY YEAR_MONTH ORDER BY YEAR_MONTH
-    """, params=params)
 
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
@@ -377,57 +325,6 @@ def load_monthly_recruit(where, params):
     """, params=params)
 
 
-@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
-def load_scatter_sample(where, params, limit=3000):
-    """Tab 5, 8: 산점도용 샘플 데이터."""
-    # SQLite와 PG 모두 지원하는 랜덤 샘플링
-    random_fn = "RANDOM()" if is_pg() else "RANDOM()"
-    return _sql_query(f"""
-        SELECT TRPR_NM, TRAINST_NM, TOT_TRCO, EI_EMPL_RATE_3, TOT_FXNUM, TRAIN_TARGET
-        FROM TB_MARKET_TREND {where}
-          {"AND" if where else "WHERE"} TOT_TRCO > 0 AND EI_EMPL_RATE_3 > 0
-        ORDER BY {random_fn} LIMIT ?
-    """, params=list(params) + [limit])
-
-
-@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
-def load_grade_stats(where, params):
-    """Tab 5: 등급별 평균 성과."""
-    return _sql_query(f"""
-        SELECT GRADE, AVG(EI_EMPL_RATE_3) as EI_EMPL_RATE_3, AVG(STDG_SCOR) as STDG_SCOR
-        FROM TB_MARKET_TREND {where}
-          {"AND" if where else "WHERE"} GRADE IS NOT NULL
-        GROUP BY GRADE
-    """, params=params)
-
-
-@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
-def load_summary_kpi(where, params):
-    """Tab 1: 전체 요약 KPI (과정수, 평균취업률, 모집률, 훈련비)."""
-    return _sql_query(f"""
-        SELECT
-            COUNT(*) as 총과정수,
-            ROUND(CAST(AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) AS NUMERIC), 1) as 평균취업률,
-            ROUND(CAST(AVG(CASE WHEN TOT_FXNUM > 0 AND REG_COURSE_MAN > 0
-                THEN CAST(REG_COURSE_MAN AS FLOAT) / TOT_FXNUM * 100 END) AS NUMERIC), 1) as 평균모집률,
-            ROUND(CAST(AVG(CASE WHEN TOT_TRCO > 0 THEN TOT_TRCO END) AS NUMERIC), 0) as 평균훈련비
-        FROM TB_MARKET_TREND {where}
-    """, params=params)
-
-
-@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
-def load_type_performance(where, params):
-    """Tab 4: 훈련 유형별 평균 취업률·모집률."""
-    return _sql_query(f"""
-        SELECT TRAIN_TARGET as 유형, COUNT(*) as 과정수,
-            ROUND(CAST(AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) AS NUMERIC), 1) as 평균취업률,
-            ROUND(CAST(AVG(CASE WHEN TOT_FXNUM > 0 AND REG_COURSE_MAN > 0
-                THEN CAST(REG_COURSE_MAN AS FLOAT) / TOT_FXNUM * 100 END) AS NUMERIC), 1) as 평균모집률
-        FROM TB_MARKET_TREND
-        {"WHERE" if not where else where.replace("WHERE","WHERE") + " AND"} TRAIN_TARGET IS NOT NULL AND TRAIN_TARGET != ''
-        GROUP BY TRAIN_TARGET ORDER BY 과정수 DESC
-    """, params=params)
-
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_type_counts(where, params):
@@ -443,7 +340,7 @@ def load_type_counts(where, params):
 def load_keyword_names(where, params):
     """키워드 탭: 과정명 + 취업률 + 연월 로드."""
     return _sql_query(f"""
-        SELECT TRPR_NM, EI_EMPL_RATE_3, YEAR_MONTH, TR_STA_DT FROM TB_MARKET_TREND {where}
+        SELECT TRPR_NM, YEAR_MONTH, TR_STA_DT FROM TB_MARKET_TREND {where}
         ORDER BY RANDOM() LIMIT 8000
     """, params=params)
 
@@ -460,32 +357,12 @@ def load_region_opp(where, params):
                COUNT(*) as 과정수,
                SUM(COALESCE(TOT_FXNUM, 0)) as 총신청인원,
                AVG(CASE WHEN TOT_FXNUM > 0
-                   THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as 평균모집률,
-               AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as 평균취업률
+                   THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as 평균모집률
         FROM TB_MARKET_TREND {where}
         GROUP BY REGION
         HAVING COUNT(*) >= 5
     """, params=params)
 
-
-
-@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
-def load_ncs_opp_matrix(where, params):
-    """사업기회 탭: NCS별 취업률·모집률·경쟁도 (기회 매트릭스용)"""
-    if where == "":
-        _c = get_market_cache("ncs_opp_matrix")
-        if _c is not None:
-            return _c
-    return _sql_query(f"""
-        SELECT NCS_CD,
-               COUNT(*) as 경쟁과정수,
-               AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as 평균취업률,
-               AVG(CASE WHEN TOT_FXNUM > 0
-                   THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as 평균모집률
-        FROM TB_MARKET_TREND {where}
-        GROUP BY NCS_CD
-        HAVING COUNT(*) >= 3
-    """, params=params)
 
 
 
@@ -506,7 +383,6 @@ COLUMN_MAP = {
     'TOT_FXNUM': '정원(명)', 'TOT_TRCO': '훈련비(원)',
     'COURSE_MAN': '수강비(원)', 'REAL_MAN': '실비(원)',
     'REG_COURSE_MAN': '등록인원',
-    'EI_EMPL_RATE_3': '취업률(3개월)', 'EI_EMPL_RATE_6': '취업률(6개월)',
     'EI_EMPL_CNT_3': '취업인원(3개월)',
     'STDG_SCOR': '만족도(점)', 'GRADE': '등급',
     'CERTIFICATE': '관련자격증', 'CONTENTS': '콘텐츠',
@@ -518,52 +394,9 @@ COLUMN_MAP = {
 
 WK_MAP = {'1': '주중', '2': '주말', '3': '주중+주말'}
 
-@st.cache_data(ttl=CACHE_TTL_MARKET)
-def load_internal_courses():
-    """TB_COURSE_MASTER에서 우리 과정 데이터 로드 (HANWHA_COURSE_ID 기반)"""
-    course_id = os.getenv("HANWHA_COURSE_ID")
-    if not course_id:
-        try:
-            course_id = st.secrets["HANWHA_COURSE_ID"]
-        except (KeyError, FileNotFoundError):
-            pass
-    if not course_id:
-        return None, None
-
-    internal = _load_data("""
-        SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT,
-               TOT_TRCO, TOT_FXNUM, TOT_PAR_MKS, TOT_TRP_CNT,
-               FINI_CNT, EI_EMPL_RATE_3, EI_EMPL_CNT_3,
-               EI_EMPL_RATE_6, EI_EMPL_CNT_6, HRD_EMPL_RATE_6
-        FROM TB_COURSE_MASTER
-    """)
-    if internal.empty:
-        return None, course_id
-
-    internal['TR_STA_DT'] = pd.to_datetime(internal['TR_STA_DT'], errors='coerce')
-    internal['TR_END_DT'] = pd.to_datetime(internal['TR_END_DT'], errors='coerce')
-    for c in ['TOT_TRCO', 'TOT_FXNUM', 'TOT_PAR_MKS', 'TOT_TRP_CNT', 'FINI_CNT']:
-        internal[c] = pd.to_numeric(internal[c], errors='coerce').fillna(0)
-    for c in ['EI_EMPL_RATE_3', 'EI_EMPL_RATE_6']:
-        internal[f'{c}_LABEL'] = internal[c].astype(str).str.strip().map(
-            lambda v: EMPL_CODE_MAP.get(v, '')
-        )
-        internal[c] = pd.to_numeric(internal[c], errors='coerce')
-    # HRD 6개월 (고용보험 미가입) 합산
-    internal['HRD_EMPL_RATE_6'] = pd.to_numeric(internal['HRD_EMPL_RATE_6'], errors='coerce')
-    # 6개월 총 취업률 = EI_6 + HRD_6 합산 (특수코드/둘다결측 → NA)
-    internal['TOTAL_RATE_6'] = internal.apply(
-        lambda r: calc_employment_rate_6(r['EI_EMPL_RATE_6'], r['HRD_EMPL_RATE_6']), axis=1
-    )
-    internal['모집률'] = (internal['TOT_TRP_CNT'] / internal['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0)
-    internal['FINI_CNT'] = pd.to_numeric(internal['FINI_CNT'], errors='coerce').fillna(0)
-    internal['수료율'] = (internal['FINI_CNT'] / internal['TOT_PAR_MKS'].replace(0, pd.NA) * 100).fillna(0)
-    return internal, course_id
-
 # 필터 옵션 로드 (경량)
 with st.spinner('필터 옵션을 로드 중입니다...'):
     filter_opts = load_filter_options()
-    internal_df, course_id = load_internal_courses()
 
 # ==========================================
 # 2. 사이드바 (필터링) — DB 경량 쿼리 기반
@@ -667,13 +500,7 @@ if not kpi_df.empty:
 
 st.markdown("###")
 
-# 취업률 데이터 가용 여부 사전 체크 (필터 적용 후)
-_kpi_pre = load_summary_kpi(where, params)
-no_empl_data = _kpi_pre.empty or pd.isna(_kpi_pre.iloc[0].get('평균취업률'))
-
 # 공통 데이터 사전 로드 (복수 탭 공유)
-type_perf_data = load_type_performance(where, params)
-
 names_df_shared = load_keyword_names(where, params)
 if not names_df_shared.empty:
     _text_shared = " ".join(names_df_shared['TRPR_NM'].dropna().astype(str))
@@ -918,7 +745,7 @@ with tabs[1]:
         raw_inst['순위'] = raw_inst.index + 1
         inst_stats = raw_inst.rename(columns={
             'TRAINST_NM': '기관명', 'TRPR_CNT': '개설수',
-            'TOT_FXNUM': '총모집정원', 'REG_COURSE_MAN': '총신청인원', 'AVG_EMPL': '평균취업률'
+            'TOT_FXNUM': '총모집정원', 'REG_COURSE_MAN': '총신청인원',
         })
 
     raw_course = load_course_agg(where, params)
@@ -929,7 +756,7 @@ with tabs[1]:
         raw_course['순위'] = raw_course.index + 1
         course_agg = raw_course.rename(columns={
             'TRPR_NM': '과정명', 'TRAINST_NM': '기관명', 'TRPR_CNT': '개설회차',
-            'TOT_FXNUM': '총정원', 'REG_COURSE_MAN': '총신청인원', 'AVG_EMPL': '평균취업률'
+            'TOT_FXNUM': '총정원', 'REG_COURSE_MAN': '총신청인원',
         })
 
     col_rank1, col_rank2 = st.columns(2)
