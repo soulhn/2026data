@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from collections import Counter
@@ -10,12 +9,8 @@ import os
 
 # 🚀 상위 폴더의 utils.py를 가져오기 위한 경로 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, get_connection, is_pg, load_data as _load_data, adapt_query, calc_recruit_rate
-from config import (
-    CACHE_TTL_MARKET, COST_BINS, COST_BIN_LABELS,
-    SCATTER_SAMPLE_LIMIT, REGRESSION_SAMPLE_LIMIT,
-    NCS_MIN_COURSES, CERT_MIN_COURSES, CERT_EMPL_MIN_COURSES, TOP_CERTS_LIMIT,
-)
+from utils import check_password, get_connection, load_data as _load_data, adapt_query, calc_recruit_rate
+from config import CACHE_TTL_MARKET, NCS_MIN_COURSES
 
 # ==========================================
 # 0. 헬퍼 함수
@@ -372,24 +367,6 @@ st.set_page_config(page_title="시장 분석 & 기회 발굴", page_icon="📈",
 
 check_password()
 
-# ✅ 컬럼명 한글 매핑
-COLUMN_MAP = {
-    'TRPR_ID': '과정ID', 'TRPR_DEGR': '회차', 'INST_INO': '기관ID',
-    'TRPR_NM': '과정명', 'TRAINST_NM': '훈련기관명',
-    'TR_STA_DT': '개설일', 'TR_END_DT': '종료일',
-    'NCS_CD': 'NCS코드', 'TRNG_AREA_CD': '지역코드',
-    'TOT_FXNUM': '정원(명)', 'TOT_TRCO': '훈련비(원)',
-    'COURSE_MAN': '수강비(원)', 'REAL_MAN': '실비(원)',
-    'REG_COURSE_MAN': '등록인원',
-    'EI_EMPL_CNT_3': '취업인원(3개월)',
-    'STDG_SCOR': '만족도(점)', 'GRADE': '등급',
-    'CERTIFICATE': '관련자격증', 'CONTENTS': '콘텐츠',
-    'ADDRESS': '주소', 'TEL_NO': '전화번호',
-    'TRAIN_TARGET': '훈련유형', 'WKEND_SE': '주말구분',
-    'REGION': '지역', 'YEAR_MONTH': '개설연월',
-    '모집률': '모집률(%)'
-}
-
 WK_MAP = {'1': '주중', '2': '주말', '3': '주중+주말'}
 
 # 필터 옵션 로드 (경량)
@@ -400,8 +377,6 @@ with st.spinner('필터 옵션을 로드 중입니다...'):
 # 2. 사이드바 (필터링) — DB 경량 쿼리 기반
 # ==========================================
 st.sidebar.header("🔍 상세 분석 필터")
-
-from datetime import datetime
 
 # 날짜 범위 옵션 (form 밖에서 계산)
 all_dates = filter_opts['MIN_DT'].dropna().tolist() + filter_opts['MAX_DT'].dropna().tolist()
@@ -541,7 +516,6 @@ if not names_df_shared.empty and top_words_shared:
                     '비율(천건당)': round(_yr_cnt.get(_kw, 0) / _yr_total * 100, 2),
                 })
         kwd_year_df = pd.DataFrame(_year_rows)
-# 자격증 데이터: K-디지털 트레이닝 등 주요 사업유형에 해당 없음 → 제거
 
 # 3.2 탭 구성
 tabs = st.tabs([
