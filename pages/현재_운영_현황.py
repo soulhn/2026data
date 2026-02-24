@@ -115,7 +115,7 @@ tab_all, tab_detail = st.tabs(["🌐 전체 기수", "📌 개별 기수"])
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tab_all:
     # ── [1] 오늘의 출결 현황 ──────────────────────────────────────────
-    today_str = datetime.now().strftime('%Y-%m-%d')
+    today_str = datetime.now().strftime('%Y%m%d')
     # 1차: 오늘 데이터만으로 분류
     _today_rows = []
     _off_degrs = []
