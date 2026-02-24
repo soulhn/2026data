@@ -6,7 +6,10 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_data, calculate_age_at_training, safe_float, check_password
+from utils import (
+    load_data, calculate_age_at_training, safe_float, check_password,
+    calc_attendance_rate_from_counts, calc_employment_rate_6, parse_empl_rate,
+)
 from config import CACHE_TTL_DEFAULT, EMPL_CODE_MAP, RISK_ABSENT, TRNEE_TYPE_MAP
 
 st.set_page_config(page_title="과정 성과 분석", page_icon="📊", layout="wide")
@@ -52,7 +55,9 @@ def get_analysis_data(degr):
         "SUM(CASE WHEN ATEND_STATUS = '지각' THEN 1 ELSE 0 END) as 지각_횟수, "
         "SUM(CASE WHEN ATEND_STATUS = '조퇴' THEN 1 ELSE 0 END) as 조퇴_횟수, "
         "SUM(CASE WHEN ATEND_STATUS = '외출' THEN 1 ELSE 0 END) as 외출_횟수, "
-        "SUM(CASE WHEN ATEND_STATUS IN ('지각', '조퇴', '외출') THEN 1 ELSE 0 END) as 지각_조퇴_횟수 "
+        "SUM(CASE WHEN ATEND_STATUS IN ('지각', '조퇴', '외출') THEN 1 ELSE 0 END) as 지각_조퇴_횟수, "
+        "SUM(CASE WHEN ATEND_STATUS = '중도탈락미출석' THEN 1 ELSE 0 END) as 중도탈락미출석_횟수, "
+        "SUM(CASE WHEN ATEND_STATUS = '100분의50미만출석' THEN 1 ELSE 0 END) as lt50_횟수 "
         "FROM TB_ATTENDANCE_LOG WHERE TRPR_DEGR = ? GROUP BY TRNEE_ID"
     )
     attend_stats = load_data(log_query, params=[degr])
@@ -620,9 +625,17 @@ with tab_indiv:
         if 'TRNEE_TYPE' in students_df.columns:
             avail.insert(4, 'TRNEE_TYPE')
         if '출석_횟수' in students_df.columns and '총_로그_수' in students_df.columns:
-            students_df['출석률(%)'] = (
-                students_df['출석_횟수'] / students_df['총_로그_수'] * 100
-            ).round(1)
+            students_df['출석률(%)'] = students_df.apply(
+                lambda r: calc_attendance_rate_from_counts(
+                    total=int(r.get('총_로그_수', 0)),
+                    absent=int(r.get('결석_횟수', 0)),
+                    dropout_absent=int(r.get('중도탈락미출석_횟수', 0)),
+                    lt50=int(r.get('lt50_횟수', 0)),
+                    late=int(r.get('지각_횟수', 0)),
+                    early_leave=int(r.get('조퇴_횟수', 0)),
+                    out=int(r.get('외출_횟수', 0)),
+                ), axis=1
+            )
             avail.append('출석률(%)')
         st.dataframe(
             students_df[avail],
@@ -657,12 +670,10 @@ with tab_all:
     all_master['수료율'] = (all_master['FINI_CNT'] / all_master['TOT_PAR_MKS'] * 100).round(1)
     all_master['EI_취업률_6'] = all_master['EI_EMPL_RATE_6'].apply(safe_float)
     all_master['HRD_취업률_6'] = all_master['HRD_EMPL_RATE_6'].apply(safe_float)
-    all_master['총_취업률'] = all_master['EI_취업률_6'] + all_master['HRD_취업률_6']
-    _status_mask = all_master['EI_EMPL_RATE_6'].apply(lambda x: str(x).strip() in ('A', 'B', 'C', 'D'))
-    all_master.loc[_status_mask, '총_취업률'] = pd.NA
-    all_master['취업률_3'] = pd.to_numeric(all_master['EI_EMPL_RATE_3'], errors='coerce')
-    _status_mask_3 = all_master['EI_EMPL_RATE_3'].apply(lambda x: str(x).strip() in ('A', 'B', 'C', 'D'))
-    all_master.loc[_status_mask_3, '취업률_3'] = pd.NA
+    all_master['총_취업률'] = all_master.apply(
+        lambda r: calc_employment_rate_6(r['EI_EMPL_RATE_6'], r['HRD_EMPL_RATE_6']), axis=1
+    )
+    all_master['취업률_3'] = all_master['EI_EMPL_RATE_3'].apply(lambda x: parse_empl_rate(x)[0])
     degr_order = all_master.sort_values('TRPR_DEGR')['기수'].tolist()
 
     trainee_stats = load_data("""
@@ -689,13 +700,25 @@ with tab_all:
     absent_total_df = pd.DataFrame()
     if not all_attend.empty:
         all_attend['기수'] = all_attend['TRPR_DEGR'].astype(str) + '회차'
-        total_per = all_attend.groupby('기수')['CNT'].sum().reset_index(name='총건수')
-        attend_per = all_attend[all_attend['ATEND_STATUS'].isin(['출석', '지각'])].groupby('기수')['CNT'].sum().reset_index()
-        attend_per.columns = ['기수', '출석건수']
         absent_total_df = all_attend[all_attend['ATEND_STATUS'] == '결석'][['기수', 'CNT']].copy()
         absent_total_df.columns = ['기수', '결석건수']
-        comp = total_per.merge(attend_per, on='기수', how='left').fillna(0)
-        comp['출석률'] = (comp['출석건수'] / comp['총건수'] * 100).round(1)
+        # 기수별 출석률: 상태별 CNT 피벗 후 표준 공식 적용 (매출_분析.py 기준)
+        _piv = all_attend.pivot_table(
+            index='기수', columns='ATEND_STATUS', values='CNT', aggfunc='sum', fill_value=0
+        )
+        def _comp_rate(row):
+            total = int(row.sum())
+            return calc_attendance_rate_from_counts(
+                total=total,
+                absent=int(row.get('결석', 0)),
+                dropout_absent=int(row.get('중도탈락미출석', 0)),
+                lt50=int(row.get('100분의50미만출석', 0)),
+                late=int(row.get('지각', 0)),
+                early_leave=int(row.get('조퇴', 0)),
+                out=int(row.get('외출', 0)),
+            )
+        comp = _piv.apply(_comp_rate, axis=1).reset_index()
+        comp.columns = ['기수', '출석률']
 
     # === Section 1: 성과 지표 ===
     st.markdown("#### 🏆 성과 지표")
