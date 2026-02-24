@@ -4,7 +4,7 @@ import pandas as pd
 import sys, os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, load_data, is_pg, DB_FILE, get_connection
+from utils import check_password, load_data, is_pg, DB_FILE, get_connection, load_cache_json
 from config import CACHE_TTL_DEFAULT
 
 
@@ -167,6 +167,9 @@ SAMPLE_COLS = {
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def load_fill_rates():
     """각 테이블의 컬럼별 채움률(%) 계산. 테이블당 쿼리 1개."""
+    cached = load_cache_json('db_fill_rates')
+    if cached:
+        return cached
     out = {}
     for tbl, info in SCHEMAS.items():
         exprs = []
@@ -200,6 +203,9 @@ def load_fill_rates():
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def load_sample_values():
     """지정된 카테고리 컬럼의 실제 고유값 목록 조회."""
+    cached = load_cache_json('db_sample_values')
+    if cached:
+        return cached
     out = {}
     conn = get_connection()
     cur = conn.cursor()
