@@ -586,15 +586,13 @@ with tab_indiv:
 
                 if not last_dates.empty:
                     st.markdown("##### 이탈 시점 분포")
-                    st.caption("각 점은 이탈자 1명. 개강일 기준 경과일로 표시합니다.")
-                    last_dates["기수"] = f"{selected_degr}회차"
-                    fig_strip = px.strip(
-                        last_dates, x="이탈경과일", y="기수",
-                        labels={"이탈경과일": "개강 후 경과일", "기수": ""},
-                    )
-                    fig_strip.update_layout(height=150, showlegend=False, xaxis_range=[0, 150])
-                    fig_strip.update_traces(marker=dict(size=10, opacity=0.7, color="#e74c3c"))
-                    st.plotly_chart(fig_strip, use_container_width=True)
+                    st.caption("개강일 기준 경과일 구간별 이탈자 수")
+                    bins = [0, 30, 60, 90, 120, 150]
+                    labels_bin = ["0~30일", "30~60일", "60~90일", "90~120일", "120~150일"]
+                    last_dates["구간"] = pd.cut(last_dates["이탈경과일"], bins=bins, labels=labels_bin, right=False)
+                    bin_counts = last_dates["구간"].value_counts().reindex(labels_bin, fill_value=0)
+                    bin_df = pd.DataFrame({"구간": bin_counts.index, "이탈자 수": bin_counts.values})
+                    st.dataframe(bin_df, hide_index=True, use_container_width=True)
                 st.divider()
 
                 # (3) 이탈자 vs 수료자 출결 상태 비교
@@ -927,22 +925,15 @@ with tab_all:
 
             if not dropout_timing.empty:
                 st.markdown("##### 이탈 시점 분포")
-                st.caption("각 점은 이탈자 1명을 나타냅니다. 개강일 기준 경과일로 표시합니다.")
-                fig_strip = px.strip(
-                    dropout_timing, x='이탈경과일', y='기수', color='기수',
-                    labels={'이탈경과일': '개강 후 경과일', '기수': ''},
-                    category_orders={'기수': sorted(
-                        dropout_timing['기수'].unique(),
-                        key=lambda x: int(x.replace('회차', '')),
-                    )},
-                )
-                fig_strip.update_layout(
-                    height=max(200, len(dropout_timing['기수'].unique()) * 40),
-                    showlegend=False,
-                    xaxis_range=[0, 150],
-                )
-                fig_strip.update_traces(marker=dict(size=8, opacity=0.7))
-                st.plotly_chart(fig_strip, use_container_width=True)
+                st.caption("개강일 기준 경과일 구간별 이탈자 수")
+                bins = [0, 30, 60, 90, 120, 150]
+                labels_bin = ["0~30일", "30~60일", "60~90일", "90~120일", "120~150일"]
+                dropout_timing["구간"] = pd.cut(dropout_timing["이탈경과일"], bins=bins, labels=labels_bin, right=False)
+                pivot = dropout_timing.groupby(["기수", "구간"], observed=False).size().unstack(fill_value=0)
+                pivot = pivot.reindex(columns=labels_bin, fill_value=0)
+                pivot = pivot.loc[sorted(pivot.index, key=lambda x: int(x.replace("회차", "")))]
+                pivot.loc["합계"] = pivot.sum()
+                st.dataframe(pivot, use_container_width=True)
         else:
             st.info("이탈 타이밍 데이터가 없습니다.")
         st.divider()
