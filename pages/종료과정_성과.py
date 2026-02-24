@@ -620,7 +620,10 @@ with tab_indiv:
                         category_orders={"출결 상태": target_statuses},
                     )
                     fig_bar.update_layout(height=350, xaxis_title="")
-                    fig_bar.update_yaxes(title_text="비<br>율<br>(%)", title_font_size=13, title_standoff=0, tickangle=0)
+                    fig_bar.update_layout(yaxis=dict(
+                        title=dict(text="비<br>율<br>(%)", font_size=13, standoff=0),
+                        title_standoff=0,
+                    ))
                     fig_bar.update_traces(textposition="outside", texttemplate="%{text}%")
                     st.plotly_chart(fig_bar, use_container_width=True)
                 st.divider()
@@ -969,7 +972,10 @@ with tab_all:
                     category_orders={'ATEND_STATUS': target_statuses},
                 )
                 fig_bar.update_layout(height=350, xaxis_title='')
-                fig_bar.update_yaxes(title_text='비<br>율<br>(%)', title_font_size=13, title_standoff=0, tickangle=0)
+                fig_bar.update_layout(yaxis=dict(
+                    title=dict(text='비<br>율<br>(%)', font_size=13, standoff=0),
+                    title_standoff=0,
+                ))
                 fig_bar.update_traces(textposition='outside', texttemplate='%{text}%')
                 st.plotly_chart(fig_bar, use_container_width=True)
             else:
