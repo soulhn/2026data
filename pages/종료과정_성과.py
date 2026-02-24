@@ -940,8 +940,8 @@ with tab_all:
         all_master['TOT_PAR_MKS'], all_master['TOT_FXNUM']
     ).round(1)
 
-    radar_data = all_master[['기수', '수료율', '총_취업률', '모집률', '잔여율']].copy()
-    radar_data = radar_data.rename(columns={'총_취업률': '취업률(6개월)', '잔여율': '잔류율'})
+    radar_data = all_master[['기수', '수료율', '총_취업률', '모집률']].copy()
+    radar_data = radar_data.rename(columns={'총_취업률': '취업률(6개월)'})
     if not comp.empty:
         radar_data = radar_data.merge(comp[['기수', '출석률']], on='기수', how='left')
     else:
@@ -950,12 +950,12 @@ with tab_all:
     avail_degr = sorted(
         radar_data['기수'].unique(), key=lambda x: int(x.replace('회차', ''))
     )
-    default_degr = avail_degr[-3:] if len(avail_degr) >= 3 else avail_degr
+    default_degr = avail_degr[:3]
     selected_radar = st.multiselect(
         "비교할 기수 선택 (2~5개)", avail_degr, default=default_degr, key='radar_degr'
     )
 
-    radar_metrics = ['출석률', '수료율', '취업률(6개월)', '모집률', '잔류율']
+    radar_metrics = ['출석률', '수료율', '취업률(6개월)', '모집률']
     if len(selected_radar) >= 2:
         fig_radar = go.Figure()
         for degr_label in selected_radar:
