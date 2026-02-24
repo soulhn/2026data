@@ -115,15 +115,19 @@ tab_all, tab_detail = st.tabs(["🌐 전체 기수", "📌 개별 기수"])
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tab_all:
     # ── [1] 오늘의 출결 현황 ──────────────────────────────────────────
-    st.subheader("📡 오늘의 출결 현황")
-    st.caption("운영 중인 모든 기수의 최근 출결 기준 합산 현황입니다. (결석 + 입실 기록 있으면 → 입실중 재분류)")
-
+    today_str = datetime.now().strftime('%Y-%m-%d')
     all_today_rows = []
+    off_degrs = []
     for degr in courses_df['TRPR_DEGR'].unique():
         degr_logs = logs_df[logs_df['TRPR_DEGR'] == degr]
         if degr_logs.empty:
+            off_degrs.append(degr)
             continue
-        day = degr_logs[degr_logs['ATEND_DT'] == degr_logs['ATEND_DT'].max()].copy()
+        latest_dt = degr_logs['ATEND_DT'].max()
+        if str(latest_dt)[:10] != today_str:
+            off_degrs.append(degr)
+            continue
+        day = degr_logs[degr_logs['ATEND_DT'] == latest_dt].copy()
         day['DISPLAY_STATUS'] = day.apply(
             lambda r: '입실중'
             if r['ATEND_STATUS'] == '결석' and pd.notna(r['IN_TIME']) and str(r['IN_TIME']).strip() != ''
@@ -132,6 +136,13 @@ with tab_all:
         )
         day['TRPR_DEGR_KEY'] = degr
         all_today_rows.append(day[['TRPR_DEGR_KEY', 'TRNEE_ID', 'DISPLAY_STATUS']])
+
+    st.subheader("📡 오늘의 출결 현황")
+    total_degr_cnt = len(courses_df['TRPR_DEGR'].unique())
+    st.caption("운영 중인 모든 기수의 오늘 출결 합산 현황입니다. (결석 + 입실 기록 있으면 → 입실중 재분류)")
+    if off_degrs:
+        off_labels = ", ".join(f"{d}회차" for d in sorted(off_degrs))
+        st.info(f"운영 기수: 총 {total_degr_cnt}기 | 오늘 휴강: {len(off_degrs)}기 ({off_labels})")
 
     if all_today_rows:
         all_df = pd.concat(all_today_rows, ignore_index=True)
