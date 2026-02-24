@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
+import plotly.graph_objects as go
+import plotly.express as px
 from datetime import datetime
 import sys
 import os
@@ -9,7 +11,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import (
     load_data, calculate_age_at_training, safe_float, check_password,
     calc_attendance_rate_from_counts, calc_employment_rate_6, parse_empl_rate,
-    is_completed, parse_time_to_minutes,
+    is_completed, parse_time_to_minutes, NOT_ATTEND_STATUSES, calc_recruit_rate,
 )
 from config import CACHE_TTL_DEFAULT, EMPL_CODE_MAP, RISK_ABSENT, TRNEE_TYPE_MAP
 
@@ -161,6 +163,36 @@ def get_all_degr_absent_avg():
         "JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
         "WHERE c.TR_END_DT < ? "
         "GROUP BY a.TRPR_DEGR",
+        params=[today],
+    )
+
+
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
+def get_dropout_timing():
+    """이탈 타이밍 분석용: 중도탈락자의 마지막 출석일 + 개강일."""
+    today = datetime.now().strftime('%Y-%m-%d')
+    return load_data(
+        "SELECT a.TRPR_DEGR, a.TRNEE_ID, "
+        "MAX(CASE WHEN a.ATEND_STATUS != '중도탈락미출석' THEN a.ATEND_DT END) as LAST_ATTEND_DT, "
+        "c.TR_STA_DT, c.TOT_PAR_MKS "
+        "FROM TB_ATTENDANCE_LOG a "
+        "JOIN TB_TRAINEE_INFO t ON a.TRNEE_ID = t.TRNEE_ID AND a.TRPR_DEGR = t.TRPR_DEGR "
+        "JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
+        "WHERE t.TRNEE_STATUS LIKE '%중도탈락%' AND c.TR_END_DT < ? "
+        "GROUP BY a.TRPR_DEGR, a.TRNEE_ID, c.TR_STA_DT, c.TOT_PAR_MKS",
+        params=[today],
+    )
+
+
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
+def get_weekly_attendance_raw():
+    """주간 출결 추세 분석용: 기수별 일별 출결 + 개강일."""
+    today = datetime.now().strftime('%Y-%m-%d')
+    return load_data(
+        "SELECT a.TRPR_DEGR, a.ATEND_DT, a.ATEND_STATUS, c.TR_STA_DT "
+        "FROM TB_ATTENDANCE_LOG a "
+        "JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
+        "WHERE c.TR_END_DT < ? AND a.ATEND_STATUS != '중도탈락미출석'",
         params=[today],
     )
 
@@ -900,3 +932,152 @@ with tab_all:
         hide_index=True,
     )
     st.caption("💡 특정 기수를 심층 분석하려면 사이드바에서 회차를 선택 후 '📌 개별 기수 분석' 탭을 확인하세요.")
+    st.divider()
+
+    # === Section 6: 기수별 성과 레이더 차트 (A-2) ===
+    st.markdown("#### 🕸️ 기수별 성과 레이더 차트")
+    all_master['모집률'] = calc_recruit_rate(
+        all_master['TOT_PAR_MKS'], all_master['TOT_FXNUM']
+    ).round(1)
+
+    radar_data = all_master[['기수', '수료율', '총_취업률', '모집률', '잔여율']].copy()
+    radar_data = radar_data.rename(columns={'총_취업률': '취업률(6개월)', '잔여율': '잔류율'})
+    if not comp.empty:
+        radar_data = radar_data.merge(comp[['기수', '출석률']], on='기수', how='left')
+    else:
+        radar_data['출석률'] = 0.0
+
+    avail_degr = sorted(
+        radar_data['기수'].unique(), key=lambda x: int(x.replace('회차', ''))
+    )
+    default_degr = avail_degr[-3:] if len(avail_degr) >= 3 else avail_degr
+    selected_radar = st.multiselect(
+        "비교할 기수 선택 (2~5개)", avail_degr, default=default_degr, key='radar_degr'
+    )
+
+    radar_metrics = ['출석률', '수료율', '취업률(6개월)', '모집률', '잔류율']
+    if len(selected_radar) >= 2:
+        fig_radar = go.Figure()
+        for degr_label in selected_radar:
+            row = radar_data[radar_data['기수'] == degr_label]
+            if row.empty:
+                continue
+            row = row.iloc[0]
+            values = []
+            for m in radar_metrics:
+                v = row.get(m)
+                values.append(0 if pd.isna(v) else round(float(v), 1))
+            fig_radar.add_trace(go.Scatterpolar(
+                r=values + [values[0]],
+                theta=radar_metrics + [radar_metrics[0]],
+                fill='toself', opacity=0.5,
+                name=degr_label,
+            ))
+        fig_radar.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+            height=500,
+        )
+        st.plotly_chart(fig_radar, use_container_width=True)
+        has_na = radar_data[radar_data['기수'].isin(selected_radar)]['취업률(6개월)'].isna().any()
+        if has_na:
+            st.caption("⚠️ 취업률 데이터가 없는 기수는 해당 축이 0으로 표시됩니다.")
+    elif len(selected_radar) == 1:
+        st.info("비교를 위해 2개 이상의 기수를 선택해주세요.")
+    st.divider()
+
+    # === Section 7: 이탈 타이밍 생존곡선 (A-5) ===
+    st.markdown("#### 📉 이탈 타이밍 생존곡선")
+    st.caption("중도탈락자의 마지막 출석일 기준으로 잔류율 변화와 이탈 시점 분포를 보여줍니다.")
+    dropout_timing = get_dropout_timing()
+    if not dropout_timing.empty:
+        dropout_timing['LAST_ATTEND_DT'] = pd.to_datetime(dropout_timing['LAST_ATTEND_DT'])
+        dropout_timing['TR_STA_DT'] = pd.to_datetime(dropout_timing['TR_STA_DT'])
+        dropout_timing['이탈경과일'] = (
+            dropout_timing['LAST_ATTEND_DT'] - dropout_timing['TR_STA_DT']
+        ).dt.days
+        dropout_timing['기수'] = dropout_timing['TRPR_DEGR'].astype(str) + '회차'
+        dropout_timing = dropout_timing[dropout_timing['이탈경과일'] >= 0]
+
+        if not dropout_timing.empty:
+            surv_col, hist_col = st.columns(2)
+            with surv_col:
+                st.markdown("##### 잔류율 곡선")
+                fig_surv = go.Figure()
+                for degr_label in sorted(
+                    dropout_timing['기수'].unique(),
+                    key=lambda x: int(x.replace('회차', '')),
+                ):
+                    sub = dropout_timing[dropout_timing['기수'] == degr_label]
+                    tot = int(sub['TOT_PAR_MKS'].iloc[0])
+                    if tot <= 0:
+                        continue
+                    dropout_days = sorted(sub['이탈경과일'].tolist())
+                    times = [0]
+                    survival = [100.0]
+                    cum_drop = 0
+                    for d in dropout_days:
+                        cum_drop += 1
+                        times.append(d)
+                        survival.append(round((tot - cum_drop) / tot * 100, 1))
+                    fig_surv.add_trace(go.Scatter(
+                        x=times, y=survival, mode='lines',
+                        line_shape='hv', name=degr_label, opacity=0.8,
+                    ))
+                fig_surv.update_layout(
+                    xaxis_title='개강 후 경과일', yaxis_title='잔류율 (%)',
+                    height=400, yaxis_range=[0, 105],
+                )
+                st.plotly_chart(fig_surv, use_container_width=True)
+            with hist_col:
+                st.markdown("##### 이탈 시점 분포")
+                fig_hist = px.histogram(
+                    dropout_timing, x='이탈경과일', color='기수',
+                    barmode='overlay', opacity=0.6,
+                    labels={'이탈경과일': '개강 후 경과일'},
+                )
+                fig_hist.update_layout(height=400)
+                st.plotly_chart(fig_hist, use_container_width=True)
+
+            st.markdown("##### 기수별 이탈 시점 요약")
+            drop_summary = dropout_timing.groupby('기수').agg(
+                이탈자수=('TRNEE_ID', 'count'),
+                평균_이탈일=('이탈경과일', 'mean'),
+                중앙값_이탈일=('이탈경과일', 'median'),
+                최소_이탈일=('이탈경과일', 'min'),
+                최대_이탈일=('이탈경과일', 'max'),
+            ).reset_index()
+            drop_summary['평균_이탈일'] = drop_summary['평균_이탈일'].round(1)
+            drop_summary['중앙값_이탈일'] = drop_summary['중앙값_이탈일'].round(1)
+            st.dataframe(drop_summary, use_container_width=True, hide_index=True)
+    else:
+        st.info("이탈 타이밍 데이터가 없습니다.")
+    st.divider()
+
+    # === Section 8: 기수 간 주간 출결 추세 (A-6) ===
+    st.markdown("#### 📈 기수 간 주간 출결 추세")
+    st.caption("각 기수의 개강일 기준 상대 주차별 출석률 변화를 비교합니다.")
+    weekly_raw = get_weekly_attendance_raw()
+    if not weekly_raw.empty:
+        weekly_raw['ATEND_DT'] = pd.to_datetime(weekly_raw['ATEND_DT'])
+        weekly_raw['TR_STA_DT'] = pd.to_datetime(weekly_raw['TR_STA_DT'])
+        weekly_raw['경과일'] = (weekly_raw['ATEND_DT'] - weekly_raw['TR_STA_DT']).dt.days
+        weekly_raw['상대주차'] = weekly_raw['경과일'] // 7 + 1
+        weekly_raw = weekly_raw[weekly_raw['상대주차'].between(1, 30)]
+        weekly_raw['출석여부'] = ~weekly_raw['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)
+        weekly_raw['기수'] = weekly_raw['TRPR_DEGR'].astype(str) + '회차'
+        weekly_rate = weekly_raw.groupby(['기수', '상대주차']).agg(
+            주간출석률=('출석여부', lambda x: round(x.mean() * 100, 1))
+        ).reset_index()
+        weekly_rate['상대주차'] = weekly_rate['상대주차'].astype(int)
+        fig_weekly = px.line(
+            weekly_rate.sort_values(['기수', '상대주차']),
+            x='상대주차', y='주간출석률', color='기수',
+            markers=True,
+            labels={'상대주차': '상대 주차', '주간출석률': '주간 출석률 (%)'},
+        )
+        fig_weekly.update_xaxes(type='category')
+        fig_weekly.update_layout(height=400, yaxis_range=[0, 105])
+        st.plotly_chart(fig_weekly, use_container_width=True)
+        st.caption("💡 주간 단위에서는 지각·조퇴 패널티 미적용 (누적 기반이므로)")
+    else:
+        st.info("주간 출결 데이터가 없습니다.")
