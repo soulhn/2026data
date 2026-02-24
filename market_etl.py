@@ -10,7 +10,16 @@ from dotenv import load_dotenv
 
 from utils import get_connection, DB_FILE, safe_float, safe_int, get_retry_session, adapt_query, is_pg
 from init_db import init_all_tables
-from config import ETL_ARCHIVE_START, ETL_REFRESH_MONTHS, ETL_PAGE_SIZE, ETL_MAX_WORKERS, ETL_BATCH_SIZE, ETL_BATCH_PAGE_SIZE
+from config import ETL_ARCHIVE_START, ETL_REFRESH_MONTHS, ETL_PAGE_SIZE, ETL_MAX_WORKERS, ETL_BATCH_SIZE, ETL_BATCH_PAGE_SIZE, CacheKey
+
+import logging
+import time
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    level=logging.INFO,
+)
 
 load_dotenv()
 
@@ -27,7 +36,7 @@ MAX_WORKERS= ETL_MAX_WORKERS
 BASE_URL = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_1.jsp"
 
 if not AUTH_KEY:
-    print("경고: .env 파일에서 HRD_API_KEY를 찾을 수 없습니다. ETL 실행 시 오류가 발생합니다.")
+    logger.warning("HRD_API_KEY를 찾을 수 없습니다. ETL 실행 시 오류가 발생합니다.")
 
 # ==========================================
 # 2. 유틸리티 함수
@@ -74,18 +83,18 @@ def get_collect_range():
     if count == 0:
         # 첫 실행: 전체 수집
         start = ARCHIVE_START
-        print(f"[모드] 첫 실행 - 전체 수집 ({start} ~ {today})")
+        logger.info(f"[모드] 첫 실행 - 전체 수집 ({start} ~ {today})")
     else:
         # 아카이브 기준 연도 데이터가 없으면 전체 재수집 (Supabase 누락 데이터 복구)
         has_archive = min_dt_str and min_dt_str[:4] <= str(ARCHIVE_START.year)
         if not has_archive:
             start = ARCHIVE_START
-            print(f"[모드] 아카이브 보완 - 전체 수집 ({start} ~ {today})")
-            print(f"       (DB 최초 데이터: {min_dt_str}, 기준: {ARCHIVE_START})")
+            logger.info(f"[모드] 아카이브 보완 - 전체 수집 ({start} ~ {today})")
+            logger.info(f"DB 최초 데이터: {min_dt_str}, 기준: {ARCHIVE_START}")
         else:
             start = refresh_start
-            print(f"[모드] 증분 수집 - 최근 {REFRESH_MONTHS}개월 ({start} ~ {today})")
-        print(f"       (DB 기존 데이터: {count:,}건)")
+            logger.info(f"[모드] 증분 수집 - 최근 {REFRESH_MONTHS}개월 ({start} ~ {today})")
+        logger.info(f"DB 기존 데이터: {count:,}건")
 
     return start, today
 
@@ -145,7 +154,7 @@ def collect_one_month(idx: int, m_start: dt.date, m_end: dt.date):
         scn_cnt = int(cnt_tag.text) if cnt_tag and cnt_tag.text else 0
         total_pages = math.ceil(scn_cnt / PAGE_SIZE) if scn_cnt else 0
 
-        print(f"[M{idx:02d}] {m_start} ~ {m_end} | 대상: {scn_cnt:,}건")
+        logger.info(f"[M{idx:02d}] {m_start} ~ {m_end} | 대상: {scn_cnt:,}건")
 
         rows = []
         if total_pages == 0: return rows
@@ -157,7 +166,7 @@ def collect_one_month(idx: int, m_start: dt.date, m_end: dt.date):
                 r = session.get(BASE_URL, params=params, timeout=60)
                 rows.extend(parse_rows_xml(BeautifulSoup(r.content, "lxml-xml")))
         else:
-            print(f"  [M{idx:02d}] 데이터 과다({scn_cnt}건) -> 주간 단위로 상세 수집")
+            logger.info(f"[M{idx:02d}] 데이터 과다({scn_cnt}건) -> 주간 단위로 상세 수집")
             for w_start, w_end in week_shards(m_start, m_end):
                 w_params = params.copy()
                 w_params["srchTraStDt"], w_params["srchTraEndDt"] = ymd(w_start), ymd(w_end)
@@ -178,7 +187,7 @@ def collect_one_month(idx: int, m_start: dt.date, m_end: dt.date):
         return rows
 
     except Exception as e:
-        print(f"[M{idx:02d}] 최종 실패: {e}")
+        logger.error(f"[M{idx:02d}] 최종 실패: {e}")
         return []
 
 # ==========================================
@@ -243,7 +252,7 @@ def save_rows(rows):
                 conn.commit()
         return len(rows)
     except Exception as e:
-        print(f"DB 저장 중 오류: {e}")
+        logger.error(f"DB 저장 중 오류: {e}")
         return 0
     finally:
         conn.close()
@@ -253,7 +262,7 @@ def save_rows(rows):
 # ==========================================
 def compute_and_cache_aggregations():
     """ETL 완료 후 주요 집계를 TB_MARKET_CACHE에 저장합니다."""
-    print("\n[집계 캐시] 시장 데이터 집계 시작...")
+    logger.info("시장 데이터 집계 시작...")
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -276,16 +285,16 @@ def compute_and_cache_aggregations():
             data_json = json.dumps(rows, ensure_ascii=False, default=str)
             cursor.execute(upsert_sql, (key, data_json))
             conn.commit()
-            print(f"  [캐시] {key}: {len(rows)}행 저장")
+            logger.info(f"[캐시] {key}: {len(rows)}행 저장")
             return True
         except Exception as e:
-            print(f"  [캐시] {key} 실패: {e}")
+            logger.error(f"[캐시] {key} 실패: {e}")
             if is_pg():
                 conn.rollback()
             return False
 
     aggs = [
-        ("kpi", adapt_query("""
+        (CacheKey.KPI, adapt_query("""
             SELECT COUNT(*) as CNT,
                    AVG(CASE WHEN TOT_TRCO > 0 THEN TOT_TRCO END) as AVG_TRCO,
                    AVG(TOT_FXNUM) as AVG_FXNUM,
@@ -293,17 +302,17 @@ def compute_and_cache_aggregations():
                    AVG(CASE WHEN STDG_SCOR > 0 THEN STDG_SCOR END) as AVG_SCORE
             FROM TB_MARKET_TREND
         """), ()),
-        ("monthly_counts", adapt_query("""
+        (CacheKey.MONTHLY_COUNTS, adapt_query("""
             SELECT YEAR_MONTH, COUNT(*) as COUNT
             FROM TB_MARKET_TREND WHERE YEAR_MONTH IS NOT NULL
             GROUP BY YEAR_MONTH ORDER BY YEAR_MONTH
         """), ()),
-        ("region_counts", adapt_query("""
+        (CacheKey.REGION_COUNTS, adapt_query("""
             SELECT REGION as 지역, COUNT(*) as 개수
             FROM TB_MARKET_TREND WHERE REGION IS NOT NULL
             GROUP BY REGION ORDER BY 개수 DESC
         """), ()),
-        ("inst_stats", adapt_query("""
+        (CacheKey.INST_STATS, adapt_query("""
             SELECT TRAINST_NM,
                    COUNT(*) as TRPR_CNT,
                    COALESCE(SUM(TOT_FXNUM), 0) as TOT_FXNUM,
@@ -313,7 +322,7 @@ def compute_and_cache_aggregations():
             FROM TB_MARKET_TREND
             GROUP BY TRAINST_NM ORDER BY TRPR_CNT DESC
         """), ()),
-        ("ncs_agg", adapt_query("""
+        (CacheKey.NCS_AGG, adapt_query("""
             SELECT NCS_CD,
                    COUNT(*) as CNT,
                    COALESCE(SUM(TOT_FXNUM), 0) as TOT_FXNUM,
@@ -324,20 +333,20 @@ def compute_and_cache_aggregations():
             GROUP BY NCS_CD HAVING COUNT(*) >= 5
             ORDER BY CNT DESC
         """), ()),
-        ("monthly_empl", adapt_query("""
+        (CacheKey.MONTHLY_EMPL, adapt_query("""
             SELECT YEAR_MONTH as 월, AVG(EI_EMPL_RATE_3) as 평균취업률
             FROM TB_MARKET_TREND
             WHERE EI_EMPL_RATE_3 > 0 AND YEAR_MONTH IS NOT NULL
             GROUP BY YEAR_MONTH ORDER BY YEAR_MONTH
         """), ()),
-        ("monthly_recruit", adapt_query("""
+        (CacheKey.MONTHLY_RECRUIT, adapt_query("""
             SELECT YEAR_MONTH,
                    AVG(CASE WHEN TOT_FXNUM > 0
                        THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as 모집률
             FROM TB_MARKET_TREND WHERE YEAR_MONTH IS NOT NULL
             GROUP BY YEAR_MONTH ORDER BY YEAR_MONTH
         """), ()),
-        ("region_opp", adapt_query("""
+        (CacheKey.REGION_OPP, adapt_query("""
             SELECT REGION,
                    COUNT(*) as 과정수,
                    SUM(COALESCE(TOT_FXNUM, 0)) as 총신청인원,
@@ -348,7 +357,7 @@ def compute_and_cache_aggregations():
             WHERE REGION IS NOT NULL
             GROUP BY REGION HAVING COUNT(*) >= 5
         """), ()),
-        ("ncs_opp_matrix", adapt_query("""
+        (CacheKey.NCS_OPP_MATRIX, adapt_query("""
             SELECT NCS_CD,
                    COUNT(*) as 경쟁과정수,
                    AVG(CASE WHEN EI_EMPL_RATE_3 > 0 THEN EI_EMPL_RATE_3 END) as 평균취업률,
@@ -363,19 +372,19 @@ def compute_and_cache_aggregations():
 
     # DB 명세 페이지용 시장 분포 캐시
     db_dist_aggs = [
-        ("db_market_type", adapt_query("""
+        (CacheKey.DB_MARKET_TYPE, adapt_query("""
             SELECT TRAIN_TARGET AS 훈련유형, COUNT(*) AS 건수
             FROM TB_MARKET_TREND
             WHERE TRAIN_TARGET IS NOT NULL AND TRAIN_TARGET != ''
             GROUP BY TRAIN_TARGET ORDER BY 건수 DESC
         """), ()),
-        ("db_market_region", adapt_query("""
+        (CacheKey.DB_MARKET_REGION, adapt_query("""
             SELECT REGION AS 지역, COUNT(*) AS 건수
             FROM TB_MARKET_TREND
             WHERE REGION IS NOT NULL AND REGION != ''
             GROUP BY REGION ORDER BY 건수 DESC
         """), ()),
-        ("db_market_year", adapt_query("""
+        (CacheKey.DB_MARKET_YEAR, adapt_query("""
             SELECT SUBSTR(YEAR_MONTH,1,4) AS 연도, COUNT(*) AS 건수
             FROM TB_MARKET_TREND
             WHERE YEAR_MONTH IS NOT NULL
@@ -437,17 +446,17 @@ def compute_and_cache_aggregations():
             growth_rows.sort(key=lambda x: x['증가율(%)'], reverse=True)
 
             data_json = json.dumps(growth_rows, ensure_ascii=False, default=str)
-            cursor.execute(upsert_sql, ('ncs_growth', data_json))
+            cursor.execute(upsert_sql, (CacheKey.NCS_GROWTH, data_json))
             conn.commit()
-            print(f"  [캐시] ncs_growth: {len(growth_rows)}행 저장")
+            logger.info(f"[캐시] ncs_growth: {len(growth_rows)}행 저장")
             saved_count += 1
         except Exception as e:
-            print(f"  [캐시] ncs_growth 실패: {e}")
+            logger.error(f"[캐시] ncs_growth 실패: {e}")
             if is_pg():
                 conn.rollback()
 
     conn.close()
-    print(f"[집계 캐시] {saved_count}개 집계 완료")
+    logger.info(f"[집계 캐시] {saved_count}개 집계 완료")
 
 
 # ==========================================
@@ -455,8 +464,9 @@ def compute_and_cache_aggregations():
 # ==========================================
 def main():
     init_all_tables()
+    _t0 = time.monotonic()
     start_date, end_date = get_collect_range()
-    print(f"[Market ETL] 수집 기간: {start_date} ~ {end_date}")
+    logger.info(f"[Market ETL] 수집 기간: {start_date} ~ {end_date}")
 
     months = list(month_shards(start_date, end_date))
     total_saved = 0
@@ -473,18 +483,19 @@ def main():
                 if rows:
                     saved = save_rows(rows)
                     total_saved += saved
-                    print(f"   >> {saved:,}건 저장 (누적: {total_saved:,}건)")
+                    logger.info(f"{saved:,}건 저장 (누적: {total_saved:,}건)")
                 success_months += 1
             except Exception as e:
                 failed_months += 1
-                print(f"   [M{month_idx:02d}] 수집 실패: {e}")
+                logger.error(f"[M{month_idx:02d}] 수집 실패: {e}")
 
-    print(f"\n[Summary] 월별 성공: {success_months}, 실패: {failed_months}, 총 저장: {total_saved:,}건")
+    logger.info(f"[Summary] 월별 성공: {success_months}, 실패: {failed_months}, 총 저장: {total_saved:,}건")
     if total_saved == 0:
-        print("수집된 데이터가 없습니다.")
+        logger.warning("수집된 데이터가 없습니다.")
     else:
-        print(f"[Success] 총 {total_saved:,}건 저장 완료!")
+        logger.info(f"[Success] 총 {total_saved:,}건 저장 완료!")
 
+    logger.info(f"총 소요: {time.monotonic() - _t0:.1f}초")
     compute_and_cache_aggregations()
 
 if __name__ == "__main__":

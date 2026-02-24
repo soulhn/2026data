@@ -73,3 +73,29 @@ TRNEE_TYPE_MAP = {
 GEMINI_MODEL = "gemini-2.5-flash"
 CACHE_TTL_AI_REPORT = 1800               # 30분
 AI_REPORT_MAX_TOKENS = 8192
+
+
+# ── 캐시 키 상수 (TB_MARKET_CACHE.CACHE_KEY) ──
+class CacheKey:
+    """ETL이 TB_MARKET_CACHE에 저장하는 사전 집계 캐시 키."""
+    # hrd_etl.py 에서 생성
+    ATTENDANCE_STATS = "attendance_stats"
+    DB_ATTEND_DIST = "db_attend_dist"
+    DB_TRAINEE_DIST = "db_trainee_dist"
+    REVENUE_ALL_TERMS = "revenue_all_terms"
+    DB_FILL_RATES = "db_fill_rates"
+    DB_SAMPLE_VALUES = "db_sample_values"
+    # market_etl.py 에서 생성
+    KPI = "kpi"
+    MONTHLY_COUNTS = "monthly_counts"
+    REGION_COUNTS = "region_counts"
+    INST_STATS = "inst_stats"
+    NCS_AGG = "ncs_agg"
+    MONTHLY_EMPL = "monthly_empl"
+    MONTHLY_RECRUIT = "monthly_recruit"
+    REGION_OPP = "region_opp"
+    NCS_OPP_MATRIX = "ncs_opp_matrix"
+    NCS_GROWTH = "ncs_growth"
+    DB_MARKET_TYPE = "db_market_type"
+    DB_MARKET_REGION = "db_market_region"
+    DB_MARKET_YEAR = "db_market_year"

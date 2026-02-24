@@ -8,7 +8,7 @@ from utils import (
     calc_attendance_rate, NOT_ATTEND_STATUSES, _attendance_penalty,
     calc_employment_rate_6,
 )
-from config import CACHE_TTL_DEFAULT, CACHE_TTL_REALTIME, DAILY_TRAINING_FEE
+from config import CACHE_TTL_DEFAULT, CACHE_TTL_REALTIME, DAILY_TRAINING_FEE, CacheKey
 
 st.set_page_config(
     page_title="HRD 교육성과 대시보드",
@@ -61,7 +61,7 @@ def get_attendance_stats():
     try:
         cache_df = load_data(
             "SELECT CACHE_DATA FROM TB_MARKET_CACHE WHERE CACHE_KEY = ?",
-            params=['attendance_stats'],
+            params=[CacheKey.ATTENDANCE_STATS],
         )
         if not cache_df.empty and cache_df['CACHE_DATA'].iloc[0]:
             rows = json.loads(cache_df['CACHE_DATA'].iloc[0])
