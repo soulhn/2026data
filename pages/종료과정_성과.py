@@ -939,6 +939,12 @@ with tab_all:
                 pivot = pivot.reindex(columns=labels_bin, fill_value=0)
                 pivot = pivot.loc[sorted(pivot.index, key=lambda x: int(x.replace("회차", "")))]
                 pivot.loc["합계"] = pivot.sum()
+
+                # 구간별 요약 metric (합계 기준)
+                mcols = st.columns(len(labels_bin))
+                for col, label in zip(mcols, labels_bin):
+                    col.metric(label, f"{int(pivot.loc['합계', label])}명")
+
                 st.dataframe(pivot, use_container_width=True)
         else:
             st.info("이탈 타이밍 데이터가 없습니다.")
