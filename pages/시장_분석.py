@@ -961,7 +961,7 @@ with tabs[3]:
                 pct = (market_recruit < rate).mean() * 100
                 fig_recruit.add_annotation(
                     x=rate, y=1, yref='paper',
-                    text=f"{label}: {rate:.1f}% (상위 {100-pct:.0f}%)",
+                    text=f"{row['TRPR_DEGR']}",
                     showarrow=True, arrowhead=2,
                     font=dict(color=color, size=11),
                 )
