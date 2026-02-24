@@ -7,7 +7,10 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_data, check_password, get_billing_periods, calc_revenue
+from utils import (
+    load_data, check_password, get_billing_periods, calc_revenue,
+    NOT_ATTEND_STATUSES, _attendance_penalty,
+)
 from config import CACHE_TTL_DEFAULT, DAILY_TRAINING_FEE, REVENUE_FULL_THRESHOLD
 
 st.set_page_config(page_title="매출 분석", page_icon="💰", layout="wide")
@@ -64,15 +67,6 @@ def build_revenue_df(trpr_id, trpr_degr, start_dt, end_dt):
     att_df = att_df.copy()
     att_df['ATEND_DT'] = pd.to_datetime(att_df['ATEND_DT']).dt.date
 
-    # 출석 불인정 상태만 제외 → 나머지 전체 출석으로 인정
-    # (공가 종류가 다양해서 포함 방식보다 제외 방식이 정확)
-    NOT_ATTEND_STATUSES = {'결석', '중도탈락미출석', '100분의50미만출석'}
-
-    def _penalty(status) -> int:
-        """지각/조퇴/외출 패널티 포인트 반환. 3개 누적 = 가상 결석 1일."""
-        if not isinstance(status, str):
-            return 0
-        return ('지각' in status) + ('조퇴' in status) + ('외출' in status)
 
     rows = []
     for p in periods:
@@ -97,7 +91,7 @@ def build_revenue_df(trpr_id, trpr_degr, start_dt, end_dt):
             present = grp[~grp['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)]
             base_attend = present['ATEND_DT'].nunique()
             # 지각+조퇴+외출 3개 누적 → 가상 결석 1일 차감
-            penalty = int(present['ATEND_STATUS'].apply(_penalty).sum())
+            penalty = int(present['ATEND_STATUS'].apply(_attendance_penalty).sum())
             attend_days = max(0, base_attend - penalty // 3)
             fee, rate, status = calc_revenue(
                 attend_days, rate_td, period_training_days=training_days

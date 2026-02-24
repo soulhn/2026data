@@ -208,14 +208,12 @@ with tab_indiv:
     total_std = row['TOT_PAR_MKS'] if row.get('TOT_PAR_MKS', 0) > 0 else len(students_df)
     fini_std = row['FINI_CNT'] if row.get('FINI_CNT') else 0
     dropout_std = total_std - fini_std
-    _EMPL_STATUS = EMPL_CODE_MAP
-    raw_ei6 = str(row.get('EI_EMPL_RATE_6') or '').strip()
-    raw_hrd6 = str(row.get('HRD_EMPL_RATE_6') or '').strip()
-    if raw_ei6 in _EMPL_STATUS:
-        empl_label = _EMPL_STATUS[raw_ei6]
+    total_rate_6 = calc_employment_rate_6(row.get('EI_EMPL_RATE_6'), row.get('HRD_EMPL_RATE_6'))
+    if pd.isna(total_rate_6):
+        raw_ei6 = str(row.get('EI_EMPL_RATE_6') or '').strip()
+        empl_label = EMPL_CODE_MAP.get(raw_ei6, "미제공")
     else:
-        total_empl_rate = safe_float(raw_ei6) + safe_float(raw_hrd6)
-        empl_label = f"{total_empl_rate:.1f}%"
+        empl_label = f"{total_rate_6:.1f}%"
 
     mc1, mc2, mc3, mc4 = st.columns(4)
     mc1.metric("수료율", f"{(fini_std / total_std * 100):.1f}%" if total_std > 0 else "0%", f"{fini_std}/{total_std}명")
@@ -702,7 +700,7 @@ with tab_all:
         all_attend['기수'] = all_attend['TRPR_DEGR'].astype(str) + '회차'
         absent_total_df = all_attend[all_attend['ATEND_STATUS'] == '결석'][['기수', 'CNT']].copy()
         absent_total_df.columns = ['기수', '결석건수']
-        # 기수별 출석률: 상태별 CNT 피벗 후 표준 공식 적용 (매출_분析.py 기준)
+        # 기수별 출석률: 상태별 CNT 피벗 후 표준 공식 적용 (매출_분석.py 기준)
         _piv = all_attend.pivot_table(
             index='기수', columns='ATEND_STATUS', values='CNT', aggfunc='sum', fill_value=0
         )
