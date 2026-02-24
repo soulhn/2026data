@@ -619,12 +619,8 @@ with tab_indiv:
                         color_discrete_map={"중도탈락": "#e74c3c", "수료": "#3498db"},
                         category_orders={"출결 상태": target_statuses},
                     )
-                    fig_bar.update_layout(
-                        height=350, xaxis_title="",
-                        yaxis_title="비<br>율<br>(%)",
-                        yaxis_title_standoff=0,
-                    )
-                    fig_bar.update_yaxes(title_font_size=13)
+                    fig_bar.update_layout(height=350, xaxis_title="")
+                    fig_bar.update_yaxes(title_text="비<br>율<br>(%)", title_font_size=13, title_standoff=0, tickangle=0)
                     fig_bar.update_traces(textposition="outside", texttemplate="%{text}%")
                     st.plotly_chart(fig_bar, use_container_width=True)
                 st.divider()
@@ -972,12 +968,8 @@ with tab_all:
                     color_discrete_map={'중도탈락': '#e74c3c', '수료': '#3498db'},
                     category_orders={'ATEND_STATUS': target_statuses},
                 )
-                fig_bar.update_layout(
-                    height=350, xaxis_title='',
-                    yaxis_title='비<br>율<br>(%)',
-                    yaxis_title_standoff=0,
-                )
-                fig_bar.update_yaxes(title_font_size=13)
+                fig_bar.update_layout(height=350, xaxis_title='')
+                fig_bar.update_yaxes(title_text='비<br>율<br>(%)', title_font_size=13, title_standoff=0, tickangle=0)
                 fig_bar.update_traces(textposition='outside', texttemplate='%{text}%')
                 st.plotly_chart(fig_bar, use_container_width=True)
             else:
