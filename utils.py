@@ -180,7 +180,7 @@ def safe_int(val, default=None):
         return default
 
 
-# ── 출석률 표준 계산 (매출_분析.py 기준) ──
+# ── 출석률 표준 계산 (매출_분석.py 기준) ──
 # 출석 불인정 상태만 제외 → 나머지 전체 출석으로 인정
 # (공가 종류가 다양해서 포함 방식보다 제외 방식이 정확)
 NOT_ATTEND_STATUSES = frozenset({'결석', '중도탈락미출석', '100분의50미만출석'})
@@ -194,7 +194,7 @@ def _attendance_penalty(status: str) -> int:
 
 
 def calc_attendance_rate(att_df) -> float:
-    """출석률 계산 (매출_분析.py 기준).
+    """출석률 계산 (매출_분석.py 기준).
 
     groupby().apply() 패턴으로 기수/학생 단위 모두 사용 가능.
 
@@ -232,7 +232,7 @@ def calc_attendance_rate_from_counts(
     early_leave: int,
     out: int,
 ) -> float:
-    """집계된 상태별 카운트로 출석률 계산 (매출_분析.py 기준).
+    """집계된 상태별 카운트로 출석률 계산 (매출_분석.py 기준).
 
     get_all_degr_attendance() 등 사전 집계 결과에 사용.
 
@@ -260,7 +260,7 @@ def calc_attendance_rate_from_counts(
 def calc_employment_rate_6(ei6_val, hrd6_val):
     """6개월 총 취업률 = EI_EMPL_RATE_6 + HRD_EMPL_RATE_6 합산.
 
-    home.py, 시장_분析.py, 종료과정_성과.py에서 각각 중복 구현하던 로직을 통일.
+    home.py, 시장_분석.py, 종료과정_성과.py에서 각각 중복 구현하던 로직을 통일.
 
     Args:
         ei6_val:  EI_EMPL_RATE_6 원본값 (str/float/NaN/None 모두 수용)

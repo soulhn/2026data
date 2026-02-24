@@ -324,7 +324,7 @@ with tab_detail:
             총_기록=('ATEND_DT', 'count'),
         ).reset_index()
         cumul = cumul.merge(active_students[['TRNEE_ID', 'TRNEE_NM']], on='TRNEE_ID', how='inner')
-        # 표준 출석률: 매출_분析.py 기준 (중도탈락미출석 분모 제외, 조퇴·외출 포함, 패널티 적용)
+        # 표준 출석률: 매출_분석.py 기준 (중도탈락미출석 분모 제외, 조퇴·외출 포함, 패널티 적용)
         _att_by_stu = this_logs.groupby('TRNEE_ID').apply(calc_attendance_rate).reset_index()
         _att_by_stu.columns = ['TRNEE_ID', '출석률(%)']
         cumul = cumul.merge(_att_by_stu, on='TRNEE_ID', how='left')
