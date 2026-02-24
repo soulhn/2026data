@@ -220,7 +220,7 @@ if not _top_rev.empty:
     _total_actual = int(_top_rev['actual_fee'].sum())
     _eok = int(_total_actual / 1e7) / 10  # 소수 첫째 자리 버림
     mk0, mk1, mk2, mk3, mk4 = st.columns(5)
-    mk0.metric("누적", f"{_eok}억")
+    mk0.metric("누적", f"{_eok}억+")
     mk1.metric("누적 총매출", fmt_won(_total_actual))
     mk2.metric(
         "기수당 평균 매출",
@@ -429,6 +429,7 @@ with tab_indiv:
         # 수강생 × 단위기간 피벗
         pivot_data = {}
         trainee_order = rev_df.drop_duplicates('TRNEE_ID')[['TRNEE_ID', 'TRNEE_NM']].copy()
+        trainee_order = trainee_order.sort_values('TRNEE_NM').reset_index(drop=True)
 
         for _, p in enumerate(periods):
             pn = p['period_num']
