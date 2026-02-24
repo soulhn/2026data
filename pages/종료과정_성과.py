@@ -178,9 +178,9 @@ def get_dropout_timing():
         "FROM TB_ATTENDANCE_LOG a "
         "JOIN TB_TRAINEE_INFO t ON a.TRNEE_ID = t.TRNEE_ID AND a.TRPR_DEGR = t.TRPR_DEGR "
         "JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
-        "WHERE t.TRNEE_STATUS LIKE '%중도탈락%' AND c.TR_END_DT < ? "
+        "WHERE t.TRNEE_STATUS LIKE ? AND c.TR_END_DT < ? "
         "GROUP BY a.TRPR_DEGR, a.TRNEE_ID, c.TR_STA_DT, c.TOT_PAR_MKS",
-        params=[today],
+        params=['%중도탈락%', today],
     )
 
 
