@@ -9,6 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import (
     load_data, calculate_age_at_training, safe_float, check_password,
     calc_attendance_rate_from_counts, calc_employment_rate_6, parse_empl_rate,
+    is_completed, parse_time_to_minutes,
 )
 from config import CACHE_TTL_DEFAULT, EMPL_CODE_MAP, RISK_ABSENT, TRNEE_TYPE_MAP
 
@@ -164,17 +165,6 @@ def get_all_degr_absent_avg():
     )
 
 
-def parse_time_to_minutes(t):
-    """HH:MM 형태의 시간을 분으로 변환"""
-    try:
-        parts = str(t).split(':')
-        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-            return int(parts[0]) * 60 + int(parts[1])
-    except Exception:
-        pass
-    return None
-
-
 course_list = get_course_list()
 if course_list.empty:
     st.warning("분석할 수 있는 종료된 과정 데이터가 없습니다.")
@@ -269,7 +259,7 @@ with tab_indiv:
             st.markdown("##### 📊 연령대별 수료율 & 평균 결석")
             age_grp = students_df.groupby('연령대').agg(
                 인원=('TRNEE_ID', 'count'),
-                수료=('TRNEE_STATUS', lambda x: x.str.contains('수료|조기취업', na=False).sum()),
+                수료=('TRNEE_STATUS', lambda x: is_completed(x).sum()),
                 평균_결석=('결석_횟수', 'mean'),
             ).reset_index()
             age_grp['수료율'] = (age_grp['수료'] / age_grp['인원'] * 100).round(1)
@@ -303,7 +293,7 @@ with tab_indiv:
             st.markdown("##### 📊 훈련생 유형별 성과 비교")
             type_stats = students_df.groupby('TRNEE_TYPE').agg(
                 인원=('TRNEE_ID', 'count'),
-                수료_인원=('TRNEE_STATUS', lambda x: x.str.contains('수료|조기취업', na=False).sum()),
+                수료_인원=('TRNEE_STATUS', lambda x: is_completed(x).sum()),
                 평균_결석=('결석_횟수', 'mean'),
                 평균_지각=('지각_횟수', 'mean'),
             ).reset_index()
@@ -521,7 +511,7 @@ with tab_indiv:
         else:
             full_df["ATEND_DT"] = pd.to_datetime(full_df["ATEND_DT"])
             dropout_ids = full_df[full_df["TRNEE_STATUS"].str.contains("중도탈락", na=False)]["TRNEE_ID"].unique()
-            grad_ids = full_df[full_df["TRNEE_STATUS"].str.contains("수료|조기취업", na=False)]["TRNEE_ID"].unique()
+            grad_ids = full_df[is_completed(full_df["TRNEE_STATUS"])]["TRNEE_ID"].unique()
 
             if len(dropout_ids) == 0:
                 st.info("이 기수의 중도탈락자가 없습니다.")
@@ -603,7 +593,7 @@ with tab_indiv:
         if "결석_횟수" in students_df.columns:
             risk = students_df[
                 (students_df["결석_횟수"] >= RISK_ABSENT) &
-                ~students_df["TRNEE_STATUS"].str.contains("수료|조기취업", na=False)
+                ~is_completed(students_df["TRNEE_STATUS"])
             ]
             if not risk.empty:
                 st.divider()

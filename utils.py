@@ -303,6 +303,27 @@ def parse_empl_rate(val):
     return (f, None)
 
 
+def calc_recruit_rate(reg_col, fxnum_col):
+    """모집률(%) 계산: (신청인원 / 정원 × 100), 정원 0이면 NA, 상한 100%"""
+    return (reg_col / fxnum_col.replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
+
+
+def is_completed(status):
+    """수료 판정: '수료' 또는 '조기취업' 포함 여부 (정확일치 금지)"""
+    return status.str.contains('수료|조기취업', na=False)
+
+
+def parse_time_to_minutes(t):
+    """HH:MM 형태의 시간을 분으로 변환"""
+    try:
+        parts = str(t).split(':')
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            return int(parts[0]) * 60 + int(parts[1])
+    except Exception:
+        pass
+    return None
+
+
 def get_billing_periods(start_date, end_date):
     """개강일 기준 월 단위 청구 기간 목록 반환.
 

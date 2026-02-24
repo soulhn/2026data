@@ -10,7 +10,7 @@ import os
 
 # 🚀 상위 폴더의 utils.py를 가져오기 위한 경로 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, get_connection, is_pg, load_data as _load_data, adapt_query
+from utils import check_password, get_connection, is_pg, load_data as _load_data, adapt_query, calc_recruit_rate
 from config import (
     CACHE_TTL_MARKET, COST_BINS, COST_BIN_LABELS,
     SCATTER_SAMPLE_LIMIT, REGRESSION_SAMPLE_LIMIT,
@@ -624,7 +624,7 @@ with tabs[0]:
     st.caption("버블 크기: 개설 과정 수 | X축: 평균 모집률 | Y축: 평균 만족도. 우측 상단이 고만족·고수요 기관입니다.")
     inst_all = load_inst_stats(where, params)
     if not inst_all.empty:
-        inst_all['평균모집률'] = (inst_all['REG_COURSE_MAN'] / inst_all['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
+        inst_all['평균모집률'] = calc_recruit_rate(inst_all['REG_COURSE_MAN'], inst_all['TOT_FXNUM'])
         inst_all['평균만족도'] = (pd.to_numeric(inst_all['AVG_SCORE'], errors='coerce').fillna(0) / 100).round(1)
         inst_alt = inst_all[inst_all['평균만족도'] > 0].rename(columns={'TRAINST_NM': '기관명', 'TRPR_CNT': '개설수'})
         inst_alt = inst_alt.nlargest(50, '개설수')
@@ -739,7 +739,7 @@ with tabs[1]:
 
     raw_inst = load_inst_stats(where, params)
     if not raw_inst.empty:
-        raw_inst['평균모집률'] = (raw_inst['REG_COURSE_MAN'] / raw_inst['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
+        raw_inst['평균모집률'] = calc_recruit_rate(raw_inst['REG_COURSE_MAN'], raw_inst['TOT_FXNUM'])
         raw_inst['만족도(점)'] = (raw_inst['AVG_SCORE'] / 100).round(1)
         raw_inst = raw_inst.sort_values(by='REG_COURSE_MAN', ascending=False).reset_index(drop=True)
         raw_inst['순위'] = raw_inst.index + 1
@@ -750,7 +750,7 @@ with tabs[1]:
 
     raw_course = load_course_agg(where, params)
     if not raw_course.empty:
-        raw_course['통합모집률'] = (raw_course['REG_COURSE_MAN'] / raw_course['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
+        raw_course['통합모집률'] = calc_recruit_rate(raw_course['REG_COURSE_MAN'], raw_course['TOT_FXNUM'])
         raw_course['만족도(점)'] = (raw_course['AVG_SCORE'] / 100).round(1)
         raw_course = raw_course.sort_values(by='REG_COURSE_MAN', ascending=False).reset_index(drop=True)
         raw_course['순위'] = raw_course.index + 1
@@ -814,7 +814,7 @@ with tabs[1]:
     ncs_data = load_ncs_agg(where, params, min_courses=NCS_MIN_COURSES if total_count >= 100 else 1)
     if not ncs_data.empty:
         ncs_data['NCS_CD'] = ncs_data['NCS_CD'].apply(lambda x: str(int(float(x))) if pd.notna(x) and str(x) not in ('', 'nan') else '')
-        ncs_data['평균모집률'] = (ncs_data['REG_COURSE_MAN'] / ncs_data['TOT_FXNUM'].replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
+        ncs_data['평균모집률'] = calc_recruit_rate(ncs_data['REG_COURSE_MAN'], ncs_data['TOT_FXNUM'])
         ncs_top = ncs_data.head(10).rename(columns={'NCS_CD': 'NCS코드', 'CNT': '개설수', 'TOT_FXNUM': '총모집정원', 'REG_COURSE_MAN': '총신청인원'})
         ncs_top = ncs_top.sort_values('평균모집률', ascending=True)
         fig = px.bar(ncs_top, x='평균모집률', y='NCS코드', orientation='h',
