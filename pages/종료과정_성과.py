@@ -185,15 +185,33 @@ def get_dropout_timing():
 
 
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
-def get_weekly_attendance_raw():
-    """주간 출결 추세 분석용: 기수별 일별 출결 + 개강일."""
+def get_dropout_vs_completed_status():
+    """이탈자 vs 수료자 출결 상태 비율 비교용."""
     today = datetime.now().strftime('%Y-%m-%d')
     return load_data(
-        "SELECT a.TRPR_DEGR, a.ATEND_DT, a.ATEND_STATUS, c.TR_STA_DT "
+        "SELECT a.TRPR_DEGR, t.TRNEE_STATUS, a.ATEND_STATUS, COUNT(*) as CNT "
         "FROM TB_ATTENDANCE_LOG a "
+        "JOIN TB_TRAINEE_INFO t ON a.TRNEE_ID = t.TRNEE_ID AND a.TRPR_DEGR = t.TRPR_DEGR "
         "JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
-        "WHERE c.TR_END_DT < ? AND a.ATEND_STATUS != '중도탈락미출석'",
+        "WHERE c.TR_END_DT < ? AND a.ATEND_STATUS != '중도탈락미출석' "
+        "GROUP BY a.TRPR_DEGR, t.TRNEE_STATUS, a.ATEND_STATUS",
         params=[today],
+    )
+
+
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
+def get_dropout_pre_attendance():
+    """이탈자의 마지막 출석일 기준 60일 전 출결 데이터."""
+    today = datetime.now().strftime('%Y-%m-%d')
+    return load_data(
+        "SELECT a.TRPR_DEGR, a.TRNEE_ID, a.ATEND_DT, a.ATEND_STATUS, "
+        "t.TRNEE_STATUS "
+        "FROM TB_ATTENDANCE_LOG a "
+        "JOIN TB_TRAINEE_INFO t ON a.TRNEE_ID = t.TRNEE_ID AND a.TRPR_DEGR = t.TRPR_DEGR "
+        "JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
+        "WHERE c.TR_END_DT < ? AND t.TRNEE_STATUS LIKE ? "
+        "AND a.ATEND_STATUS != '중도탈락미출석'",
+        params=[today, '%중도탈락%'],
     )
 
 
@@ -534,8 +552,7 @@ with tab_indiv:
 
     # [Tab 5] 출결 및 이탈 분석
     with tab5:
-        st.markdown("##### 📉 중도 이탈자 출결 패턴 분석")
-        st.caption("이탈 직전 4주간 출석 패턴을 분석합니다. 이탈 마지막 활동일 기준으로 소급합니다.")
+        st.markdown("##### 📉 이탈 분석")
 
         full_df = get_full_attendance_with_status(selected_degr)
         if full_df.empty:
@@ -545,82 +562,96 @@ with tab_indiv:
             dropout_ids = full_df[full_df["TRNEE_STATUS"].str.contains("중도탈락", na=False)]["TRNEE_ID"].unique()
             grad_ids = full_df[is_completed(full_df["TRNEE_STATUS"])]["TRNEE_ID"].unique()
 
+            total_cnt = len(dropout_ids) + len(grad_ids)
+            dropout_rate = len(dropout_ids) / total_cnt * 100 if total_cnt > 0 else 0
+
             if len(dropout_ids) == 0:
+                st.metric("중도탈락률", "0%", f"0/{total_cnt}명")
                 st.info("이 기수의 중도탈락자가 없습니다.")
             else:
-                def _weekly_rates(ids_list, label):
-                    rows = []
-                    for tid in ids_list:
-                        td = full_df[full_df["TRNEE_ID"] == tid].sort_values("ATEND_DT")
-                        active = td[td["ATEND_STATUS"].isin(["출석", "지각"])]
-                        last_dt = active["ATEND_DT"].max() if not active.empty else td["ATEND_DT"].max()
-                        nm = td["TRNEE_NM"].iloc[0] if "TRNEE_NM" in td.columns else str(tid)
-                        for w in range(1, 5):
-                            w_end = last_dt - pd.Timedelta(days=(w - 1) * 7)
-                            w_start = last_dt - pd.Timedelta(days=w * 7)
-                            wd = td[(td["ATEND_DT"] > w_start) & (td["ATEND_DT"] <= w_end)]
-                            if wd.empty:
-                                continue
-                            rate = wd["ATEND_STATUS"].isin(["출석", "지각"]).sum() / len(wd) * 100
-                            rows.append({"TRNEE_ID": tid, "TRNEE_NM": nm,
-                                          "주차_순서": w, "주차": f"{w}주 전",
-                                          "출석률": round(rate, 1), "그룹": label})
-                    return rows
+                # (1) 중도탈락률 metric
+                kc1, kc2 = st.columns(2)
+                kc1.metric("중도탈락률", f"{dropout_rate:.1f}%", f"{len(dropout_ids)}/{total_cnt}명")
+                kc2.metric("중도탈락 인원", f"{len(dropout_ids)}명")
+                st.divider()
 
-                records = _weekly_rates(dropout_ids, "중도탈락") + _weekly_rates(grad_ids, "수료")
-                pattern_df = pd.DataFrame(records)
+                # (2) 이탈 시점 strip chart
+                dropout_data = full_df[full_df["TRNEE_ID"].isin(dropout_ids)].copy()
+                dropout_data = dropout_data[dropout_data["ATEND_STATUS"] != "중도탈락미출석"]
+                last_dates = dropout_data.groupby("TRNEE_ID")["ATEND_DT"].max().reset_index()
+                last_dates.rename(columns={"ATEND_DT": "LAST_DT"}, inplace=True)
+                first_date = full_df["ATEND_DT"].min()
+                last_dates["이탈경과일"] = (last_dates["LAST_DT"] - first_date).dt.days
+                last_dates = last_dates[last_dates["이탈경과일"] >= 0]
 
-                if not pattern_df.empty:
-                    do_df = pattern_df[pattern_df["그룹"] == "중도탈락"]
-                    w1 = do_df[do_df["주차_순서"] == 1]["출석률"].mean()
-                    w4 = do_df[do_df["주차_순서"] == 4]["출석률"].mean()
-
-                    kc1, kc2, kc3 = st.columns(3)
-                    kc1.metric("중도탈락 인원", f"{len(dropout_ids)}명")
-                    kc2.metric("이탈 1주 전 평균 출석률", f"{w1:.1f}%" if pd.notna(w1) else "-")
-                    kc3.metric("이탈 4주 전 평균 출석률", f"{w4:.1f}%" if pd.notna(w4) else "-",
-                               delta=f"{w1 - w4:+.1f}%p" if pd.notna(w1) and pd.notna(w4) else None,
-                               delta_color="inverse")
-                    st.divider()
-
-                    week_order = ["4주 전", "3주 전", "2주 전", "1주 전"]
-                    avg_pat = pattern_df.groupby(["그룹", "주차", "주차_순서"])["출석률"].mean().reset_index()
-                    avg_pat["출석률"] = avg_pat["출석률"].round(1)
-
-                    st.markdown("##### 이탈 전 주별 출석률 변화")
-                    st.caption("중도탈락자의 이탈 직전 4주 패턴 vs 수료자의 마지막 4주 패턴 비교")
-                    st.altair_chart(
-                        alt.Chart(avg_pat).mark_line(point=True, strokeWidth=2).encode(
-                            x=alt.X("주차:N", sort=week_order, title="기준 주차", axis=alt.Axis(labelAngle=0)),
-                            y=alt.Y("출석률:Q", scale=alt.Scale(domain=[0, 100]),
-                                    axis=alt.Axis(title=["출", "석", "률", "(%)"], titleAngle=0)),
-                            color=alt.Color("그룹:N", scale=alt.Scale(
-                                domain=["중도탈락", "수료"], range=["#e74c3c", "#3498db"]
-                            )),
-                            tooltip=["그룹", "주차", "출석률"],
-                        ).properties(height=300),
-                        use_container_width=True,
+                if not last_dates.empty:
+                    st.markdown("##### 이탈 시점 분포")
+                    st.caption("각 점은 이탈자 1명. 개강일 기준 경과일로 표시합니다.")
+                    last_dates["기수"] = f"{selected_degr}회차"
+                    fig_strip = px.strip(
+                        last_dates, x="이탈경과일", y="기수",
+                        labels={"이탈경과일": "개강 후 경과일", "기수": ""},
                     )
-                    st.divider()
+                    fig_strip.update_layout(height=200, showlegend=False, xaxis_range=[0, 130])
+                    fig_strip.update_traces(marker=dict(size=10, opacity=0.7, color="#e74c3c"))
+                    st.plotly_chart(fig_strip, use_container_width=True)
+                st.divider()
 
-                    st.markdown("##### 이탈자별 주간 출석 현황")
-                    do_heat = do_df.copy()
-                    do_heat["학생"] = do_heat["TRNEE_NM"].fillna(do_heat["TRNEE_ID"].astype(str))
-                    heat = alt.Chart(do_heat).mark_rect().encode(
-                        x=alt.X("주차:N", sort=week_order, title="기준 주차", axis=alt.Axis(labelAngle=0)),
-                        y=alt.Y("학생:N", axis=alt.Axis(title=["이", "탈", "자"], titleAngle=0, labelAngle=0, labelLimit=200)),
-                        color=alt.Color("출석률:Q",
-                                        scale=alt.Scale(range=["#e74c3c", "#f39c12", "#2ecc71"]),
-                                        title="출석률(%)"),
-                        tooltip=["학생", "주차", "출석률"],
-                    ).properties(height=max(150, len(dropout_ids) * 50))
-                    text_layer = alt.Chart(do_heat).mark_text(fontSize=11).encode(
-                        x=alt.X("주차:N", sort=week_order),
-                        y=alt.Y("학생:N", axis=alt.Axis(labelAngle=0)),
-                        text=alt.Text("출석률:Q", format=".0f"),
-                        color=alt.condition(alt.datum.출석률 < 50, alt.value("white"), alt.value("black")),
+                # (3) 이탈자 vs 수료자 출결 상태 비교
+                st.markdown("##### 이탈자 vs 수료자 출결 상태 비교")
+                target_statuses = ["결석", "지각", "조퇴", "외출"]
+                all_active = full_df[full_df["ATEND_STATUS"] != "중도탈락미출석"].copy()
+                rows_bar = []
+                for label, ids in [("중도탈락", dropout_ids), ("수료", grad_ids)]:
+                    grp = all_active[all_active["TRNEE_ID"].isin(ids)]
+                    total = len(grp)
+                    if total == 0:
+                        continue
+                    for status in target_statuses:
+                        cnt = (grp["ATEND_STATUS"] == status).sum()
+                        rows_bar.append({"그룹": label, "출결 상태": status, "비율": round(cnt / total * 100, 1)})
+                bar_df = pd.DataFrame(rows_bar)
+                if not bar_df.empty:
+                    fig_bar = px.bar(
+                        bar_df, x="출결 상태", y="비율", color="그룹",
+                        barmode="group", text="비율",
+                        labels={"비율": "비율 (%)"},
+                        color_discrete_map={"중도탈락": "#e74c3c", "수료": "#3498db"},
+                        category_orders={"출결 상태": target_statuses},
                     )
-                    st.altair_chart((heat + text_layer), use_container_width=True)
+                    fig_bar.update_layout(height=350, xaxis_title="")
+                    fig_bar.update_traces(textposition="outside", texttemplate="%{text}%")
+                    st.plotly_chart(fig_bar, use_container_width=True)
+                st.divider()
+
+                # (4) 이탈 전 2달 평균 출결 지표
+                st.markdown("##### 이탈 전 2개월 출결 요약")
+                st.caption("이탈자의 마지막 출석일 기준 60일 전 출결 데이터를 집계합니다.")
+                pre_rows = []
+                for tid in dropout_ids:
+                    td = dropout_data[dropout_data["TRNEE_ID"] == tid]
+                    if td.empty:
+                        continue
+                    last_dt = td["ATEND_DT"].max()
+                    window = td[td["ATEND_DT"] >= last_dt - pd.Timedelta(days=60)]
+                    if window.empty:
+                        continue
+                    pre_rows.append({
+                        "총일수": len(window),
+                        "결석일": (window["ATEND_STATUS"] == "결석").sum(),
+                        "지각일": (window["ATEND_STATUS"] == "지각").sum(),
+                        "출석일": (~window["ATEND_STATUS"].isin(NOT_ATTEND_STATUSES)).sum(),
+                    })
+                if pre_rows:
+                    pre_df = pd.DataFrame(pre_rows)
+                    pre_df["출석률"] = (pre_df["출석일"] / pre_df["총일수"] * 100).round(1)
+                    pc1, pc2, pc3, pc4 = st.columns(4)
+                    pc1.metric("평균 출석률", f"{pre_df['출석률'].mean():.1f}%")
+                    pc2.metric("평균 결석일", f"{pre_df['결석일'].mean():.1f}일")
+                    pc3.metric("평균 지각일", f"{pre_df['지각일'].mean():.1f}일")
+                    pc4.metric("분석 대상", f"{len(pre_df)}명")
+                else:
+                    st.info("이탈 전 출결 데이터가 없습니다.")
 
         if "결석_횟수" in students_df.columns:
             risk = students_df[
@@ -879,7 +910,7 @@ with tab_all:
         )
         st.divider()
 
-        # (F) 잔류율 곡선 | 이탈 분포 히스토그램
+        # (F) 이탈 시점 strip chart
         dropout_timing = get_dropout_timing()
         if not dropout_timing.empty:
             dropout_timing['LAST_ATTEND_DT'] = pd.to_datetime(dropout_timing['LAST_ATTEND_DT'])
@@ -891,90 +922,91 @@ with tab_all:
             dropout_timing = dropout_timing[dropout_timing['이탈경과일'] >= 0]
 
             if not dropout_timing.empty:
-                surv_col, hist_col = st.columns(2)
-                with surv_col:
-                    st.markdown("##### 잔류율 곡선")
-                    fig_surv = go.Figure()
-                    for degr_label in sorted(
+                st.markdown("##### 이탈 시점 분포")
+                st.caption("각 점은 이탈자 1명을 나타냅니다. 개강일 기준 경과일로 표시합니다.")
+                fig_strip = px.strip(
+                    dropout_timing, x='이탈경과일', y='기수', color='기수',
+                    labels={'이탈경과일': '개강 후 경과일', '기수': ''},
+                    category_orders={'기수': sorted(
                         dropout_timing['기수'].unique(),
                         key=lambda x: int(x.replace('회차', '')),
-                    ):
-                        sub = dropout_timing[dropout_timing['기수'] == degr_label]
-                        tot = int(sub['TOT_PAR_MKS'].iloc[0])
-                        if tot <= 0:
-                            continue
-                        dropout_days = sorted(sub['이탈경과일'].tolist())
-                        times = [0]
-                        survival = [100.0]
-                        cum_drop = 0
-                        for d in dropout_days:
-                            cum_drop += 1
-                            times.append(d)
-                            survival.append(round((tot - cum_drop) / tot * 100, 1))
-                        fig_surv.add_trace(go.Scatter(
-                            x=times, y=survival, mode='lines',
-                            line_shape='hv', name=degr_label, opacity=0.8,
-                        ))
-                    fig_surv.update_layout(
-                        xaxis_title='개강 후 경과일', yaxis_title='잔류율 (%)',
-                        height=400, yaxis_range=[0, 105],
-                    )
-                    st.plotly_chart(fig_surv, use_container_width=True)
-                with hist_col:
-                    st.markdown("##### 이탈 시점 분포")
-                    fig_hist = px.histogram(
-                        dropout_timing, x='이탈경과일', color='기수',
-                        barmode='overlay', opacity=0.6,
-                        labels={'이탈경과일': '개강 후 경과일'},
-                    )
-                    fig_hist.update_layout(height=400)
-                    st.plotly_chart(fig_hist, use_container_width=True)
-                st.divider()
-
-                # (G) 이탈 시점 요약 테이블
-                st.markdown("##### 기수별 이탈 시점 요약")
-                drop_summary = dropout_timing.groupby('기수').agg(
-                    이탈자수=('TRNEE_ID', 'count'),
-                    평균_이탈일=('이탈경과일', 'mean'),
-                    중앙값_이탈일=('이탈경과일', 'median'),
-                    최소_이탈일=('이탈경과일', 'min'),
-                    최대_이탈일=('이탈경과일', 'max'),
-                ).reset_index()
-                drop_summary['평균_이탈일'] = drop_summary['평균_이탈일'].round(1)
-                drop_summary['중앙값_이탈일'] = drop_summary['중앙값_이탈일'].round(1)
-                st.dataframe(drop_summary, use_container_width=True, hide_index=True)
+                    )},
+                )
+                fig_strip.update_layout(
+                    height=max(250, len(dropout_timing['기수'].unique()) * 60),
+                    showlegend=False,
+                    xaxis_range=[0, 130],
+                )
+                fig_strip.update_traces(marker=dict(size=8, opacity=0.7))
+                st.plotly_chart(fig_strip, use_container_width=True)
         else:
             st.info("이탈 타이밍 데이터가 없습니다.")
         st.divider()
 
-        # (H) 주간 출결 추세 (multi-line)
-        st.markdown("##### 기수 간 주간 출결 추세")
-        st.caption("각 기수의 개강일 기준 상대 주차별 출석률 변화를 비교합니다.")
-        weekly_raw = get_weekly_attendance_raw()
-        if not weekly_raw.empty:
-            weekly_raw['ATEND_DT'] = pd.to_datetime(weekly_raw['ATEND_DT'])
-            weekly_raw['TR_STA_DT'] = pd.to_datetime(weekly_raw['TR_STA_DT'])
-            weekly_raw['경과일'] = (weekly_raw['ATEND_DT'] - weekly_raw['TR_STA_DT']).dt.days
-            weekly_raw['상대주차'] = weekly_raw['경과일'] // 7 + 1
-            weekly_raw = weekly_raw[weekly_raw['상대주차'].between(1, 30)]
-            weekly_raw['출석여부'] = ~weekly_raw['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)
-            weekly_raw['기수'] = weekly_raw['TRPR_DEGR'].astype(str) + '회차'
-            weekly_rate = weekly_raw.groupby(['기수', '상대주차']).agg(
-                주간출석률=('출석여부', lambda x: round(x.mean() * 100, 1))
-            ).reset_index()
-            weekly_rate['상대주차'] = weekly_rate['상대주차'].astype(int)
-            fig_weekly = px.line(
-                weekly_rate.sort_values(['기수', '상대주차']),
-                x='상대주차', y='주간출석률', color='기수',
-                markers=True,
-                labels={'상대주차': '상대 주차', '주간출석률': '주간 출석률 (%)'},
+        # (G) 이탈자 출결 비율 vs 수료생 비교
+        st.markdown("##### 이탈자 vs 수료자 출결 상태 비교")
+        st.caption("중도탈락미출석 제외, 전체 기수 합산 기준")
+        status_raw = get_dropout_vs_completed_status()
+        if not status_raw.empty:
+            status_raw['그룹'] = status_raw['TRNEE_STATUS'].apply(
+                lambda x: '중도탈락' if '중도탈락' in str(x) else ('수료' if is_completed(pd.Series([x])).iloc[0] else None)
             )
-            fig_weekly.update_xaxes(type='category')
-            fig_weekly.update_layout(height=400, yaxis_range=[0, 105])
-            st.plotly_chart(fig_weekly, use_container_width=True)
-            st.caption("💡 주간 단위에서는 지각·조퇴 패널티 미적용 (누적 기반이므로)")
+            status_raw = status_raw[status_raw['그룹'].notna()].copy()
+            target_statuses = ['결석', '지각', '조퇴', '외출']
+            status_raw = status_raw[status_raw['ATEND_STATUS'].isin(target_statuses + ['출석'])].copy()
+            grp_total = status_raw.groupby('그룹')['CNT'].sum().reset_index().rename(columns={'CNT': 'TOTAL'})
+            status_agg = status_raw.groupby(['그룹', 'ATEND_STATUS'])['CNT'].sum().reset_index()
+            status_agg = status_agg.merge(grp_total, on='그룹')
+            status_agg['비율'] = (status_agg['CNT'] / status_agg['TOTAL'] * 100).round(1)
+            status_agg = status_agg[status_agg['ATEND_STATUS'].isin(target_statuses)]
+            if not status_agg.empty:
+                fig_bar = px.bar(
+                    status_agg, x='ATEND_STATUS', y='비율', color='그룹',
+                    barmode='group', text='비율',
+                    labels={'ATEND_STATUS': '출결 상태', '비율': '비율 (%)'},
+                    color_discrete_map={'중도탈락': '#e74c3c', '수료': '#3498db'},
+                    category_orders={'ATEND_STATUS': target_statuses},
+                )
+                fig_bar.update_layout(height=350, xaxis_title='')
+                fig_bar.update_traces(textposition='outside', texttemplate='%{text}%')
+                st.plotly_chart(fig_bar, use_container_width=True)
+            else:
+                st.info("비교할 출결 데이터가 없습니다.")
         else:
-            st.info("주간 출결 데이터가 없습니다.")
+            st.info("출결 상태 데이터가 없습니다.")
+        st.divider()
+
+        # (H) 이탈 전 2달 평균 출결 지표
+        st.markdown("##### 이탈 전 2개월 출결 요약")
+        st.caption("이탈자의 마지막 출석일 기준 60일 전 출결 데이터를 집계합니다.")
+        pre_att = get_dropout_pre_attendance()
+        if not pre_att.empty:
+            pre_att['ATEND_DT'] = pd.to_datetime(pre_att['ATEND_DT'])
+            last_dates = pre_att.groupby(['TRPR_DEGR', 'TRNEE_ID'])['ATEND_DT'].max().reset_index()
+            last_dates.rename(columns={'ATEND_DT': 'LAST_DT'}, inplace=True)
+            pre_att = pre_att.merge(last_dates, on=['TRPR_DEGR', 'TRNEE_ID'])
+            pre_att = pre_att[pre_att['ATEND_DT'] >= pre_att['LAST_DT'] - pd.Timedelta(days=60)]
+            if not pre_att.empty:
+                per_person = pre_att.groupby(['TRPR_DEGR', 'TRNEE_ID']).apply(
+                    lambda g: pd.Series({
+                        '총일수': len(g),
+                        '결석일': (g['ATEND_STATUS'] == '결석').sum(),
+                        '지각일': (g['ATEND_STATUS'] == '지각').sum(),
+                        '출석일': (~g['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)).sum(),
+                    }),
+                    include_groups=False,
+                ).reset_index()
+                per_person['출석률'] = (per_person['출석일'] / per_person['총일수'] * 100).round(1)
+
+                mc1, mc2, mc3, mc4 = st.columns(4)
+                mc1.metric("평균 출석률", f"{per_person['출석률'].mean():.1f}%")
+                mc2.metric("평균 결석일", f"{per_person['결석일'].mean():.1f}일")
+                mc3.metric("평균 지각일", f"{per_person['지각일'].mean():.1f}일")
+                mc4.metric("분석 대상", f"{len(per_person)}명")
+            else:
+                st.info("이탈 전 60일 이내 출결 데이터가 없습니다.")
+        else:
+            st.info("이탈자 출결 데이터가 없습니다.")
 
     # ──────────────────────────────────────────────
     # 서브탭 3: 상세 데이터
