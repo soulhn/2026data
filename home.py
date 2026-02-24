@@ -22,7 +22,7 @@ def get_dashboard_data():
     df_course = load_data("""
         SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT,
                TOT_FXNUM, TOT_PAR_MKS, TOT_TRP_CNT, FINI_CNT,
-               EI_EMPL_RATE_3, EI_EMPL_RATE_6, HRD_EMPL_RATE_6, REAL_EMPL_RATE
+               EI_EMPL_RATE_3, EI_EMPL_RATE_6, HRD_EMPL_RATE_6
         FROM TB_COURSE_MASTER ORDER BY TR_STA_DT DESC
     """)
     df_course['TR_STA_DT'] = pd.to_datetime(df_course['TR_STA_DT'])
@@ -31,8 +31,7 @@ def get_dashboard_data():
         df_course[col] = pd.to_numeric(
             df_course[col], errors='coerce').fillna(0)
     # 취업률: NaN 유지 (상태코드 'A'=개설예정 'B'=집계중 'C'=미실시 'D'=수료자없음 → 0과 구분)
-    # REAL_EMPL_RATE = EI_EMPL_RATE_3 (3개월 고용보험) 동일값
-    for col in ['EI_EMPL_RATE_3', 'EI_EMPL_RATE_6', 'HRD_EMPL_RATE_6', 'REAL_EMPL_RATE']:
+    for col in ['EI_EMPL_RATE_3', 'EI_EMPL_RATE_6', 'HRD_EMPL_RATE_6']:
         df_course[col] = pd.to_numeric(df_course[col], errors='coerce')
     # 6개월 총 취업률 = EI_6 + HRD_6 합산 (특수코드/둘다결측 → NA)
     df_course['TOTAL_RATE_6'] = df_course.apply(
@@ -110,7 +109,7 @@ def render_dashboard():
     # [Section 1] 핵심 지표 (KPI)
     total_courses = len(df)
     total_trainees = df['TOT_PAR_MKS'].sum()
-    avg_rate_3 = df[df['상태'] == '종료']['REAL_EMPL_RATE'].mean()
+    avg_rate_3 = df[df['상태'] == '종료']['EI_EMPL_RATE_3'].mean()
     avg_rate_6 = df[df['상태'] == '종료']['TOTAL_RATE_6'].mean()
     active_courses = len(df[df['상태'] == '진행중'])
 

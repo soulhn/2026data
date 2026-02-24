@@ -42,7 +42,6 @@ SCHEMAS = {
             ("EI_EMPL_CNT_6",   "INTEGER",   "6개월 취업인원"),
             ("HRD_EMPL_RATE_6", "TEXT",      "6개월 고용보험 미가입 취업률 (%) — 특수값: A=개설예정 B=진행중 C=미실시 D=수료자없음"),
             ("HRD_EMPL_CNT_6",  "INTEGER",   "6개월 미가입 취업인원"),
-            ("REAL_EMPL_RATE",  "REAL",      "실질 취업률 (계산값)"),
             ("COLLECTED_AT",    "TIMESTAMP", "수집 시각"),
         ],
     },
