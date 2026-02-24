@@ -32,6 +32,10 @@
           {
             "type": "command",
             "command": "python3 -c \"\nimport sys, json, os\ntry:\n    data = json.load(sys.stdin)\n    fp = data.get('tool_input', {}).get('file_path', '')\n    if fp and os.path.exists(fp) and fp.endswith(('.py', '.md')) and not fp.endswith('CLAUDE.md'):\n        txt = open(fp, encoding='utf-8').read()\n        if '\\u6790' in txt:\n            import re\n            lines = txt.splitlines()\n            hits = [(i+1, l) for i, l in enumerate(lines) if '\\u6790' in l]\n            print(f'[Hook] \\u26a0\\ufe0f \\u6790(U+6790 CJK) \\uac10\\uc9c0: {fp}')\n            for ln, l in hits:\n                print(f'  line {ln}: {l.strip()}')\n            print('[Hook] \\ubd84\\u6790 \\u2192 \\ubd84\\uc11d (\\uc11d=U+C11D \\ud55c\\uae00)\\uc73c\\ub85c \\uc218\\uc815 \\ud544\\uc694')\n            sys.exit(2)\nexcept Exception:\n    pass\n\""
+          },
+          {
+            "type": "command",
+            "command": "python3 -c \"\nimport sys, json, os, subprocess\ntry:\n    data = json.load(sys.stdin)\n    fp = data.get('tool_input', {}).get('file_path', '')\n    if fp and os.path.exists(fp) and fp.endswith('.py'):\n        r = subprocess.run(['ruff', 'check', '--select', 'F401,F841', '--no-fix', fp], capture_output=True, text=True)\n        if r.returncode:\n            print('[Hook] \\u26a0\\ufe0f \\ubbf8\\uc0ac\\uc6a9 import/\\ubcc0\\uc218 \\uac10\\uc9c0:')\n            print(r.stdout.strip())\n            sys.exit(2)\nexcept FileNotFoundError:\n    pass\nexcept Exception:\n    pass\n\""
           }
         ]
       }
