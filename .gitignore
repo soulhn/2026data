@@ -2,20 +2,7 @@
 .env
 .venv/
 __pycache__/
-hrd_analysis.db
+*.db
 *.db-journal
 .streamlit/secrets.toml
 settings.local.json
-
-# 개인 문서
-이력서.md
-지원목록.md
-지원1.md
-# 위 개인 문서 NFD 인코딩 버전 (macOS 커밋 시 자동 생성)
-이력서.md
-지원목록.md
-지원1.md
-PORTFOLIO_ROADMAP.md
-portfolio.md
-2026-02-10T20-03_export.csv
-2026-02-10T20-24_export.csv
