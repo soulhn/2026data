@@ -284,6 +284,29 @@ def compute_and_cache_aggregations():
                 conn.rollback()
             return False
 
+    # DB 명세 페이지용 시장 분포 캐시
+    db_dist_aggs = [
+        ("db_market_type", adapt_query("""
+            SELECT TRAIN_TARGET AS 훈련유형, COUNT(*) AS 건수
+            FROM TB_MARKET_TREND
+            WHERE TRAIN_TARGET IS NOT NULL AND TRAIN_TARGET != ''
+            GROUP BY TRAIN_TARGET ORDER BY 건수 DESC
+        """), ()),
+        ("db_market_region", adapt_query("""
+            SELECT REGION AS 지역, COUNT(*) AS 건수
+            FROM TB_MARKET_TREND
+            WHERE REGION IS NOT NULL AND REGION != ''
+            GROUP BY REGION ORDER BY 건수 DESC
+        """), ()),
+        ("db_market_year", adapt_query("""
+            SELECT SUBSTR(YEAR_MONTH,1,4) AS 연도, COUNT(*) AS 건수
+            FROM TB_MARKET_TREND
+            WHERE YEAR_MONTH IS NOT NULL
+            GROUP BY SUBSTR(YEAR_MONTH,1,4) ORDER BY 연도
+        """), ()),
+    ]
+    saved_count += sum(run_agg(key, sql, params) for key, sql, params in db_dist_aggs)
+
     aggs = [
         ("kpi", adapt_query("""
             SELECT COUNT(*) as CNT,

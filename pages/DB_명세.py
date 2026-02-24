@@ -1,3 +1,4 @@
+import json
 import streamlit as st
 import pandas as pd
 import sys, os
@@ -5,6 +6,26 @@ import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import check_password, load_data, is_pg, DB_FILE, get_connection
 from config import CACHE_TTL_DEFAULT
+
+
+def _load_cached_dist(cache_key, columns):
+    """TB_MARKET_CACHE에서 캐시된 분포 데이터를 조회. 없으면 None 반환."""
+    try:
+        df = load_data(
+            "SELECT CACHE_DATA FROM TB_MARKET_CACHE WHERE CACHE_KEY = ?",
+            params=[cache_key],
+        )
+        if not df.empty and df['CACHE_DATA'].iloc[0]:
+            rows = json.loads(df['CACHE_DATA'].iloc[0])
+            if rows:
+                result = pd.DataFrame(rows)
+                result.columns = [c.upper() for c in result.columns]
+                rename_map = {c.upper(): c for c in columns}
+                result = result.rename(columns=rename_map)
+                return result
+    except Exception:
+        pass
+    return None
 
 st.set_page_config(page_title="DB 명세", page_icon="🗄️", layout="wide")
 check_password()
@@ -120,7 +141,7 @@ SCHEMAS = {
         ],
     },
     "TB_MARKET_CACHE": {
-        "설명": "시장 집계 캐시. market_etl.py 완료 후 10개 집계를 JSON으로 저장.",
+        "설명": "집계 캐시. ETL 완료 후 시장/출결/훈련생 집계를 JSON으로 저장.",
         "PK": "CACHE_KEY (TEXT)",
         "columns": [
             ("CACHE_KEY",   "TEXT",      "집계 식별자"),
@@ -208,12 +229,27 @@ def load_db_counts():
         except Exception:
             s[tbl] = None
 
-    s["market_type"]   = load_data("SELECT TRAIN_TARGET as 훈련유형, COUNT(*) as 건수 FROM TB_MARKET_TREND WHERE TRAIN_TARGET IS NOT NULL AND TRAIN_TARGET != '' GROUP BY TRAIN_TARGET ORDER BY 건수 DESC")
-    s["market_region"] = load_data("SELECT REGION as 지역, COUNT(*) as 건수 FROM TB_MARKET_TREND WHERE REGION IS NOT NULL AND REGION != '' GROUP BY REGION ORDER BY 건수 DESC")
-    s["market_year"]   = load_data("SELECT SUBSTR(YEAR_MONTH,1,4) as 연도, COUNT(*) as 건수 FROM TB_MARKET_TREND WHERE YEAR_MONTH IS NOT NULL GROUP BY SUBSTR(YEAR_MONTH,1,4) ORDER BY 연도")
+    s["market_type"] = _load_cached_dist('db_market_type', ['훈련유형', '건수'])
+    if s["market_type"] is None:
+        s["market_type"] = load_data("SELECT TRAIN_TARGET as 훈련유형, COUNT(*) as 건수 FROM TB_MARKET_TREND WHERE TRAIN_TARGET IS NOT NULL AND TRAIN_TARGET != '' GROUP BY TRAIN_TARGET ORDER BY 건수 DESC")
+
+    s["market_region"] = _load_cached_dist('db_market_region', ['지역', '건수'])
+    if s["market_region"] is None:
+        s["market_region"] = load_data("SELECT REGION as 지역, COUNT(*) as 건수 FROM TB_MARKET_TREND WHERE REGION IS NOT NULL AND REGION != '' GROUP BY REGION ORDER BY 건수 DESC")
+
+    s["market_year"] = _load_cached_dist('db_market_year', ['연도', '건수'])
+    if s["market_year"] is None:
+        s["market_year"] = load_data("SELECT SUBSTR(YEAR_MONTH,1,4) as 연도, COUNT(*) as 건수 FROM TB_MARKET_TREND WHERE YEAR_MONTH IS NOT NULL GROUP BY SUBSTR(YEAR_MONTH,1,4) ORDER BY 연도")
+
     s["course_year"]   = load_data("SELECT SUBSTR(TR_STA_DT,1,4) as 연도, COUNT(*) as 기수 FROM TB_COURSE_MASTER GROUP BY SUBSTR(TR_STA_DT,1,4) ORDER BY 연도")
-    s["attend_status"] = load_data("SELECT ATEND_STATUS as 출결상태, COUNT(*) as 건수 FROM TB_ATTENDANCE_LOG GROUP BY ATEND_STATUS ORDER BY 건수 DESC")
-    s["trainee_status"]= load_data("SELECT TRNEE_STATUS as 훈련생상태, COUNT(*) as 건수 FROM TB_TRAINEE_INFO GROUP BY TRNEE_STATUS ORDER BY 건수 DESC")
+
+    s["attend_status"] = _load_cached_dist('db_attend_dist', ['출결상태', '건수'])
+    if s["attend_status"] is None:
+        s["attend_status"] = load_data("SELECT ATEND_STATUS as 출결상태, COUNT(*) as 건수 FROM TB_ATTENDANCE_LOG GROUP BY ATEND_STATUS ORDER BY 건수 DESC")
+
+    s["trainee_status"] = _load_cached_dist('db_trainee_dist', ['훈련생상태', '건수'])
+    if s["trainee_status"] is None:
+        s["trainee_status"] = load_data("SELECT TRNEE_STATUS as 훈련생상태, COUNT(*) as 건수 FROM TB_TRAINEE_INFO GROUP BY TRNEE_STATUS ORDER BY 건수 DESC")
     s["cache_items"]   = load_data("SELECT CACHE_KEY as 캐시키, COMPUTED_AT as 계산시각 FROM TB_MARKET_CACHE ORDER BY CACHE_KEY")
     df_last = load_data("SELECT MAX(COLLECTED_AT) AS LAST_AT FROM TB_COURSE_MASTER")
     if not df_last.empty and df_last["LAST_AT"].iloc[0]:

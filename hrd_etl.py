@@ -5,7 +5,10 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 
-from utils import get_connection, get_retry_session, adapt_query, is_pg
+from utils import (
+    get_connection, get_retry_session, adapt_query, is_pg,
+    calc_attendance_rate, NOT_ATTEND_STATUSES, _attendance_penalty,
+)
 from init_db import init_all_tables
 from config import ETL_BATCH_PAGE_SIZE, ETL_UPDATE_CUTOFF_DAYS, ETL_FULL_SKIP_MONTHS
 
@@ -245,6 +248,112 @@ def run_etl():
     conn.close()
     print(f"[ETL Summary] 성공: {total_success:,}건, 실패: {total_errors:,}건")
     print("[Complete] 스마트 ETL 수집 완료! (최신 데이터만 업데이트됨)")
+
+    _cache_hrd_stats()
+
+
+def _cache_hrd_stats():
+    """ETL 완료 후 출결 통계 + DB 분포를 TB_MARKET_CACHE에 사전 집계."""
+    import pandas as pd
+
+    print("\n[집계 캐시] HRD 통계 집계 시작...")
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    upsert_sql = adapt_query("""
+        INSERT INTO TB_MARKET_CACHE (CACHE_KEY, CACHE_DATA, COMPUTED_AT)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(CACHE_KEY) DO UPDATE SET
+            CACHE_DATA=excluded.CACHE_DATA,
+            COMPUTED_AT=excluded.COMPUTED_AT
+    """)
+
+    saved = 0
+
+    # ── 1) 기수별 출석률 (home.py KPI용) ──
+    try:
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        sql = adapt_query(
+            "SELECT a.TRPR_DEGR, a.TRNEE_ID, a.ATEND_STATUS, a.ATEND_DT "
+            "FROM TB_ATTENDANCE_LOG a "
+            "INNER JOIN TB_COURSE_MASTER c "
+            "ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
+            "WHERE c.TR_END_DT < ?"
+        )
+        att_df = pd.read_sql(sql, conn, params=[today_str])
+        if is_pg():
+            att_df.columns = [c.upper() for c in att_df.columns]
+
+        if not att_df.empty:
+            att_df['ATEND_DT'] = pd.to_datetime(att_df['ATEND_DT'], errors='coerce').dt.date
+
+            rows = []
+            for degr, grp in att_df.groupby('TRPR_DEGR'):
+                student_rates = [
+                    calc_attendance_rate(s_grp)
+                    for _, s_grp in grp.groupby('TRNEE_ID')
+                ]
+                avg_rate = sum(student_rates) / len(student_rates) if student_rates else 0.0
+                present = grp[~grp['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)]
+                penalty = int(present['ATEND_STATUS'].apply(_attendance_penalty).sum())
+                present_days = max(0, len(present) - penalty // 3)
+                rows.append({
+                    'TRPR_DEGR': int(degr),
+                    'ATT_RATE': round(avg_rate, 1),
+                    'PRESENT_DAYS': present_days,
+                })
+
+            data_json = json.dumps(rows, ensure_ascii=False)
+            cursor.execute(upsert_sql, ('attendance_stats', data_json))
+            conn.commit()
+            print(f"  [캐시] attendance_stats: {len(rows)}행 저장")
+            saved += 1
+    except Exception as e:
+        print(f"  [캐시] attendance_stats 실패: {e}")
+        if is_pg():
+            conn.rollback()
+
+    # ── 2) 출결 상태 분포 (DB 명세용) ──
+    try:
+        sql = adapt_query(
+            "SELECT ATEND_STATUS, COUNT(*) AS CNT "
+            "FROM TB_ATTENDANCE_LOG GROUP BY ATEND_STATUS ORDER BY CNT DESC"
+        )
+        cursor.execute(sql)
+        cols = [d[0].upper() for d in cursor.description]
+        dist_rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
+        data_json = json.dumps(dist_rows, ensure_ascii=False, default=str)
+        cursor.execute(upsert_sql, ('db_attend_dist', data_json))
+        conn.commit()
+        print(f"  [캐시] db_attend_dist: {len(dist_rows)}행 저장")
+        saved += 1
+    except Exception as e:
+        print(f"  [캐시] db_attend_dist 실패: {e}")
+        if is_pg():
+            conn.rollback()
+
+    # ── 3) 훈련생 상태 분포 (DB 명세용) ──
+    try:
+        sql = adapt_query(
+            "SELECT TRNEE_STATUS, COUNT(*) AS CNT "
+            "FROM TB_TRAINEE_INFO GROUP BY TRNEE_STATUS ORDER BY CNT DESC"
+        )
+        cursor.execute(sql)
+        cols = [d[0].upper() for d in cursor.description]
+        dist_rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
+        data_json = json.dumps(dist_rows, ensure_ascii=False, default=str)
+        cursor.execute(upsert_sql, ('db_trainee_dist', data_json))
+        conn.commit()
+        print(f"  [캐시] db_trainee_dist: {len(dist_rows)}행 저장")
+        saved += 1
+    except Exception as e:
+        print(f"  [캐시] db_trainee_dist 실패: {e}")
+        if is_pg():
+            conn.rollback()
+
+    conn.close()
+    print(f"[집계 캐시] HRD 통계 {saved}개 완료")
+
 
 if __name__ == "__main__":
     run_etl()
