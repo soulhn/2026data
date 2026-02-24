@@ -911,6 +911,21 @@ with tabs[3]:
     st.subheader("🏢 내부 과정 vs 시장 벤치마크")
     st.caption("내부 과정의 모집률·만족도를 시장 전체 분포와 비교합니다. (취업률은 시장 데이터 91%가 NULL이므로 제외)")
 
+    # 현재 시장 기준 표시
+    _criteria = []
+    _criteria.append(f"**기간**: {start_date} ~ {end_date}")
+    _criteria.append(f"**훈련유형**: {', '.join(sel_types) if sel_types else '전체'}")
+    _criteria.append(f"**지역**: {sel_region}")
+    if sel_wkend:
+        _criteria.append(f"**주중/주말**: {', '.join(sel_wkend)}")
+    if sel_grade:
+        _criteria.append(f"**기관등급**: {', '.join(sel_grade)}")
+    if sel_ncs != '전체':
+        _criteria.append(f"**NCS**: {sel_ncs}")
+    if search_kwd:
+        _criteria.append(f"**키워드**: {search_kwd}")
+    st.info(f"**시장 기준** (사이드바 필터 반영): {' · '.join(_criteria)}")
+
     internal = load_internal_with_market()
     market_dist = load_market_percentile_data(where, params)
 
