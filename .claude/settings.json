@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(streamlit run:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(pip install:*)",
+      "Bash(gh:*)",
+      "WebSearch"
+    ],
+    "deny": [
+      "Edit(.env)",
+      "Write(.env)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"\nimport sys, json, os\ntry:\n    data = json.load(sys.stdin)\n    fp = data.get('tool_input', {}).get('file_path', '')\n    if fp and os.path.exists(fp) and fp.endswith('.py'):\n        txt = open(fp, encoding='utf-8').read()\n        if '\\u6790' in txt:\n            print(f'[Hook] \u26a0\ufe0f  \u6790(U+6790) \uac10\uc9c0: {fp}')\n            print('[Hook] \ubd84\u6790 \u2192 \ubd84\uc11d(\uC11C=U+C11D)\uc73c\ub85c \uc218\uc815 \ud544\uc694')\n            sys.exit(2)\nexcept Exception:\n    pass\n\""
+          }
+        ]
+      }
+    ]
+  }
+}
