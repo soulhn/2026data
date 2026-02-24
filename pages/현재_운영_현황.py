@@ -116,16 +116,17 @@ tab_all, tab_detail = st.tabs(["🌐 전체 기수", "📌 개별 기수"])
 with tab_all:
     # ── [1] 오늘의 출결 현황 ──────────────────────────────────────────
     today_str = datetime.now().strftime('%Y-%m-%d')
-    all_today_rows = []
-    off_degrs = []
+    # 1차: 오늘 데이터만으로 분류
+    _today_rows = []
+    _off_degrs = []
     for degr in courses_df['TRPR_DEGR'].unique():
         degr_logs = logs_df[logs_df['TRPR_DEGR'] == degr]
         if degr_logs.empty:
-            off_degrs.append(degr)
+            _off_degrs.append(degr)
             continue
         latest_dt = degr_logs['ATEND_DT'].max()
         if str(latest_dt)[:10] != today_str:
-            off_degrs.append(degr)
+            _off_degrs.append(degr)
             continue
         day = degr_logs[degr_logs['ATEND_DT'] == latest_dt].copy()
         day['DISPLAY_STATUS'] = day.apply(
@@ -135,7 +136,28 @@ with tab_all:
             axis=1,
         )
         day['TRPR_DEGR_KEY'] = degr
-        all_today_rows.append(day[['TRPR_DEGR_KEY', 'TRNEE_ID', 'DISPLAY_STATUS']])
+        _today_rows.append(day[['TRPR_DEGR_KEY', 'TRNEE_ID', 'DISPLAY_STATUS']])
+
+    # 2차: 오늘 데이터가 하나도 없으면 → 각 기수 최신 데이터 사용 (수집 전/휴일)
+    if _today_rows:
+        all_today_rows = _today_rows
+        off_degrs = _off_degrs
+    else:
+        all_today_rows = []
+        off_degrs = []
+        for degr in courses_df['TRPR_DEGR'].unique():
+            degr_logs = logs_df[logs_df['TRPR_DEGR'] == degr]
+            if degr_logs.empty:
+                continue
+            day = degr_logs[degr_logs['ATEND_DT'] == degr_logs['ATEND_DT'].max()].copy()
+            day['DISPLAY_STATUS'] = day.apply(
+                lambda r: '입실중'
+                if r['ATEND_STATUS'] == '결석' and pd.notna(r['IN_TIME']) and str(r['IN_TIME']).strip() != ''
+                else r['ATEND_STATUS'],
+                axis=1,
+            )
+            day['TRPR_DEGR_KEY'] = degr
+            all_today_rows.append(day[['TRPR_DEGR_KEY', 'TRNEE_ID', 'DISPLAY_STATUS']])
 
     st.subheader("📡 오늘의 출결 현황")
     total_degr_cnt = len(courses_df['TRPR_DEGR'].unique())
