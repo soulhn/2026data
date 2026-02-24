@@ -592,7 +592,7 @@ with tab_indiv:
                         last_dates, x="이탈경과일", y="기수",
                         labels={"이탈경과일": "개강 후 경과일", "기수": ""},
                     )
-                    fig_strip.update_layout(height=200, showlegend=False, xaxis_range=[0, 130])
+                    fig_strip.update_layout(height=150, showlegend=False, xaxis_range=[0, 150])
                     fig_strip.update_traces(marker=dict(size=10, opacity=0.7, color="#e74c3c"))
                     st.plotly_chart(fig_strip, use_container_width=True)
                 st.divider()
@@ -619,7 +619,12 @@ with tab_indiv:
                         color_discrete_map={"중도탈락": "#e74c3c", "수료": "#3498db"},
                         category_orders={"출결 상태": target_statuses},
                     )
-                    fig_bar.update_layout(height=350, xaxis_title="")
+                    fig_bar.update_layout(
+                        height=350, xaxis_title="",
+                        yaxis_title="비<br>율<br>(%)",
+                        yaxis_title_standoff=0,
+                    )
+                    fig_bar.update_yaxes(title_font_size=13)
                     fig_bar.update_traces(textposition="outside", texttemplate="%{text}%")
                     st.plotly_chart(fig_bar, use_container_width=True)
                 st.divider()
@@ -933,9 +938,9 @@ with tab_all:
                     )},
                 )
                 fig_strip.update_layout(
-                    height=max(250, len(dropout_timing['기수'].unique()) * 60),
+                    height=max(200, len(dropout_timing['기수'].unique()) * 40),
                     showlegend=False,
-                    xaxis_range=[0, 130],
+                    xaxis_range=[0, 150],
                 )
                 fig_strip.update_traces(marker=dict(size=8, opacity=0.7))
                 st.plotly_chart(fig_strip, use_container_width=True)
@@ -967,7 +972,12 @@ with tab_all:
                     color_discrete_map={'중도탈락': '#e74c3c', '수료': '#3498db'},
                     category_orders={'ATEND_STATUS': target_statuses},
                 )
-                fig_bar.update_layout(height=350, xaxis_title='')
+                fig_bar.update_layout(
+                    height=350, xaxis_title='',
+                    yaxis_title='비<br>율<br>(%)',
+                    yaxis_title_standoff=0,
+                )
+                fig_bar.update_yaxes(title_font_size=13)
                 fig_bar.update_traces(textposition='outside', texttemplate='%{text}%')
                 st.plotly_chart(fig_bar, use_container_width=True)
             else:
