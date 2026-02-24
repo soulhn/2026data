@@ -591,6 +591,12 @@ with tab_indiv:
                     labels_bin = ["0~30일", "30~60일", "60~90일", "90~120일", "120~150일"]
                     last_dates["구간"] = pd.cut(last_dates["이탈경과일"], bins=bins, labels=labels_bin, right=False)
                     bin_counts = last_dates["구간"].value_counts().reindex(labels_bin, fill_value=0)
+
+                    # 구간별 요약 metric
+                    mcols = st.columns(len(labels_bin))
+                    for col, label in zip(mcols, labels_bin):
+                        col.metric(label, f"{bin_counts[label]}명")
+
                     bin_df = pd.DataFrame({"구간": bin_counts.index, "이탈자 수": bin_counts.values})
                     st.dataframe(bin_df, hide_index=True, use_container_width=True)
                 st.divider()
