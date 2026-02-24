@@ -1,3 +1,4 @@
+import json
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -53,9 +54,23 @@ def get_dashboard_data():
 def get_attendance_stats():
     """종료된 기수별 출결 통계 집계.
 
-    출석률 = 기수 내 수강생별 출석률의 평균
-    (calc_attendance_rate는 1인 단위 설계 → TRNEE_ID로 서브그룹화 후 평균)
+    ETL 사전 집계 캐시(TB_MARKET_CACHE.attendance_stats) 우선 사용,
+    캐시 미적중 시 기존 로직으로 fallback.
     """
+    # 캐시 조회
+    try:
+        cache_df = load_data(
+            "SELECT CACHE_DATA FROM TB_MARKET_CACHE WHERE CACHE_KEY = ?",
+            params=['attendance_stats'],
+        )
+        if not cache_df.empty and cache_df['CACHE_DATA'].iloc[0]:
+            rows = json.loads(cache_df['CACHE_DATA'].iloc[0])
+            if rows:
+                return pd.DataFrame(rows)
+    except Exception:
+        pass
+
+    # fallback: 기존 로직
     today_str = datetime.now().strftime('%Y-%m-%d')
     att_df = load_data(
         "SELECT a.TRPR_DEGR, a.TRNEE_ID, a.ATEND_STATUS, a.ATEND_DT "
@@ -69,13 +84,11 @@ def get_attendance_stats():
     att_df['ATEND_DT'] = pd.to_datetime(att_df['ATEND_DT'], errors='coerce').dt.date
 
     def _cohort_stats(grp):
-        # 수강생별 출석률 계산 후 평균
         student_rates = [
             calc_attendance_rate(s_grp)
             for _, s_grp in grp.groupby('TRNEE_ID')
         ]
         avg_rate = sum(student_rates) / len(student_rates) if student_rates else 0.0
-        # PRESENT_DAYS: 전체 수강생 출석 행 합산 (home.py 매출 추정용)
         present = grp[~grp['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)]
         penalty = int(present['ATEND_STATUS'].apply(_attendance_penalty).sum())
         present_days = max(0, len(present) - penalty // 3)

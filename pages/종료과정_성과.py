@@ -35,10 +35,15 @@ def get_course_list():
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def get_analysis_data(degr):
     course_df = load_data(
-        "SELECT * FROM TB_COURSE_MASTER WHERE TRPR_DEGR = ?", params=[degr]
+        "SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT, "
+        "TOT_FXNUM, TOT_PAR_MKS, TOT_TRP_CNT, FINI_CNT, "
+        "EI_EMPL_RATE_3, EI_EMPL_RATE_6, HRD_EMPL_RATE_6 "
+        "FROM TB_COURSE_MASTER WHERE TRPR_DEGR = ?", params=[degr]
     )
     trainee_df = load_data(
-        "SELECT * FROM TB_TRAINEE_INFO WHERE TRPR_DEGR = ?", params=[degr]
+        "SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM, TRNEE_STATUS, "
+        "TRNEE_TYPE, BIRTH_DATE, TOTAL_DAYS, OFLHD_CNT, VCATN_CNT "
+        "FROM TB_TRAINEE_INFO WHERE TRPR_DEGR = ?", params=[degr]
     )
     if not course_df.empty and not trainee_df.empty:
         trainee_df['TRNEE_TYPE'] = trainee_df['TRNEE_TYPE'].map(TRNEE_TYPE_MAP).fillna(trainee_df['TRNEE_TYPE'])
@@ -134,7 +139,10 @@ def get_all_degr_attendance():
 def get_all_course_master():
     today = datetime.now().strftime('%Y-%m-%d')
     return load_data(
-        "SELECT * FROM TB_COURSE_MASTER WHERE TR_END_DT < ? "
+        "SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT, "
+        "TOT_FXNUM, TOT_PAR_MKS, TOT_TRP_CNT, FINI_CNT, "
+        "EI_EMPL_RATE_3, EI_EMPL_RATE_6, HRD_EMPL_RATE_6 "
+        "FROM TB_COURSE_MASTER WHERE TR_END_DT < ? "
         "ORDER BY CAST(TRPR_DEGR AS INTEGER)",
         params=[today],
     )

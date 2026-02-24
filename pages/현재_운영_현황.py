@@ -21,7 +21,9 @@ st.title("📋 운영 현황")
 def get_active_data():
     today_str = datetime.now().strftime('%Y-%m-%d')
     active_courses = load_data(
-        "SELECT * FROM TB_COURSE_MASTER WHERE TR_END_DT >= ? ORDER BY TR_STA_DT",
+        "SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT, "
+        "TOT_FXNUM, TOT_PAR_MKS, TOT_TRP_CNT "
+        "FROM TB_COURSE_MASTER WHERE TR_END_DT >= ? ORDER BY TR_STA_DT",
         params=[today_str],
     )
     if active_courses.empty:
@@ -29,10 +31,13 @@ def get_active_data():
     course_ids = ",".join([f"'{x}'" for x in active_courses['TRPR_ID'].unique()])
     degrs = ",".join([str(x) for x in active_courses['TRPR_DEGR'].unique()])
     active_trainees = load_data(
-        f"SELECT * FROM TB_TRAINEE_INFO WHERE TRPR_ID IN ({course_ids}) AND TRPR_DEGR IN ({degrs})"
+        f"SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM, TRNEE_STATUS "
+        f"FROM TB_TRAINEE_INFO WHERE TRPR_ID IN ({course_ids}) AND TRPR_DEGR IN ({degrs})"
     )
     recent_logs = load_data(
-        f"SELECT * FROM TB_ATTENDANCE_LOG WHERE TRPR_ID IN ({course_ids}) AND TRPR_DEGR IN ({degrs}) ORDER BY ATEND_DT DESC"
+        f"SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT, IN_TIME, OUT_TIME, "
+        f"ATEND_STATUS, COLLECTED_AT "
+        f"FROM TB_ATTENDANCE_LOG WHERE TRPR_ID IN ({course_ids}) AND TRPR_DEGR IN ({degrs}) ORDER BY ATEND_DT DESC"
     )
     return active_courses, active_trainees, recent_logs
 
