@@ -6,8 +6,9 @@ from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 
 from utils import (
-    get_connection, get_retry_session, adapt_query, is_pg,
+    get_connection, get_retry_session, adapt_query, is_pg, load_data,
     calc_attendance_rate, NOT_ATTEND_STATUSES, _attendance_penalty,
+    get_billing_periods, calc_revenue,
 )
 from init_db import init_all_tables
 from config import ETL_BATCH_PAGE_SIZE, ETL_UPDATE_CUTOFF_DAYS, ETL_FULL_SKIP_MONTHS
@@ -348,6 +349,161 @@ def _cache_hrd_stats():
         saved += 1
     except Exception as e:
         print(f"  [캐시] db_trainee_dist 실패: {e}")
+        if is_pg():
+            conn.rollback()
+
+    # ── 4) 전체 기수 매출 집계 (매출_분석.py용) ──
+    try:
+        from config import DAILY_TRAINING_FEE
+        course_df = pd.read_sql(
+            adapt_query(
+                "SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT "
+                "FROM TB_COURSE_MASTER ORDER BY CAST(TRPR_DEGR AS INTEGER) DESC"
+            ),
+            conn,
+        )
+        if is_pg():
+            course_df.columns = [c.upper() for c in course_df.columns]
+
+        rev_results = []
+        for _, row in course_df.iterrows():
+            trpr_id = str(row['TRPR_ID'])
+            trpr_degr = int(row['TRPR_DEGR'])
+            att_df = pd.read_sql(
+                adapt_query(
+                    "SELECT TRNEE_ID, ATEND_DT, ATEND_STATUS "
+                    "FROM TB_ATTENDANCE_LOG WHERE TRPR_ID = ? AND TRPR_DEGR = ?"
+                ),
+                conn,
+                params=[trpr_id, trpr_degr],
+            )
+            if is_pg():
+                att_df.columns = [c.upper() for c in att_df.columns]
+            if att_df.empty:
+                continue
+            att_df['ATEND_DT'] = pd.to_datetime(att_df['ATEND_DT']).dt.date
+            periods = get_billing_periods(str(row['TR_STA_DT']), str(row['TR_END_DT']))
+            rev_rows = []
+            for p in periods:
+                mask = (att_df['ATEND_DT'] >= p['start']) & (att_df['ATEND_DT'] <= p['end'])
+                period_df = att_df[mask]
+                training_days = period_df[
+                    ~period_df['ATEND_STATUS'].isin({'중도탈락미출석'})
+                ]['ATEND_DT'].nunique()
+                for tid, grp in period_df.groupby('TRNEE_ID'):
+                    student_td = grp[
+                        ~grp['ATEND_STATUS'].isin({'중도탈락미출석'})
+                    ]['ATEND_DT'].nunique()
+                    has_dropout = grp['ATEND_STATUS'].isin({'중도탈락미출석'}).any()
+                    rate_td = training_days if has_dropout else student_td
+                    present = grp[~grp['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)]
+                    base_attend = present['ATEND_DT'].nunique()
+                    penalty = int(present['ATEND_STATUS'].apply(_attendance_penalty).sum())
+                    attend_days = max(0, base_attend - penalty // 3)
+                    fee, rate, status = calc_revenue(
+                        attend_days, rate_td, period_training_days=training_days
+                    )
+                    rev_rows.append({
+                        'TRNEE_ID': tid,
+                        'period_num': p['period_num'],
+                        'fee': fee,
+                        'status': status,
+                        'training_days': training_days,
+                    })
+            if not rev_rows:
+                continue
+            rev_df = pd.DataFrame(rev_rows)
+            _p_raw = rev_df.groupby('period_num')['fee'].sum()
+            actual_fee = int(((_p_raw // 10) * 10).sum())
+            n_students = rev_df['TRNEE_ID'].nunique()
+            full_cnt = (rev_df.groupby(['TRNEE_ID', 'period_num'])['status'].first() == '전액').sum()
+            prop_cnt = (rev_df.groupby(['TRNEE_ID', 'period_num'])['status'].first() == '비례').sum()
+            none_cnt = (rev_df.groupby(['TRNEE_ID', 'period_num'])['status'].first() == '미청구').sum()
+            base_fee_total = rev_df.groupby(['TRNEE_ID', 'period_num']).apply(
+                lambda g: g.iloc[0]['training_days'] * DAILY_TRAINING_FEE
+            ).sum()
+            rev_results.append({
+                'TRPR_DEGR': int(row['TRPR_DEGR']),
+                'TRPR_NM': str(row['TRPR_NM']),
+                'TR_STA_DT': str(row['TR_STA_DT']),
+                'TR_END_DT': str(row['TR_END_DT']),
+                'n_students': n_students,
+                'base_fee': int(base_fee_total),
+                'actual_fee': actual_fee,
+                'achievement': round(actual_fee / base_fee_total * 100, 1) if base_fee_total > 0 else 0,
+                'loss_prop': int(base_fee_total) - actual_fee,
+                'full_cnt': int(full_cnt),
+                'prop_cnt': int(prop_cnt),
+                'none_cnt': int(none_cnt),
+            })
+
+        if rev_results:
+            data_json = json.dumps(rev_results, ensure_ascii=False)
+            cursor.execute(upsert_sql, ('revenue_all_terms', data_json))
+            conn.commit()
+            print(f"  [캐시] revenue_all_terms: {len(rev_results)}행 저장")
+            saved += 1
+    except Exception as e:
+        print(f"  [캐시] revenue_all_terms 실패: {e}")
+        if is_pg():
+            conn.rollback()
+
+    # ── 5) 컬럼별 채움률 (DB 명세용) ──
+    try:
+        from pages import DB_명세 as _db_spec
+        fill_out = {}
+        for tbl, info in _db_spec.SCHEMAS.items():
+            exprs = []
+            for col, dtype, _ in info["columns"]:
+                if dtype == "TEXT":
+                    exprs.append(
+                        f"ROUND(SUM(CASE WHEN {col} IS NOT NULL AND {col} != '' THEN 1.0 ELSE 0 END) * 100.0 / COUNT(*), 1) AS \"{col}\""
+                    )
+                else:
+                    exprs.append(
+                        f"ROUND(SUM(CASE WHEN {col} IS NOT NULL THEN 1.0 ELSE 0 END) * 100.0 / COUNT(*), 1) AS \"{col}\""
+                    )
+            sql = f"SELECT COUNT(*) AS _TOTAL, {', '.join(exprs)} FROM {tbl}"
+            cursor.execute(sql)
+            r = cursor.fetchone()
+            desc = [d[0].upper() for d in cursor.description]
+            if r:
+                total = int(r[0]) if r[0] else 0
+                rates = {desc[i]: (float(r[i]) if r[i] is not None else 0.0)
+                         for i in range(1, len(desc))}
+                fill_out[tbl] = {"_total": total, **rates}
+
+        data_json = json.dumps(fill_out, ensure_ascii=False)
+        cursor.execute(upsert_sql, ('db_fill_rates', data_json))
+        conn.commit()
+        print(f"  [캐시] db_fill_rates: {len(fill_out)}개 테이블 저장")
+        saved += 1
+    except Exception as e:
+        print(f"  [캐시] db_fill_rates 실패: {e}")
+        if is_pg():
+            conn.rollback()
+
+    # ── 6) 카테고리 컬럼 예시값 (DB 명세용) ──
+    try:
+        from pages import DB_명세 as _db_spec
+        sample_out = {}
+        for tbl, cols in _db_spec.SAMPLE_COLS.items():
+            sample_out[tbl] = {}
+            for col in cols:
+                cursor.execute(
+                    f"SELECT DISTINCT {col} FROM {tbl} "
+                    f"WHERE {col} IS NOT NULL AND {col} != '' "
+                    f"ORDER BY {col} LIMIT 10"
+                )
+                sample_out[tbl][col] = [str(r[0]) for r in cursor.fetchall()]
+
+        data_json = json.dumps(sample_out, ensure_ascii=False)
+        cursor.execute(upsert_sql, ('db_sample_values', data_json))
+        conn.commit()
+        print(f"  [캐시] db_sample_values: {len(sample_out)}개 테이블 저장")
+        saved += 1
+    except Exception as e:
+        print(f"  [캐시] db_sample_values 실패: {e}")
         if is_pg():
             conn.rollback()
 

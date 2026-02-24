@@ -9,7 +9,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import (
     load_data, check_password, get_billing_periods, calc_revenue,
-    NOT_ATTEND_STATUSES, _attendance_penalty,
+    NOT_ATTEND_STATUSES, _attendance_penalty, load_cache_json,
 )
 from config import CACHE_TTL_DEFAULT, DAILY_TRAINING_FEE, REVENUE_FULL_THRESHOLD
 
@@ -119,6 +119,9 @@ def build_revenue_df(trpr_id, trpr_degr, start_dt, end_dt):
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def build_all_terms_revenue(course_df):
     """전체 기수 매출 집계"""
+    cached = load_cache_json('revenue_all_terms')
+    if cached:
+        return pd.DataFrame(cached)
     results = []
     for _, row in course_df.iterrows():
         rev_df, periods = build_revenue_df(

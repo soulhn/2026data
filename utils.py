@@ -1,6 +1,7 @@
 # utils.py
 import sqlite3
 import hmac
+import json
 import re
 import pandas as pd
 import os
@@ -125,6 +126,17 @@ def load_data(query, params=None):
         return df
     finally:
         conn.close()
+
+def load_cache_json(cache_key):
+    """TB_MARKET_CACHE에서 캐시된 JSON 데이터를 파싱하여 반환. 없으면 None."""
+    df = load_data(
+        "SELECT CACHE_DATA FROM TB_MARKET_CACHE WHERE CACHE_KEY = ?",
+        params=[cache_key],
+    )
+    if not df.empty and df['CACHE_DATA'].iloc[0]:
+        return json.loads(df['CACHE_DATA'].iloc[0])
+    return None
+
 
 def calculate_age_at_training(birth_date_str, training_start_date_str):
     """
