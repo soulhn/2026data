@@ -52,13 +52,14 @@ def get_dashboard_data():
 
 @st.cache_data(ttl=CACHE_TTL_DEFAULT)
 def get_attendance_stats():
-    """종료된 기수별 출결 통계 집계 (매출_분析.py 기준).
+    """종료된 기수별 출결 통계 집계.
 
-    출석률 = (NOT_ATTEND_STATUSES 제외 일수 - 지각·조퇴·외출 패널티) / 중도탈락미출석 제외 훈련일수
+    출석률 = 기수 내 수강생별 출석률의 평균
+    (calc_attendance_rate는 1인 단위 설계 → TRNEE_ID로 서브그룹화 후 평균)
     """
     today_str = datetime.now().strftime('%Y-%m-%d')
     att_df = load_data(
-        "SELECT a.TRPR_DEGR, a.ATEND_STATUS, a.ATEND_DT "
+        "SELECT a.TRPR_DEGR, a.TRNEE_ID, a.ATEND_STATUS, a.ATEND_DT "
         "FROM TB_ATTENDANCE_LOG a "
         "INNER JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
         "WHERE c.TR_END_DT < ?",
@@ -68,16 +69,20 @@ def get_attendance_stats():
         return pd.DataFrame(columns=['TRPR_DEGR', 'ATT_RATE', 'PRESENT_DAYS'])
     att_df['ATEND_DT'] = pd.to_datetime(att_df['ATEND_DT'], errors='coerce').dt.date
 
-    def _stats(grp):
-        rate = calc_attendance_rate(grp)
-        training_days = grp[grp['ATEND_STATUS'] != '중도탈락미출석']['ATEND_DT'].nunique()
+    def _cohort_stats(grp):
+        # 수강생별 출석률 계산 후 평균
+        student_rates = [
+            calc_attendance_rate(s_grp)
+            for _, s_grp in grp.groupby('TRNEE_ID')
+        ]
+        avg_rate = sum(student_rates) / len(student_rates) if student_rates else 0.0
+        # PRESENT_DAYS: 전체 수강생 출석 행 합산 (home.py 매출 추정용)
         present = grp[~grp['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)]
-        base = present['ATEND_DT'].nunique()
         penalty = int(present['ATEND_STATUS'].apply(_attendance_penalty).sum())
-        present_days = max(0, base - penalty // 3)
-        return pd.Series({'ATT_RATE': rate, 'PRESENT_DAYS': present_days})
+        present_days = max(0, len(present) - penalty // 3)
+        return pd.Series({'ATT_RATE': round(avg_rate, 1), 'PRESENT_DAYS': present_days})
 
-    return att_df.groupby('TRPR_DEGR').apply(_stats).reset_index()
+    return att_df.groupby('TRPR_DEGR').apply(_cohort_stats).reset_index()
 
 
 def _render_project_intro():
