@@ -5,6 +5,7 @@ import json
 import re
 import pandas as pd
 import os
+from contextlib import contextmanager
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -79,6 +80,17 @@ def check_password():
 
     st.stop()
 
+@contextmanager
+def page_error_boundary():
+    """페이지 렌더링 중 발생하는 예외를 잡아 사용자에게 안내."""
+    try:
+        yield
+    except Exception as e:
+        import streamlit as st
+        st.error(f"페이지 로드 중 오류가 발생했습니다: {e}")
+        st.info("다른 페이지를 이용하거나 잠시 후 다시 시도해주세요.")
+
+
 def _get_pg_pool():
     """PG 읽기 전용 커넥션을 캐싱하여 반환 (Streamlit 환경에서만 캐싱)."""
     try:
@@ -127,7 +139,7 @@ def load_data(query, params=None):
             df = pd.read_sql(adapt_query(query), pool_conn, params=params)
             df.columns = [c.upper() for c in df.columns]
             return df
-        except Exception:
+        except pd.errors.DatabaseError:
             # 커넥션이 끊어진 경우 폴백
             pass
     conn = get_connection()

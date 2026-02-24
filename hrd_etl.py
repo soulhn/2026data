@@ -1,9 +1,12 @@
 import sqlite3
 import json
+import logging
 import os
+import time
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
+import requests
 
 from utils import (
     get_connection, get_retry_session, adapt_query, is_pg, load_data,
@@ -11,7 +14,13 @@ from utils import (
     get_billing_periods, calc_revenue,
 )
 from init_db import init_all_tables
-from config import ETL_BATCH_PAGE_SIZE, ETL_UPDATE_CUTOFF_DAYS, ETL_FULL_SKIP_MONTHS
+from config import ETL_BATCH_PAGE_SIZE, ETL_UPDATE_CUTOFF_DAYS, ETL_FULL_SKIP_MONTHS, CacheKey
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    level=logging.INFO,
+)
 
 
 def batch_execute(cursor, sql, data_list):
@@ -28,7 +37,7 @@ def batch_execute(cursor, sql, data_list):
             cursor.executemany(resolved_sql, data_list)
         return len(data_list), 0
     except Exception as e:
-        print(f"   [batch_execute] 배치 실패, row-by-row 폴백: {e}")
+        logger.warning(f"[batch_execute] 배치 실패, row-by-row 폴백: {e}")
         success, errors = 0, 0
         for row in data_list:
             try:
@@ -60,13 +69,14 @@ def get_month_list(start_date_str, end_date_str):
 
 def run_etl():
     if not API_KEY or not COURSE_ID:
-        print("오류: HRD_API_KEY 또는 HANWHA_COURSE_ID 환경변수가 설정되지 않았습니다.")
+        logger.error("HRD_API_KEY 또는 HANWHA_COURSE_ID 환경변수가 설정되지 않았습니다.")
         return
     init_all_tables()
     conn = get_connection(timeout=30, row_factory=sqlite3.Row)  # PG에서는 RealDictCursor로 자동 변환
     cursor = conn.cursor()
     session = get_retry_session()
-    print(f"[ETL Start] 과정ID({COURSE_ID}) 데이터 수집 시작...")
+    logger.info(f"[ETL Start] 과정ID({COURSE_ID}) 데이터 수집 시작...")
+    _t0 = time.monotonic()
     total_success, total_errors = 0, 0
 
     BASE_URL_COURSE = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_3.jsp"
@@ -76,11 +86,11 @@ def run_etl():
         res = session.get(BASE_URL_COURSE, params={
             "returnType": "JSON", "authKey": API_KEY,
             "srchTrprId": COURSE_ID, "outType": "2"
-        })
+        }, timeout=60)
         course_list = json.loads(res.json()['returnJSON'])
-        print(f"과정 목록({len(course_list)}건) 조회 성공.")
-    except Exception as e:
-        print(f"과정 목록 조회 실패: {e}")
+        logger.info(f"과정 목록({len(course_list)}건) 조회 성공.")
+    except (requests.RequestException, json.JSONDecodeError, KeyError) as e:
+        logger.error(f"과정 목록 조회 실패: {e}")
         return
 
     update_cutoff_date = (datetime.now() - timedelta(days=ETL_UPDATE_CUTOFF_DAYS)).strftime('%Y-%m-%d')
@@ -89,10 +99,10 @@ def run_etl():
     for idx, course in enumerate(course_list, 1):
         try: trpr_degr = int(course.get('trprDegr', 0))
         except (ValueError, TypeError) as e:
-            print(f"   회차 변환 실패 (trprDegr={course.get('trprDegr')}): {e}")
+            logger.warning(f"회차 변환 실패 (trprDegr={course.get('trprDegr')}): {e}")
             continue
         if trpr_degr == 0: continue
-        print(f"\n[{idx}/{len(course_list)}] {trpr_degr}회차 처리 시작...")
+        logger.info(f"[{idx}/{len(course_list)}] {trpr_degr}회차 처리 시작...")
 
         ei_rate = course.get('eiEmplRate3')
 
@@ -138,10 +148,10 @@ def run_etl():
             row = cursor.fetchone()
             still_active = (row['cnt'] if row else 0) > 0
             if not still_active:
-                print(f"   {trpr_degr}회차: 종료 7개월 초과({end_date}). API 호출 전체 스킵.")
+                logger.info(f"{trpr_degr}회차: 종료 7개월 초과({end_date}). API 호출 전체 스킵.")
                 conn.commit()
                 continue
-            print(f"   {trpr_degr}회차: 종료 7개월 초과({end_date})이나 미확정 훈련생 있음 → 명부 업데이트 진행.")
+            logger.info(f"{trpr_degr}회차: 종료 7개월 초과({end_date})이나 미확정 훈련생 있음 → 명부 업데이트 진행.")
 
         cursor.execute(adapt_query("SELECT 1 FROM TB_ATTENDANCE_LOG WHERE TRPR_ID=? AND TRPR_DEGR=? LIMIT 1"), (trpr_id, trpr_degr))
         is_data_exists = cursor.fetchone() is not None
@@ -149,13 +159,13 @@ def run_etl():
         # 종료된 과정은 출결 수집만 스킵 — 명부(TRNEE_STATUS)는 항상 업데이트
         skip_attendance = (end_date < update_cutoff_date) and is_data_exists
         if skip_attendance:
-            print(f"   {trpr_degr}회차: 종료된 과정({end_date}). 출결 스킵, 명부 상태 업데이트 진행.")
+            logger.info(f"{trpr_degr}회차: 종료된 과정({end_date}). 출결 스킵, 명부 상태 업데이트 진행.")
 
         try:
             res_roster = session.get(BASE_URL_DETAIL, params={
                 "returnType": "JSON", "authKey": API_KEY, "outType": "2",
                 "srchTrprId": COURSE_ID, "srchTrprDegr": trpr_degr
-            })
+            }, timeout=60)
             raw_json = res_roster.json().get('returnJSON')
             if raw_json:
                 roster_data = json.loads(raw_json)
@@ -191,16 +201,16 @@ def run_etl():
                         COLLECTED_AT = CURRENT_TIMESTAMP
                 ''', trainee_rows)
                 total_success += s; total_errors += e
-                print(f"   >> {trpr_degr}회차 명부: {len(trainee_rows)}건 수집 완료")
-        except Exception as e:
-            print(f"   ⚠️ {trpr_degr}회차 명부 수집 실패: {e}")
+                logger.info(f"{trpr_degr}회차 명부: {len(trainee_rows)}건 수집 완료")
+        except (requests.RequestException, json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"{trpr_degr}회차 명부 수집 실패: {e}")
 
         if skip_attendance:
             conn.commit()
             continue  # 출결 수집 스킵 (종료 과정 + 데이터 존재)
 
         target_months = get_month_list(course.get('trStaDt'), course.get('trEndDt'))
-        print(f"   >> {trpr_degr}회차 출결: {len(target_months)}개월 수집 시작")
+        logger.info(f"{trpr_degr}회차 출결: {len(target_months)}개월 수집 시작")
         trnee_ignore_rows = []
         atab_rows = []
         for yyyymm in target_months:
@@ -209,7 +219,7 @@ def run_etl():
                     "returnType": "JSON", "authKey": API_KEY, "outType": "2",
                     "srchTrprId": COURSE_ID, "srchTrprDegr": trpr_degr,
                     "srchTorgId": "student_detail", "atendMo": yyyymm
-                })
+                }, timeout=60)
                 raw_json = res_attend.json().get('returnJSON')
                 if not raw_json: continue
 
@@ -226,8 +236,8 @@ def run_etl():
                         clean_time(log.get('lpsilTime')), clean_time(log.get('levromTime')),
                         log.get('atendSttusNm'), log.get('atendSttusCd')
                     ))
-            except Exception as e:
-                print(f"   ⚠️ {trpr_degr}회차 출결({yyyymm}) 수집 실패: {e}")
+            except (requests.RequestException, json.JSONDecodeError, KeyError) as e:
+                logger.warning(f"{trpr_degr}회차 출결({yyyymm}) 수집 실패: {e}")
                 continue
 
         s, e = batch_execute(cursor,
@@ -243,13 +253,14 @@ def run_etl():
                 ATEND_STATUS=excluded.ATEND_STATUS, COLLECTED_AT=CURRENT_TIMESTAMP
         ''', atab_rows)
         total_success += s; total_errors += e
-        print(f"   >> {trpr_degr}회차 출결: 총 {len(atab_rows)}건 수집 완료")
+        logger.info(f"{trpr_degr}회차 출결: 총 {len(atab_rows)}건 수집 완료")
         conn.commit()
 
     conn.close()
-    print(f"[ETL Summary] 성공: {total_success:,}건, 실패: {total_errors:,}건")
-    print("[Complete] 스마트 ETL 수집 완료! (최신 데이터만 업데이트됨)")
+    logger.info(f"[ETL Summary] 성공: {total_success:,}건, 실패: {total_errors:,}건")
+    logger.info("[Complete] 스마트 ETL 수집 완료! (최신 데이터만 업데이트됨)")
 
+    logger.info(f"총 소요: {time.monotonic() - _t0:.1f}초")
     _cache_hrd_stats()
 
 
@@ -257,7 +268,7 @@ def _cache_hrd_stats():
     """ETL 완료 후 출결 통계 + DB 분포를 TB_MARKET_CACHE에 사전 집계."""
     import pandas as pd
 
-    print("\n[집계 캐시] HRD 통계 집계 시작...")
+    logger.info("[집계 캐시] HRD 통계 집계 시작...")
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -305,12 +316,12 @@ def _cache_hrd_stats():
                 })
 
             data_json = json.dumps(rows, ensure_ascii=False)
-            cursor.execute(upsert_sql, ('attendance_stats', data_json))
+            cursor.execute(upsert_sql, (CacheKey.ATTENDANCE_STATS, data_json))
             conn.commit()
-            print(f"  [캐시] attendance_stats: {len(rows)}행 저장")
+            logger.info(f"[캐시] attendance_stats: {len(rows)}행 저장")
             saved += 1
     except Exception as e:
-        print(f"  [캐시] attendance_stats 실패: {e}")
+        logger.error(f"[캐시] attendance_stats 실패: {e}")
         if is_pg():
             conn.rollback()
 
@@ -324,12 +335,12 @@ def _cache_hrd_stats():
         cols = [d[0].upper() for d in cursor.description]
         dist_rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
         data_json = json.dumps(dist_rows, ensure_ascii=False, default=str)
-        cursor.execute(upsert_sql, ('db_attend_dist', data_json))
+        cursor.execute(upsert_sql, (CacheKey.DB_ATTEND_DIST, data_json))
         conn.commit()
-        print(f"  [캐시] db_attend_dist: {len(dist_rows)}행 저장")
+        logger.info(f"[캐시] db_attend_dist: {len(dist_rows)}행 저장")
         saved += 1
     except Exception as e:
-        print(f"  [캐시] db_attend_dist 실패: {e}")
+        logger.error(f"[캐시] db_attend_dist 실패: {e}")
         if is_pg():
             conn.rollback()
 
@@ -343,12 +354,12 @@ def _cache_hrd_stats():
         cols = [d[0].upper() for d in cursor.description]
         dist_rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
         data_json = json.dumps(dist_rows, ensure_ascii=False, default=str)
-        cursor.execute(upsert_sql, ('db_trainee_dist', data_json))
+        cursor.execute(upsert_sql, (CacheKey.DB_TRAINEE_DIST, data_json))
         conn.commit()
-        print(f"  [캐시] db_trainee_dist: {len(dist_rows)}행 저장")
+        logger.info(f"[캐시] db_trainee_dist: {len(dist_rows)}행 저장")
         saved += 1
     except Exception as e:
-        print(f"  [캐시] db_trainee_dist 실패: {e}")
+        logger.error(f"[캐시] db_trainee_dist 실패: {e}")
         if is_pg():
             conn.rollback()
 
@@ -439,12 +450,12 @@ def _cache_hrd_stats():
 
         if rev_results:
             data_json = json.dumps(rev_results, ensure_ascii=False)
-            cursor.execute(upsert_sql, ('revenue_all_terms', data_json))
+            cursor.execute(upsert_sql, (CacheKey.REVENUE_ALL_TERMS, data_json))
             conn.commit()
-            print(f"  [캐시] revenue_all_terms: {len(rev_results)}행 저장")
+            logger.info(f"[캐시] revenue_all_terms: {len(rev_results)}행 저장")
             saved += 1
     except Exception as e:
-        print(f"  [캐시] revenue_all_terms 실패: {e}")
+        logger.error(f"[캐시] revenue_all_terms 실패: {e}")
         if is_pg():
             conn.rollback()
 
@@ -474,12 +485,12 @@ def _cache_hrd_stats():
                 fill_out[tbl] = {"_total": total, **rates}
 
         data_json = json.dumps(fill_out, ensure_ascii=False)
-        cursor.execute(upsert_sql, ('db_fill_rates', data_json))
+        cursor.execute(upsert_sql, (CacheKey.DB_FILL_RATES, data_json))
         conn.commit()
-        print(f"  [캐시] db_fill_rates: {len(fill_out)}개 테이블 저장")
+        logger.info(f"[캐시] db_fill_rates: {len(fill_out)}개 테이블 저장")
         saved += 1
     except Exception as e:
-        print(f"  [캐시] db_fill_rates 실패: {e}")
+        logger.error(f"[캐시] db_fill_rates 실패: {e}")
         if is_pg():
             conn.rollback()
 
@@ -498,17 +509,17 @@ def _cache_hrd_stats():
                 sample_out[tbl][col] = [str(r[0]) for r in cursor.fetchall()]
 
         data_json = json.dumps(sample_out, ensure_ascii=False)
-        cursor.execute(upsert_sql, ('db_sample_values', data_json))
+        cursor.execute(upsert_sql, (CacheKey.DB_SAMPLE_VALUES, data_json))
         conn.commit()
-        print(f"  [캐시] db_sample_values: {len(sample_out)}개 테이블 저장")
+        logger.info(f"[캐시] db_sample_values: {len(sample_out)}개 테이블 저장")
         saved += 1
     except Exception as e:
-        print(f"  [캐시] db_sample_values 실패: {e}")
+        logger.error(f"[캐시] db_sample_values 실패: {e}")
         if is_pg():
             conn.rollback()
 
     conn.close()
-    print(f"[집계 캐시] HRD 통계 {saved}개 완료")
+    logger.info(f"[집계 캐시] HRD 통계 {saved}개 완료")
 
 
 if __name__ == "__main__":
