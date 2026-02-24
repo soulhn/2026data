@@ -68,3 +68,8 @@ TRNEE_TYPE_MAP = {
     'C0104':  'K-디지털트레이닝',
     'C0105':  'K-디지털기초',
 }
+
+# ── AI 리포트 ──
+GEMINI_MODEL = "gemini-2.5-flash"
+CACHE_TTL_AI_REPORT = 1800               # 30분
+AI_REPORT_MAX_TOKENS = 8192

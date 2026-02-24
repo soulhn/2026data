@@ -241,6 +241,7 @@ def render_dashboard():
 * **📋 현재 운영 현황:** 현재 운영 중인 과정의 출결/이탈 관리
 * **💰 매출 분석:** 단위기간별 훈련비 청구 현황
 * **🗄️ DB 명세:** 수집 현황 및 원본 데이터 확인
+* **🤖 AI 리포트:** AI 기반 성과 분석 리포트 자동 생성
         """)
 
 
@@ -251,5 +252,6 @@ pg = st.navigation([
     st.Page("pages/현재_운영_현황.py", title="현재 운영 현황", icon="📋"),
     st.Page("pages/매출_분석.py", title="매출 분석", icon="💰"),
     st.Page("pages/DB_명세.py", title="DB 명세", icon="🗄️"),
+    st.Page("pages/AI_리포트.py", title="AI 리포트", icon="🤖"),
 ])
 pg.run()

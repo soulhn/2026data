@@ -14,6 +14,18 @@ load_dotenv()
 # ✅ [핵심] DB 설정 중앙화: 모든 파일이 이 변수를 가져다 씁니다.
 DB_FILE = "hrd_analysis.db"
 
+def get_gemini_api_key():
+    """os.getenv → st.secrets 순으로 GEMINI_API_KEY 탐색"""
+    key = os.getenv("GEMINI_API_KEY")
+    if key:
+        return key
+    try:
+        import streamlit as st
+        return st.secrets.get("GEMINI_API_KEY")
+    except Exception:
+        return None
+
+
 def get_database_url():
     """os.getenv → st.secrets 순으로 DATABASE_URL을 매번 동적 탐색"""
     url = os.getenv("DATABASE_URL")
