@@ -987,10 +987,10 @@ with tabs[3]:
 
         # ── 만족도 비교 ──
         market_score = market_dist['STDG_SCOR'].dropna()
-        market_score = market_score[market_score > 0]
+        market_score = market_score[market_score > 1000]
         internal_w_score = internal[
             internal['STDG_SCOR'].notna()
-            & (pd.to_numeric(internal['STDG_SCOR'], errors='coerce') > 0)
+            & (pd.to_numeric(internal['STDG_SCOR'], errors='coerce') > 1000)
         ].copy()
         internal_w_score['STDG_SCOR'] = pd.to_numeric(internal_w_score['STDG_SCOR'], errors='coerce')
 
@@ -1011,7 +1011,7 @@ with tabs[3]:
                 pct = (market_score_100 < score).mean() * 100
                 fig_score.add_annotation(
                     x=score, y=1, yref='paper',
-                    text=f"{label}: {score:.1f}점 (상위 {100-pct:.0f}%)",
+                    text=f"{row['TRPR_DEGR']}",
                     showarrow=True, arrowhead=2,
                     font=dict(color=color, size=11),
                 )
