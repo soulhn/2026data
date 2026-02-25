@@ -168,7 +168,8 @@ def render_dashboard():
         rev_df = pd.DataFrame(rev_cache)
         if not rev_df.empty and 'actual_fee' in rev_df.columns:
             best_rev = rev_df.loc[rev_df['actual_fee'].idxmax()]
-            s3c4.metric("단일기수 최고 매출", f"{best_rev['actual_fee'] / 1e8:.2f}억원",
+            _eok = int(best_rev['actual_fee'] / 1e6) / 100  # 소수 둘째 자리 버림
+            s3c4.metric("단일기수 최고 매출", f"{_eok}억+",
                         f"{int(best_rev['TRPR_DEGR'])}회차", help="단위기간별 청구 기준 실제 매출액")
     st.divider()
 
