@@ -229,7 +229,7 @@ def _attendance_penalty(status: str) -> int:
     return ('지각' in status) + ('조퇴' in status) + ('외출' in status)
 
 
-def calc_attendance_rate(att_df) -> float:
+def calc_attendance_rate(att_df, *, raw=False) -> float:
     """출석률 계산 (매출_분석.py 기준).
 
     groupby().apply() 패턴으로 기수/학생 단위 모두 사용 가능.
@@ -256,7 +256,8 @@ def calc_attendance_rate(att_df) -> float:
     base_attend = dates[present_mask].nunique()
     penalty = int(statuses[present_mask].apply(_attendance_penalty).sum())
     attend_days = max(0, base_attend - penalty // 3)
-    return round(attend_days / training_days * 100, 1)
+    rate = attend_days / training_days * 100
+    return rate if raw else round(rate, 1)
 
 
 def calc_attendance_rate_from_counts(

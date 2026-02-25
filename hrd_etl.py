@@ -302,7 +302,7 @@ def _cache_hrd_stats():
             rows = []
             for degr, grp in att_df.groupby('TRPR_DEGR'):
                 student_rates = [
-                    calc_attendance_rate(s_grp)
+                    calc_attendance_rate(s_grp, raw=True)
                     for _, s_grp in grp.groupby('TRNEE_ID')
                 ]
                 avg_rate = sum(student_rates) / len(student_rates) if student_rates else 0.0
