@@ -34,11 +34,7 @@
 
   "postCreateCommand": "which claude || npm install -g @anthropic-ai/claude-code && echo '✅ Claude Code ready'",
 
-  "postAttachCommand": {
-    "server": "streamlit run home.py --server.enableCORS false --server.enableXsrfProtection false"
-  },
-
-  "portsAttributes": {
+"portsAttributes": {
     "8501": {
       "label": "Application",
       "onAutoForward": "openPreview"
