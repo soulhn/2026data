@@ -4,11 +4,11 @@ import pandas as pd
 import altair as alt
 from datetime import datetime
 from utils import (
-    load_data, check_password,
+    load_data, load_cache_json, check_password,
     calc_attendance_rate, NOT_ATTEND_STATUSES, _attendance_penalty,
     calc_employment_rate_6,
 )
-from config import CACHE_TTL_DEFAULT, CACHE_TTL_REALTIME, DAILY_TRAINING_FEE, CacheKey
+from config import CACHE_TTL_DEFAULT, CACHE_TTL_REALTIME, CacheKey
 
 st.set_page_config(
     page_title="HRD 교육성과 대시보드",
@@ -163,10 +163,13 @@ def render_dashboard():
         best_att = att_stats.loc[att_stats['ATT_RATE'].idxmax()]
         s3c3.metric(
             "최고 출석률", f"{best_att['ATT_RATE']:.1f}%", f"{int(best_att['TRPR_DEGR'])}회차")
-        att_stats['revenue'] = att_stats['PRESENT_DAYS'] * DAILY_TRAINING_FEE
-        best_rev = att_stats.loc[att_stats['revenue'].idxmax()]
-        s3c4.metric("단일기수 최고 매출", f"{best_rev['revenue'] / 1e8:.2f}억원",
-                    f"{int(best_rev['TRPR_DEGR'])}회차", help="출석+지각 일수 × 일 훈련비 단가 기준")
+    rev_cache = load_cache_json(CacheKey.REVENUE_ALL_TERMS)
+    if rev_cache:
+        rev_df = pd.DataFrame(rev_cache)
+        if not rev_df.empty and 'actual_fee' in rev_df.columns:
+            best_rev = rev_df.loc[rev_df['actual_fee'].idxmax()]
+            s3c4.metric("단일기수 최고 매출", f"{best_rev['actual_fee'] / 1e8:.2f}억원",
+                        f"{int(best_rev['TRPR_DEGR'])}회차", help="단위기간별 청구 기준 실제 매출액")
     st.divider()
 
     # [Section 4] 시장 포지셔닝
