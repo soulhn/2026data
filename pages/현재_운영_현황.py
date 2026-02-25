@@ -144,18 +144,25 @@ with page_error_boundary():
             day['TRPR_DEGR_KEY'] = degr
             _today_rows.append(day[['TRPR_DEGR_KEY', 'TRNEE_ID', 'DISPLAY_STATUS']])
 
-        # 2차: 오늘 데이터가 하나도 없으면 → 각 기수 최신 데이터 사용 (수집 전/휴일)
+        # 2차: 오늘 데이터가 하나도 없으면 → 전체 최신 날짜 기준으로 분류 (수집 전/휴일)
         if _today_rows:
             all_today_rows = _today_rows
             off_degrs = _off_degrs
         else:
+            # 전체 기수 중 가장 최근 날짜를 기준일로 사용
+            ref_date = logs_df['ATEND_DT'].max() if not logs_df.empty else None
             all_today_rows = []
             off_degrs = []
             for degr in courses_df['TRPR_DEGR'].unique():
                 degr_logs = logs_df[logs_df['TRPR_DEGR'] == degr]
                 if degr_logs.empty:
+                    off_degrs.append(degr)
                     continue
-                day = degr_logs[degr_logs['ATEND_DT'] == degr_logs['ATEND_DT'].max()].copy()
+                degr_max = degr_logs['ATEND_DT'].max()
+                if ref_date is not None and degr_max != ref_date:
+                    off_degrs.append(degr)
+                    continue
+                day = degr_logs[degr_logs['ATEND_DT'] == degr_max].copy()
                 day['DISPLAY_STATUS'] = day.apply(
                     lambda r: '입실중'
                     if r['ATEND_STATUS'] == '결석' and pd.notna(r['IN_TIME']) and str(r['IN_TIME']).strip() != ''
@@ -167,10 +174,14 @@ with page_error_boundary():
 
         st.subheader("📡 오늘의 출결 현황")
         total_degr_cnt = len(courses_df['TRPR_DEGR'].unique())
-        st.caption("운영 중인 모든 기수의 오늘 출결 합산 현황입니다. (결석 + 입실 기록 있으면 → 입실중 재분류)")
+        if _today_rows:
+            st.caption("운영 중인 모든 기수의 오늘 출결 합산 현황입니다. (결석 + 입실 기록 있으면 → 입실중 재분류)")
+        else:
+            st.caption(f"오늘 수집된 출결이 없어 최근 기준일({ref_date}) 데이터를 표시합니다.")
         if off_degrs:
             off_labels = ", ".join(f"{d}회차" for d in sorted(off_degrs))
-            st.info(f"운영 기수: 총 {total_degr_cnt}기 | 오늘 휴강: {len(off_degrs)}기 ({off_labels})")
+            off_msg = "오늘 휴강" if _today_rows else "해당일 휴강"
+            st.info(f"운영 기수: 총 {total_degr_cnt}기 | {off_msg}: {len(off_degrs)}기 ({off_labels})")
 
         if all_today_rows:
             all_df = pd.concat(all_today_rows, ignore_index=True)
