@@ -1,20 +1,18 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-import plotly.graph_objects as go
-import plotly.express as px
 from datetime import datetime
 import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import (
-    load_data, calculate_age_at_training, safe_float, check_password,
-    calc_attendance_rate_from_counts, calc_employment_rate_6, parse_empl_rate,
-    is_completed, parse_time_to_minutes, NOT_ATTEND_STATUSES,
+    load_data, load_cache_json, calculate_age_at_training, safe_float,
+    check_password, calc_attendance_rate_from_counts, calc_employment_rate_6,
+    parse_empl_rate, is_completed, parse_time_to_minutes, NOT_ATTEND_STATUSES,
     page_error_boundary,
 )
-from config import CACHE_TTL_DEFAULT, EMPL_CODE_MAP, RISK_ABSENT, TRNEE_TYPE_MAP
+from config import CACHE_TTL_DEFAULT, CacheKey, EMPL_CODE_MAP, RISK_ABSENT, TRNEE_TYPE_MAP
 
 st.set_page_config(page_title="과정 성과 분석", page_icon="📊", layout="wide")
 check_password()
@@ -135,6 +133,15 @@ with page_error_boundary():
             "SELECT TRPR_DEGR, ATEND_STATUS, COUNT(*) as CNT "
             "FROM TB_ATTENDANCE_LOG GROUP BY TRPR_DEGR, ATEND_STATUS"
         )
+
+
+    @st.cache_data(ttl=CACHE_TTL_DEFAULT)
+    def get_cohort_attendance_from_cache():
+        """ETL 캐시에서 기수별 출석률 로드 (home.py와 동일 데이터 소스)."""
+        rows = load_cache_json(CacheKey.ATTENDANCE_STATS)
+        if rows:
+            return pd.DataFrame(rows)
+        return pd.DataFrame()
 
 
     @st.cache_data(ttl=CACHE_TTL_DEFAULT)
@@ -763,31 +770,33 @@ with page_error_boundary():
             all_master['DROP_CNT'] / all_master['TOT_PAR_MKS'].replace(0, pd.NA) * 100
         ).round(1).fillna(0)
 
-        # 출결 데이터 사전 계산
-        all_attend = get_all_degr_attendance()
+        # 출결 데이터 사전 계산 — ETL 캐시 우선, 없으면 COUNT(*) 기반 fallback
+        cached_att = get_cohort_attendance_from_cache()
         comp = pd.DataFrame()
-        absent_total_df = pd.DataFrame()
-        if not all_attend.empty:
-            all_attend['기수'] = all_attend['TRPR_DEGR'].astype(str) + '회차'
-            absent_total_df = all_attend[all_attend['ATEND_STATUS'] == '결석'][['기수', 'CNT']].copy()
-            absent_total_df.columns = ['기수', '결석건수']
-            # 기수별 출석률: 상태별 CNT 피벗 후 표준 공식 적용 (매출_분석.py 기준)
-            _piv = all_attend.pivot_table(
-                index='기수', columns='ATEND_STATUS', values='CNT', aggfunc='sum', fill_value=0
-            )
-            def _comp_rate(row):
-                total = int(row.sum())
-                return calc_attendance_rate_from_counts(
-                    total=total,
-                    absent=int(row.get('결석', 0)),
-                    dropout_absent=int(row.get('중도탈락미출석', 0)),
-                    lt50=int(row.get('100분의50미만출석', 0)),
-                    late=int(row.get('지각', 0)),
-                    early_leave=int(row.get('조퇴', 0)),
-                    out=int(row.get('외출', 0)),
+        if not cached_att.empty:
+            comp = cached_att[['TRPR_DEGR', 'ATT_RATE']].copy()
+            comp['기수'] = comp['TRPR_DEGR'].astype(str) + '회차'
+            comp = comp.rename(columns={'ATT_RATE': '출석률'})[['기수', '출석률']]
+        else:
+            all_attend = get_all_degr_attendance()
+            if not all_attend.empty:
+                all_attend['기수'] = all_attend['TRPR_DEGR'].astype(str) + '회차'
+                _piv = all_attend.pivot_table(
+                    index='기수', columns='ATEND_STATUS', values='CNT', aggfunc='sum', fill_value=0
                 )
-            comp = _piv.apply(_comp_rate, axis=1).reset_index()
-            comp.columns = ['기수', '출석률']
+                def _comp_rate(row):
+                    total = int(row.sum())
+                    return calc_attendance_rate_from_counts(
+                        total=total,
+                        absent=int(row.get('결석', 0)),
+                        dropout_absent=int(row.get('중도탈락미출석', 0)),
+                        lt50=int(row.get('100분의50미만출석', 0)),
+                        late=int(row.get('지각', 0)),
+                        early_leave=int(row.get('조퇴', 0)),
+                        out=int(row.get('외출', 0)),
+                    )
+                comp = _piv.apply(_comp_rate, axis=1).reset_index()
+                comp.columns = ['기수', '출석률']
 
         # === 서브탭 구성 ===
         sub_perf, sub_drop, sub_data = st.tabs(["성과 지표", "이탈 분석", "상세 데이터"])
