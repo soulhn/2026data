@@ -71,7 +71,7 @@ class TestBatchExecute:
         conn.close()
 
     def test_fallback_on_error(self, monkeypatch):
-        """배치 실패 시 row-by-row 폴백 동작 확인"""
+        """배치 실패 시 row-by-row 폴백: 'a','b' 성공, 중복 'a' 실패"""
         import utils
         monkeypatch.setattr(utils, "is_pg", lambda: False)
         conn = sqlite3.connect(":memory:")
@@ -81,7 +81,9 @@ class TestBatchExecute:
         data = [("a",), ("b",), ("a",)]  # 'a' 중복
         s, e = batch_execute(cursor, "INSERT INTO t VALUES (?)", data)
         conn.commit()
-        # executemany가 성공하면 3, 0 (SQLite는 중복 시 에러)
-        # 폴백이면 2 성공, 1 실패
-        assert s + e == 3
+        assert s == 2  # 'a'와 'b' 성공
+        assert e == 1  # 중복 'a' 실패
+        # DB 상태 검증: 실제로 2건만 저장됨
+        rows = conn.execute("SELECT a FROM t ORDER BY a").fetchall()
+        assert [r[0] for r in rows] == ['a', 'b']
         conn.close()
