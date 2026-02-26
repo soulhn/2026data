@@ -342,7 +342,8 @@ def parse_empl_rate(val):
 
 def calc_recruit_rate(reg_col, fxnum_col):
     """모집률(%) 계산: (신청인원 / 정원 × 100), 정원 0이면 NA, 상한 100%"""
-    return (reg_col / fxnum_col.replace(0, pd.NA) * 100).fillna(0).clip(upper=100)
+    result = pd.to_numeric(reg_col / fxnum_col.replace(0, pd.NA) * 100, errors='coerce')
+    return result.fillna(0).clip(upper=100)
 
 
 def is_completed(status):
