@@ -138,9 +138,9 @@ def render_dashboard():
     kpi2.metric("누적 수강생", f"{total_trainees:,}명")
     kpi3.metric("평균 출석률", f"{avg_att:.1f}%", help="결석/중도탈락미출석/100분의50미만출석 제외, 지각·조퇴·외출 3개 누적 시 1일 차감 (종료 기수)")
     kpi4.metric("평균 수료율", f"{avg_completion:.1f}%", help="수료인원 / 수강인원 기준")
-    kpi5.metric("평균 취업률(3개월)", f"{avg_rate_3:.1f}%" if pd.notna(
+    kpi5.metric("평균 취업률 (3개월)", f"{avg_rate_3:.1f}%" if pd.notna(
         avg_rate_3) else "-", help="수료 후 3개월 고용보험 가입률 (EI_EMPL_RATE_3 기준, 집계 전 기수 제외)")
-    kpi6.metric("평균 취업률(6개월)", f"{avg_rate_6:.1f}%" if pd.notna(
+    kpi6.metric("평균 취업률 (6개월)", f"{avg_rate_6:.1f}%" if pd.notna(
         avg_rate_6) else "-", help="고용보험(EI_6) + HRD 자체 취업(HRD_6) 합산 (집계 전 기수 제외)")
     st.divider()
 
@@ -222,7 +222,7 @@ def render_dashboard():
 
     with col_right:
         st.subheader("🏆 우수 성과 과정 (Top 5)")
-        st.caption("6개월 총 취업률 기준 상위 5개 과정입니다.")
+        st.caption("취업률 (6개월) 기준 상위 5개 과정입니다.")
         top_courses = df[df['상태'] == '종료'].sort_values(
             by='TOTAL_RATE_6', ascending=False).head(5)
         st.dataframe(
@@ -230,7 +230,7 @@ def render_dashboard():
             column_config={
                 "TRPR_DEGR": "회차",
                 "TRPR_NM": "과정명",
-                "TOTAL_RATE_6": st.column_config.ProgressColumn("6개월 취업률", format="%.1f%%", min_value=0, max_value=100),
+                "TOTAL_RATE_6": st.column_config.ProgressColumn("취업률 (6개월)", format="%.1f%%", min_value=0, max_value=100),
                 "FINI_CNT": st.column_config.NumberColumn("수료생", format="%d명"),
             },
             hide_index=True,

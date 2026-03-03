@@ -283,7 +283,7 @@ def load_monthly_region_trend(where, params, top_regions):
         return pd.DataFrame()
     placeholders = ','.join('?' * len(top_regions))
     return _sql_query(f"""
-        SELECT YEAR_MONTH, REGION, COUNT(*) as 개설수
+        SELECT YEAR_MONTH, REGION, COUNT(*) as "개설 수"
         FROM TB_MARKET_TREND {where}
           {"AND" if where else "WHERE"} REGION IN ({placeholders})
         GROUP BY YEAR_MONTH, REGION ORDER BY YEAR_MONTH
@@ -537,13 +537,13 @@ with page_error_boundary():
         col_trend1, col_trend2 = st.columns(2)
         with col_trend1:
             if not monthly_count.empty:
-                monthly_count = monthly_count.rename(columns={'COUNT': '개설수'}).sort_values('YEAR_MONTH')
+                monthly_count = monthly_count.rename(columns={'COUNT': '개설 수'}).sort_values('YEAR_MONTH')
                 monthly_count = monthly_count[monthly_count['YEAR_MONTH'] < _this_month]
-                fig_cnt = px.bar(monthly_count, x='YEAR_MONTH', y='개설수', text_auto=True, title='월별 신규 과정 개설 수')
+                fig_cnt = px.bar(monthly_count, x='YEAR_MONTH', y='개설 수', text_auto=True, title='월별 신규 과정 개설 수')
                 _ym = monthly_count['YEAR_MONTH'].tolist()
                 _tv = [m for m in _ym if str(m).endswith('-01')]
                 fig_cnt.update_xaxes(type='category', tickvals=_tv, ticktext=[m[:4] for m in _tv])
-                _vert_ytitle(fig_cnt, '개설수')
+                _vert_ytitle(fig_cnt, '개설 수')
                 st.plotly_chart(fig_cnt, use_container_width=True)
         with col_trend2:
             if not recruit_trend.empty:
@@ -583,13 +583,13 @@ with page_error_boundary():
                     idx_full = pd.MultiIndex.from_product([all_months, regions_list], names=['YEAR_MONTH', 'REGION'])
                     region_trend = region_trend.set_index(['YEAR_MONTH', 'REGION']).reindex(idx_full, fill_value=0).reset_index()
                     fig_reg = px.line(
-                        region_trend, x='YEAR_MONTH', y='개설수', color='REGION',
+                        region_trend, x='YEAR_MONTH', y='개설 수', color='REGION',
                         markers=True, title='상위 5개 지역 월별 개설 추이',
                     )
                     fig_reg.update_traces(mode='lines+markers', marker=dict(size=5))
                     fig_reg.update_layout(hovermode='x unified', height=380)
                     fig_reg.update_xaxes(dtick='M12', tickformat='%Y')
-                    _vert_ytitle(fig_reg, '개설수')
+                    _vert_ytitle(fig_reg, '개설 수')
                     st.plotly_chart(fig_reg, use_container_width=True)
         st.divider()
 
@@ -598,32 +598,32 @@ with page_error_boundary():
         st.caption("버블 크기: 개설 과정 수 | X축: 평균 모집률 | Y축: 평균 만족도. 우측 상단이 고만족·고수요 기관입니다.")
         inst_all = load_inst_stats(where, params)
         if not inst_all.empty:
-            inst_all['평균모집률'] = calc_recruit_rate(inst_all['REG_COURSE_MAN'], inst_all['TOT_FXNUM'])
-            inst_all['평균만족도'] = (pd.to_numeric(inst_all['AVG_SCORE'], errors='coerce').fillna(0) / 100).round(1)
-            inst_alt = inst_all[inst_all['평균만족도'] > 0].rename(columns={'TRAINST_NM': '기관명', 'TRPR_CNT': '개설수'})
-            inst_alt = inst_alt.nlargest(50, '개설수')
+            inst_all['평균 모집률'] = calc_recruit_rate(inst_all['REG_COURSE_MAN'], inst_all['TOT_FXNUM'])
+            inst_all['평균 만족도'] = (pd.to_numeric(inst_all['AVG_SCORE'], errors='coerce').fillna(0) / 100).round(1)
+            inst_alt = inst_all[inst_all['평균 만족도'] > 0].rename(columns={'TRAINST_NM': '기관명', 'TRPR_CNT': '개설 수'})
+            inst_alt = inst_alt.nlargest(50, '개설 수')
             if not inst_alt.empty:
                 fig_alt = px.scatter(
-                    inst_alt, x='평균모집률', y='평균만족도', size='개설수',
+                    inst_alt, x='평균 모집률', y='평균 만족도', size='개설 수',
                     hover_name='기관명', size_max=40,
-                    color='평균만족도', color_continuous_scale='RdYlGn',
-                    labels={'평균모집률': '평균 모집률 (%)', '평균만족도': '평균 만족도 (100점)'},
+                    color='평균 만족도', color_continuous_scale='RdYlGn',
+                    labels={'평균 모집률': '평균 모집률 (%)', '평균 만족도': '평균 만족도 (100점 환산)'},
                 )
-                med_r = inst_alt['평균모집률'].median()
-                med_s = inst_alt['평균만족도'].median()
+                med_r = inst_alt['평균 모집률'].median()
+                med_s = inst_alt['평균 만족도'].median()
                 fig_alt.add_hline(y=med_s, line_dash='dash', line_color='gray', line_width=1)
                 fig_alt.add_vline(x=med_r, line_dash='dash', line_color='gray', line_width=1)
                 fig_alt.update_layout(height=480, coloraxis_showscale=False)
-                _vert_ytitle(fig_alt, '평균 만족도 (100점)')
+                _vert_ytitle(fig_alt, '평균 만족도 (100점 환산)')
                 st.plotly_chart(fig_alt, use_container_width=True)
                 st.caption("📌 기준선: 중앙값 기준 — 우상단(고모집·고만족도), 좌하단(저모집·저만족도)")
                 with st.expander("📄 기관 상세 데이터 보기"):
-                    show_inst = inst_alt[['기관명', '개설수', '평균모집률', '평균만족도']].sort_values('평균만족도', ascending=False)
+                    show_inst = inst_alt[['기관명', '개설 수', '평균 모집률', '평균 만족도']].sort_values('평균 만족도', ascending=False)
                     st.dataframe(show_inst, hide_index=True, use_container_width=True,
                         column_config={
-                            '개설수': st.column_config.NumberColumn(format="%d개"),
-                            '평균모집률': st.column_config.NumberColumn(format="%.1f%%"),
-                            '평균만족도': st.column_config.NumberColumn(format="%.1f점"),
+                            '개설 수': st.column_config.NumberColumn(format="%d개"),
+                            '평균 모집률': st.column_config.NumberColumn(format="%.1f%%"),
+                            '평균 만족도': st.column_config.NumberColumn(format="%.1f점"),
                         })
             else:
                 st.info("기관 분석 데이터가 없습니다.")
@@ -713,24 +713,24 @@ with page_error_boundary():
 
         raw_inst = load_inst_stats(where, params)
         if not raw_inst.empty:
-            raw_inst['평균모집률'] = calc_recruit_rate(raw_inst['REG_COURSE_MAN'], raw_inst['TOT_FXNUM'])
+            raw_inst['평균 모집률'] = calc_recruit_rate(raw_inst['REG_COURSE_MAN'], raw_inst['TOT_FXNUM'])
             raw_inst['만족도(점)'] = (raw_inst['AVG_SCORE'] / 100).round(1)
             raw_inst = raw_inst.sort_values(by='REG_COURSE_MAN', ascending=False).reset_index(drop=True)
             raw_inst['순위'] = raw_inst.index + 1
             inst_stats = raw_inst.rename(columns={
-                'TRAINST_NM': '기관명', 'TRPR_CNT': '개설수',
-                'TOT_FXNUM': '총모집정원', 'REG_COURSE_MAN': '총신청인원',
+                'TRAINST_NM': '기관명', 'TRPR_CNT': '개설 수',
+                'TOT_FXNUM': '총 모집정원', 'REG_COURSE_MAN': '총 신청인원',
             })
 
         raw_course = load_course_agg(where, params)
         if not raw_course.empty:
-            raw_course['통합모집률'] = calc_recruit_rate(raw_course['REG_COURSE_MAN'], raw_course['TOT_FXNUM'])
+            raw_course['통합 모집률'] = calc_recruit_rate(raw_course['REG_COURSE_MAN'], raw_course['TOT_FXNUM'])
             raw_course['만족도(점)'] = (raw_course['AVG_SCORE'] / 100).round(1)
             raw_course = raw_course.sort_values(by='REG_COURSE_MAN', ascending=False).reset_index(drop=True)
             raw_course['순위'] = raw_course.index + 1
             course_agg = raw_course.rename(columns={
-                'TRPR_NM': '과정명', 'TRAINST_NM': '기관명', 'TRPR_CNT': '개설회차',
-                'TOT_FXNUM': '총정원', 'REG_COURSE_MAN': '총신청인원',
+                'TRPR_NM': '과정명', 'TRAINST_NM': '기관명', 'TRPR_CNT': '개설 회차',
+                'TOT_FXNUM': '총 정원', 'REG_COURSE_MAN': '총 신청인원',
             })
 
         col_rank1, col_rank2 = st.columns(2)
@@ -738,8 +738,8 @@ with page_error_boundary():
             if not raw_inst.empty:
                 render_ranking_table(
                     inst_stats,
-                    display_cols=['순위', '기관명', '총모집정원', '총신청인원', '평균모집률', '만족도(점)'],
-                    format_dict={"총모집정원": "{:,}명", "총신청인원": "{:,}명", "평균모집률": "{:.1f}%", "만족도(점)": "{:.1f}점"},
+                    display_cols=['순위', '기관명', '총 모집정원', '총 신청인원', '평균 모집률', '만족도(점)'],
+                    format_dict={"총 모집정원": "{:,}명", "총 신청인원": "{:,}명", "평균 모집률": "{:.1f}%", "만족도(점)": "{:.1f}점"},
                     search_col='기관명', search_label="기관명 검색",
                     search_placeholder="기관명 입력", top_n=5,
                     title="🏫 훈련기관 순위 (총 신청인원 기준)",
@@ -749,8 +749,8 @@ with page_error_boundary():
             if not raw_course.empty:
                 render_ranking_table(
                     course_agg,
-                    display_cols=['순위', '과정명', '기관명', '개설회차', '총정원', '총신청인원', '통합모집률', '만족도(점)'],
-                    format_dict={"총정원": "{:,}명", "총신청인원": "{:,}명", "통합모집률": "{:.1f}%", "개설회차": "{:,}회", "만족도(점)": "{:.1f}점"},
+                    display_cols=['순위', '과정명', '기관명', '개설 회차', '총 정원', '총 신청인원', '통합 모집률', '만족도(점)'],
+                    format_dict={"총 정원": "{:,}명", "총 신청인원": "{:,}명", "통합 모집률": "{:.1f}%", "개설 회차": "{:,}회", "만족도(점)": "{:.1f}점"},
                     search_col='과정명', search_label="과정명 검색",
                     search_placeholder="과정명 입력 (예: 한화시스템)", top_n=5,
                     title="📚 인기 훈련과정 (과정 통합/신청인원 기준)",
@@ -788,21 +788,21 @@ with page_error_boundary():
         ncs_data = load_ncs_agg(where, params, min_courses=NCS_MIN_COURSES if total_count >= 100 else 1)
         if not ncs_data.empty:
             ncs_data['NCS_CD'] = ncs_data['NCS_CD'].apply(lambda x: str(int(float(x))) if pd.notna(x) and str(x) not in ('', 'nan') else '')
-            ncs_data['평균모집률'] = calc_recruit_rate(ncs_data['REG_COURSE_MAN'], ncs_data['TOT_FXNUM'])
-            ncs_top = ncs_data.head(10).rename(columns={'NCS_CD': 'NCS코드', 'CNT': '개설수', 'TOT_FXNUM': '총모집정원', 'REG_COURSE_MAN': '총신청인원'})
-            ncs_top = ncs_top.sort_values('평균모집률', ascending=True)
-            fig = px.bar(ncs_top, x='평균모집률', y='NCS코드', orientation='h',
-                         color='평균모집률', color_continuous_scale='Blues',
-                         text='평균모집률', labels={'평균모집률': '평균 모집률 (%)', 'NCS코드': ''})
+            ncs_data['평균 모집률'] = calc_recruit_rate(ncs_data['REG_COURSE_MAN'], ncs_data['TOT_FXNUM'])
+            ncs_top = ncs_data.head(10).rename(columns={'NCS_CD': 'NCS 코드', 'CNT': '개설 수', 'TOT_FXNUM': '총 모집정원', 'REG_COURSE_MAN': '총 신청인원'})
+            ncs_top = ncs_top.sort_values('평균 모집률', ascending=True)
+            fig = px.bar(ncs_top, x='평균 모집률', y='NCS 코드', orientation='h',
+                         color='평균 모집률', color_continuous_scale='Blues',
+                         text='평균 모집률', labels={'평균 모집률': '평균 모집률 (%)', 'NCS 코드': ''})
             fig.update_traces(texttemplate='%{x:.1f}%', textposition='outside')
             fig.update_yaxes(type='category')
             fig.update_layout(height=360, margin=dict(t=10, b=30), coloraxis_showscale=False)
             st.plotly_chart(fig, use_container_width=True)
             with st.expander("📄 상세 데이터 보기"):
                 st.dataframe(ncs_top, use_container_width=True, hide_index=True, column_config={
-                    "총모집정원": st.column_config.NumberColumn(format="%d명"),
-                    "총신청인원": st.column_config.NumberColumn(format="%d명"),
-                    "평균모집률": st.column_config.NumberColumn(format="%.1f%%"),
+                    "총 모집정원": st.column_config.NumberColumn(format="%d명"),
+                    "총 신청인원": st.column_config.NumberColumn(format="%d명"),
+                    "평균 모집률": st.column_config.NumberColumn(format="%.1f%%"),
                 })
 
     # ─────────────────────────────────────────
