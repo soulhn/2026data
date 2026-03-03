@@ -157,22 +157,22 @@ def init_all_tables():
             pass  # 이미 존재하거나 컬럼 미존재 시 무시
 
     # ==========================================
-    # 백필: YEAR_MONTH, REGION (1회성)
+    # 백필: YEAR_MONTH, REGION, STDG_SCOR 정규화
     # ==========================================
     backfill_queries = []
+    # STDG_SCOR 스케일 통일: API가 100점 스케일(≤100)로 반환한 기존 데이터를 10000점 스케일로 보정
+    stdg_scor_fix = "UPDATE TB_MARKET_TREND SET STDG_SCOR = STDG_SCOR * 100 WHERE STDG_SCOR > 0 AND STDG_SCOR <= 100"
     if is_pg():
         backfill_queries = [
-            # TR_STA_DT는 YYYY-MM-DD 형식 → LEFT(7)로 YYYY-MM 추출
-            # NULL 및 잘못된 형식('2023--0' 등) 모두 수정
             "UPDATE TB_MARKET_TREND SET YEAR_MONTH = LEFT(TR_STA_DT, 7) WHERE TR_STA_DT IS NOT NULL AND (YEAR_MONTH IS NULL OR YEAR_MONTH !~ '^[0-9]{4}-[0-9]{2}$')",
             "UPDATE TB_MARKET_TREND SET REGION = SPLIT_PART(ADDRESS, ' ', 1) WHERE REGION IS NULL AND ADDRESS IS NOT NULL",
+            stdg_scor_fix,
         ]
     else:
         backfill_queries = [
-            # TR_STA_DT는 YYYY-MM-DD 형식 → substr(1,7)로 YYYY-MM 추출
-            # NULL 및 잘못된 형식('2023--0' 등: 길이≠7 또는 이중 대시) 모두 수정
             "UPDATE TB_MARKET_TREND SET YEAR_MONTH = substr(TR_STA_DT, 1, 7) WHERE TR_STA_DT IS NOT NULL AND (YEAR_MONTH IS NULL OR length(YEAR_MONTH) != 7 OR YEAR_MONTH LIKE '%-%-%')",
             "UPDATE TB_MARKET_TREND SET REGION = substr(ADDRESS, 1, instr(ADDRESS || ' ', ' ') - 1) WHERE REGION IS NULL AND ADDRESS IS NOT NULL",
+            stdg_scor_fix,
         ]
     for sql in backfill_queries:
         try:
