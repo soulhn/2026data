@@ -313,7 +313,7 @@ def load_monthly_recruit(where, params):
             return _c
     return _sql_query(f"""
         SELECT YEAR_MONTH,
-               AVG(CASE WHEN TOT_FXNUM > 0
+               AVG(CASE WHEN REG_COURSE_MAN > 0 AND TOT_FXNUM > 0
                    THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as 모집률
         FROM TB_MARKET_TREND {where}
         GROUP BY YEAR_MONTH ORDER BY YEAR_MONTH
