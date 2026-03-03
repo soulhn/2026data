@@ -843,7 +843,7 @@ with page_error_boundary():
                             y=alt.Y('값:Q', scale=alt.Scale(domain=[0, 100]),
                                     axis=alt.Axis(title=['%'], titleAngle=0)),
                             color=alt.Color('지표:N', scale=alt.Scale(
-                                domain=['출석률', '6개월 취업률'],
+                                domain=['출석률', '취업률 (6개월)'],
                                 range=['#3498db', '#2ecc71']
                             )),
                             tooltip=['기수', '지표', '값'],
