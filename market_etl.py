@@ -348,7 +348,7 @@ def compute_and_cache_aggregations():
         """), ()),
         (CacheKey.MONTHLY_RECRUIT, adapt_query("""
             SELECT YEAR_MONTH,
-                   AVG(CASE WHEN TOT_FXNUM > 0
+                   AVG(CASE WHEN REG_COURSE_MAN > 0 AND TOT_FXNUM > 0
                        THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as 모집률
             FROM TB_MARKET_TREND WHERE YEAR_MONTH IS NOT NULL
             GROUP BY YEAR_MONTH ORDER BY YEAR_MONTH
