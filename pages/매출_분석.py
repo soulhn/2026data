@@ -220,7 +220,7 @@ with page_error_boundary():
         _eok = int(_total_actual / 1e7) / 10  # 소수 첫째 자리 버림
         mk0, mk1, mk2, mk3, mk4 = st.columns(5)
         mk0.metric("누적", f"{_eok}억+")
-        mk1.metric("누적 총매출", fmt_won(_total_actual))
+        mk1.metric("누적 총 매출", fmt_won(_total_actual))
         mk2.metric(
             "기수당 평균 매출",
             fmt_won(int(_done_src['actual_fee'].mean())),
@@ -345,7 +345,7 @@ with page_error_boundary():
                 opacity=0.9,
             ))
             fig_bar.add_trace(go.Scatter(
-                name='기준(전액)', x=x_labels, y=base_vals,
+                name='기준 (전액)', x=x_labels, y=base_vals,
                 mode='lines+markers',
                 line=dict(color='#e74c3c', dash='dash', width=2),
             ))
@@ -637,8 +637,8 @@ with page_error_boundary():
             'n_students', 'base_fee', 'actual_fee', 'achievement', 'loss_prop'
         ]].copy()
         table_df.columns = ['기수', '과정명', '시작일', '종료일',
-                             '수강생', '기준매출', '실제매출', '달성률(%)', '손실액']
-        table_df['기준매출'] = table_df['기준매출'].apply(fmt_won)
-        table_df['실제매출'] = table_df['실제매출'].apply(fmt_won)
-        table_df['손실액'] = table_df['손실액'].apply(fmt_won)
+                             '수강생', '기준 매출', '실제 매출', '달성률(%)', '비례 손실액']
+        table_df['기준 매출'] = table_df['기준 매출'].apply(fmt_won)
+        table_df['실제 매출'] = table_df['실제 매출'].apply(fmt_won)
+        table_df['비례 손실액'] = table_df['비례 손실액'].apply(fmt_won)
         st.dataframe(table_df, use_container_width=True, hide_index=True)

@@ -274,7 +274,7 @@ with page_error_boundary():
 
         mc1, mc2, mc3, mc4 = st.columns(4)
         mc1.metric("수료율", f"{(fini_std / total_std * 100):.1f}%" if total_std > 0 else "0%", f"{fini_std}/{total_std}명")
-        mc2.metric("총 취업률 (6개월)", empl_label, help="고용보험 + HRD 합산 | A=개설예정 B=진행중 C=미실시 D=수료자없음")
+        mc2.metric("취업률 (6개월)", empl_label, help="고용보험 + HRD 합산 | A=개설예정 B=진행중 C=미실시 D=수료자없음")
         mc3.metric("중도 탈락", f"{dropout_std}명", delta_color="inverse")
         mc4.metric("평균 결석일", f"{students_df['결석_횟수'].mean():.1f}일" if '결석_횟수' in students_df.columns else "-")
         st.divider()
@@ -583,13 +583,13 @@ with page_error_boundary():
                 dropout_rate = len(dropout_ids) / total_cnt * 100 if total_cnt > 0 else 0
 
                 if len(dropout_ids) == 0:
-                    st.metric("중도탈락률", "0%", f"0/{total_cnt}명")
+                    st.metric("중도 탈락률", "0%", f"0/{total_cnt}명")
                     st.info("이 기수의 중도탈락자가 없습니다.")
                 else:
                     # (1) 중도탈락률 metric
                     kc1, kc2 = st.columns(2)
-                    kc1.metric("중도탈락률", f"{dropout_rate:.1f}%", f"{len(dropout_ids)}/{total_cnt}명")
-                    kc2.metric("중도탈락 인원", f"{len(dropout_ids)}명")
+                    kc1.metric("중도 탈락률", f"{dropout_rate:.1f}%", f"{len(dropout_ids)}/{total_cnt}명")
+                    kc2.metric("중도 탈락 인원", f"{len(dropout_ids)}명")
                     st.divider()
 
                     # (2) 이탈 시점 strip chart
@@ -820,8 +820,8 @@ with page_error_boundary():
             kpi1, kpi2, kpi3, kpi4 = st.columns(4)
             kpi1.metric("평균 수료율", f"{avg_comp_rate:.1f}%")
             kpi2.metric("평균 출석률", f"{avg_attend:.1f}%" if avg_attend is not None else "–")
-            kpi3.metric("평균 취업률", f"{avg_empl:.1f}%" if pd.notna(avg_empl) else "–")
-            kpi4.metric("평균 중도탈락률", f"{avg_dropout:.1f}%")
+            kpi3.metric("평균 취업률 (6개월)", f"{avg_empl:.1f}%" if pd.notna(avg_empl) else "–")
+            kpi4.metric("평균 중도 탈락률", f"{avg_dropout:.1f}%")
             st.divider()
 
             # (B) 출석률 & 취업률 추이 (dual-line)
@@ -836,7 +836,7 @@ with page_error_boundary():
                     _long = pd.melt(_corr_base, id_vars='기수',
                                     value_vars=['출석률', '총_취업률'],
                                     var_name='지표', value_name='값')
-                    _long['지표'] = _long['지표'].map({'출석률': '출석률', '총_취업률': '6개월 취업률'})
+                    _long['지표'] = _long['지표'].map({'출석률': '출석률', '총_취업률': '취업률 (6개월)'})
                     st.altair_chart(
                         alt.Chart(_long).mark_line(point=True, strokeWidth=2).encode(
                             x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
@@ -924,14 +924,14 @@ with page_error_boundary():
         # ──────────────────────────────────────────────
         with sub_drop:
             # (E) 중도탈락률 line
-            st.markdown("##### 기수별 중도탈락률")
+            st.markdown("##### 기수별 중도 탈락률")
             st.altair_chart(
                 alt.Chart(all_master).mark_line(
                     point=alt.OverlayMarkDef(size=80), color='#e67e22'
                 ).encode(
                     x=alt.X('기수:N', sort=degr_order, title='기수', axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y('중도탈락률:Q', axis=alt.Axis(title=['중', '도', '탈', '락', '률', '(%)'], titleAngle=0)),
-                    tooltip=['기수', '중도탈락률', 'DROP_CNT'],
+                    y=alt.Y('중도탈락률:Q', axis=alt.Axis(title=['중', '도', ' ', '탈', '락', '률', '(%)'], titleAngle=0)),
+                    tooltip=['기수', alt.Tooltip('중도탈락률:Q', title='중도 탈락률'), alt.Tooltip('DROP_CNT:Q', title='중도 탈락')],
                 ).properties(height=300),
                 use_container_width=True,
             )
@@ -1054,23 +1054,23 @@ with page_error_boundary():
             st.dataframe(
                 _tbl[summary_cols].rename(columns={
                     'TRPR_NM': '과정명', 'TR_STA_DT': '시작일', 'TR_END_DT': '종료일',
-                    'TOT_TRP_CNT': '수강신청', 'TOT_PAR_MKS': '수강인원',
-                    'EXPEL_CNT': '제적', 'DROP_CNT': '중도탈락',
-                    '잔여율': '잔여율(%)', 'FINI_CNT': '수료인원',
+                    'TOT_TRP_CNT': '수강 신청', 'TOT_PAR_MKS': '수강 인원',
+                    'EXPEL_CNT': '제적', 'DROP_CNT': '중도 탈락',
+                    '잔여율': '잔여율(%)', 'FINI_CNT': '수료 인원',
                     '수료율': '수료율(%)', '출석률': '출석률(%)',
-                    '취업률_3': '3개월 취업률(%)', '총_취업률': '6개월 취업률(%)',
+                    '취업률_3': '취업률 (3개월)(%)', '총_취업률': '취업률 (6개월)(%)',
                 }),
                 column_config={
-                    "수강신청": st.column_config.NumberColumn(format="%d명"),
-                    "수강인원": st.column_config.NumberColumn(format="%d명"),
+                    "수강 신청": st.column_config.NumberColumn(format="%d명"),
+                    "수강 인원": st.column_config.NumberColumn(format="%d명"),
                     "제적": st.column_config.NumberColumn(format="%d명"),
-                    "중도탈락": st.column_config.NumberColumn(format="%d명"),
+                    "중도 탈락": st.column_config.NumberColumn(format="%d명"),
                     "잔여율(%)": st.column_config.NumberColumn(format="%.1f%%"),
-                    "수료인원": st.column_config.NumberColumn(format="%d명"),
+                    "수료 인원": st.column_config.NumberColumn(format="%d명"),
                     "수료율(%)": st.column_config.NumberColumn(format="%.1f%%"),
                     "출석률(%)": st.column_config.NumberColumn(format="%.1f%%"),
-                    "3개월 취업률(%)": st.column_config.NumberColumn(format="%.1f%%"),
-                    "6개월 취업률(%)": st.column_config.NumberColumn(format="%.1f%%"),
+                    "취업률 (3개월)(%)": st.column_config.NumberColumn(format="%.1f%%"),
+                    "취업률 (6개월)(%)": st.column_config.NumberColumn(format="%.1f%%"),
                 },
                 use_container_width=True,
                 hide_index=True,

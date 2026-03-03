@@ -223,7 +223,7 @@ with page_error_boundary():
 
         # ── [2] 현재 운영 중인 과정 현황 ─────────────────────────────────
         st.subheader("🚨 현재 운영 중인 과정 현황")
-        st.caption("수강신청/개강인원/제적/중도탈락/현재인원/잔여율 기준입니다.")
+        st.caption("수강 신청/개강 인원/제적/중도 탈락/현재 인원/잔여율 기준입니다.")
 
         trainee_stats = trainees_df.groupby(['TRPR_ID', 'TRPR_DEGR']).apply(
             lambda g: pd.Series({
@@ -248,12 +248,12 @@ with page_error_boundary():
             column_config={
                 "TRPR_DEGR":   "회차",
                 "TRPR_NM":     "과정명",
-                "TR_END_DT":   st.column_config.DateColumn("종료예정일"),
-                "TOT_TRP_CNT": st.column_config.NumberColumn("수강신청", format="%d명"),
-                "TOT_PAR_MKS": st.column_config.NumberColumn("개강인원", format="%d명"),
+                "TR_END_DT":   st.column_config.DateColumn("종료 예정일"),
+                "TOT_TRP_CNT": st.column_config.NumberColumn("수강 신청", format="%d명"),
+                "TOT_PAR_MKS": st.column_config.NumberColumn("개강 인원", format="%d명"),
                 "EXPEL_CNT":   st.column_config.NumberColumn("제적", format="%d명"),
-                "DROP_CNT":    st.column_config.NumberColumn("중도탈락", format="%d명"),
-                "CURRENT_CNT": st.column_config.NumberColumn("현재인원", format="%d명"),
+                "DROP_CNT":    st.column_config.NumberColumn("중도 탈락", format="%d명"),
+                "CURRENT_CNT": st.column_config.NumberColumn("현재 인원", format="%d명"),
                 "잔여율":       st.column_config.ProgressColumn("잔여율", format="%.1f%%", min_value=0, max_value=100),
             },
             hide_index=True,
