@@ -98,6 +98,13 @@ def get_collect_range():
 
     return start, today
 
+def _normalize_stdg_scor(val):
+    """API 스케일 변경 대응: 100점 스케일(≤100) → 10000점 스케일로 통일."""
+    if val is not None and 0 < val <= 100:
+        return val * 100
+    return val
+
+
 def parse_rows_xml(soup: BeautifulSoup):
     out = []
     sl = soup.find("srchList")
@@ -124,7 +131,7 @@ def parse_rows_xml(soup: BeautifulSoup):
             g("ncsCd"), g("trngAreaCd"),
             safe_int(g("yardMan")), safe_float(g("realMan"), default=None), safe_float(g("courseMan"), default=None), safe_int(g("regCourseMan")),
             safe_float(g("eiEmplRate3"), default=None), safe_float(g("eiEmplRate6"), default=None), safe_int(g("eiEmplCnt3")), g("eiEmplCnt3Gt10"),
-            safe_float(g("stdgScor"), default=None), g("grade"),
+            _normalize_stdg_scor(safe_float(g("stdgScor"), default=None)), g("grade"),
             g("certificate"), g("contents"), address, g("telNo"),
             g("instCd"), g("trainstCstId"), g("trainTarget"), g("trainTargetCd"),
             g("wkendSe"),
