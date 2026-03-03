@@ -400,7 +400,7 @@ with page_error_boundary():
             ))
             fig_att.add_hline(
                 y=80, line_dash='dash', line_color='red', line_width=1.5,
-                annotation_text='전액 기준 80%', annotation_position='top right',
+                annotation_text='전액 기준 (80%)', annotation_position='top right',
             )
             fig_att.update_layout(
                 title='단위기간별 평균 출석률 추이',
