@@ -6,7 +6,7 @@ paths:
 ## 테스트 실행
 
 ```bash
-python -m pytest tests/ -v          # 전체 (89개)
+python -m pytest tests/ -v          # 전체 (168개)
 python -m pytest tests/test_billing.py -v  # 매출 청구 로직만
 ```
 
