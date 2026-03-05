@@ -329,12 +329,15 @@ with page_error_boundary():
             opacity_map = {'완료': 1.0, '진행중': 0.7, '예정': 0.4}
             fig_bar = go.Figure()
 
-            full_vals = [full_by_period.get(p, 0) for p in period_summary['period_num']]
+            full_vals_raw = [full_by_period.get(p, 0) for p in period_summary['period_num']]
             prop_vals = [prop_by_period.get(p, 0) for p in period_summary['period_num']]
             base_vals = [base_by_period.get(p, 0) for p in period_summary['period_num']]
             opacities = [opacity_map.get(statuses_map.get(p, '완료'), 1.0) for p in period_summary['period_num']]
 
-            total_vals = [f + p for f, p in zip(full_vals, prop_vals)]
+            # 10원 버림 적용된 합계 사용 (요약 테이블과 일치)
+            total_vals = [int(_period_fee.get(p, 0)) for p in period_summary['period_num']]
+            # 반올림 차이를 전액에 흡수하여 전액+비례=합계 정확히 일치
+            full_vals = [t - p for t, p in zip(total_vals, prop_vals)]
 
             fig_bar.add_trace(go.Bar(
                 name='전액', x=x_labels, y=full_vals,
