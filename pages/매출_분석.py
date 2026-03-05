@@ -334,25 +334,37 @@ with page_error_boundary():
             base_vals = [base_by_period.get(p, 0) for p in period_summary['period_num']]
             opacities = [opacity_map.get(statuses_map.get(p, '완료'), 1.0) for p in period_summary['period_num']]
 
+            total_vals = [f + p for f, p in zip(full_vals, prop_vals)]
+
             fig_bar.add_trace(go.Bar(
                 name='전액', x=x_labels, y=full_vals,
                 marker_color='#2ecc71',
                 opacity=0.9,
+                hovertemplate='전액: %{y:,.0f}원<extra></extra>',
             ))
             fig_bar.add_trace(go.Bar(
                 name='비례', x=x_labels, y=prop_vals,
                 marker_color='#f39c12',
                 opacity=0.9,
+                hovertemplate='비례: %{y:,.0f}원<extra></extra>',
+            ))
+            fig_bar.add_trace(go.Scatter(
+                name='합계', x=x_labels, y=total_vals,
+                mode='none',
+                hovertemplate='합계: %{y:,.0f}원<extra></extra>',
+                showlegend=False,
             ))
             fig_bar.add_trace(go.Scatter(
                 name='기준 (전액)', x=x_labels, y=base_vals,
                 mode='lines+markers',
                 line=dict(color='#e74c3c', dash='dash', width=2),
+                hovertemplate='기준: %{y:,.0f}원<extra></extra>',
             ))
             fig_bar.update_layout(
                 barmode='stack', title='단위기간별 매출 (전액/비례 스택)',
                 xaxis_title='단위기간', yaxis_title='매출액 (원)',
                 yaxis_tickformat=',',
+                hovermode='x unified',
                 legend=dict(orientation='h', yanchor='bottom', y=1.02),
                 height=380,
             )
