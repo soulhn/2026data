@@ -25,6 +25,37 @@
     ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[SessionStart] 컨텍스트 압축 감지 — 핵심 규칙 리마인더:\n1. 출석률: 분모에서 중도탈락미출석 제외, 지각+조퇴+외출 3개=결석1일 패널티\n2. 수료 판정: == 수료 금지 → str.contains(수료|조기취업) 필수\n3. SQL: 반드시 adapt_query() 통과, pages/에서 pd.read_sql() 직접 사용 금지 → load_data() 사용\n4. COUNT(*) AS alias 필수 (PG RealDictCursor)\n5. 매출: 10원 미만 버림 (floor), 차트·테이블 일치 필수\n6. UI 텍스트: 한글만 사용, 한자(析 U+6790) 혼용 금지, 석=U+C11D\n7. 취업률: 특수코드(A/B/C/D) → NA 처리, 0과 구분'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"\nimport sys, json\ntry:\n    data = json.load(sys.stdin)\n    ti = data.get('tool_input', {})\n    fp = ti.get('file_path', '')\n    if not fp.endswith('.py'):\n        sys.exit(0)\n    content = ti.get('new_string', '') or ti.get('content', '')\n    if not content:\n        sys.exit(0)\n    errors = []\n    is_pages = '/pages/' in fp\n    if is_pages and 'pd.read_sql' in content:\n        errors.append('pd.read_sql() \\uc9c1\\uc811 \\uc0ac\\uc6a9 \\uae08\\uc9c0 (pages/) \\u2192 load_data() \\uc0ac\\uc6a9')\n    import re\n    if re.search(r'==\\s*[\\'\\\"]\\uc218\\ub8cc[\\'\\\"]', content):\n        errors.append('== \\uc218\\ub8cc \\uc815\\ud655\\uc77c\\uce58 \\uae08\\uc9c0 \\u2192 str.contains(\\uc218\\ub8cc|\\uc870\\uae30\\ucde8\\uc5c5) \\uc0ac\\uc6a9')\n    if re.search(r'COUNT\\s*\\(\\s*\\*\\s*\\)(?!\\s+(AS|as)\\s+)', content):\n        errors.append('COUNT(*) \\ubcc4\\uce6d \\uc5c6\\uc74c \\u2192 COUNT(*) AS alias \\ud544\\uc218 (PG \\ud638\\ud658)')\n    if errors:\n        print('[PreToolUse] \\u26a0\\ufe0f SQL \\uc548\\ud2f0\\ud328\\ud134 \\uac10\\uc9c0:')\n        for e in errors:\n            print(f'  - {e}')\n        sys.exit(2)\nexcept Exception:\n    pass\n\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"\nimport sys, json, os\ntry:\n    data = json.load(sys.stdin)\n    cmd = data.get('tool_input', {}).get('command', '')\n    etl_scripts = ['hrd_etl.py', 'market_etl.py', 'init_db.py']\n    if any(s in cmd for s in etl_scripts):\n        if os.environ.get('DATABASE_URL'):\n            matched = [s for s in etl_scripts if s in cmd][0]\n            print(f'[PreToolUse] \\u26d4 \\ud504\\ub85c\\ub355\\uc158 DB \\uc5f0\\uacb0 \\uc0c1\\ud0dc\\uc5d0\\uc11c {matched} \\uc2e4\\ud589 \\ucc28\\ub2e8')\n            print('DATABASE_URL\\uc774 \\uc124\\uc815\\ub418\\uc5b4 \\uc788\\uc2b5\\ub2c8\\ub2e4. \\ub85c\\uceec DB\\ub85c \\uc804\\ud658 \\ud6c4 \\uc2e4\\ud589\\ud558\\uc138\\uc694.')\n            sys.exit(2)\nexcept Exception:\n    pass\n\""
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
@@ -36,6 +67,17 @@
           {
             "type": "command",
             "command": "python3 -c \"\nimport sys, json, os, subprocess\ntry:\n    data = json.load(sys.stdin)\n    fp = data.get('tool_input', {}).get('file_path', '')\n    if fp and os.path.exists(fp) and fp.endswith('.py'):\n        r = subprocess.run(['ruff', 'check', '--select', 'F401,F841', '--no-fix', fp], capture_output=True, text=True)\n        if r.returncode:\n            print('[Hook] \\u26a0\\ufe0f \\ubbf8\\uc0ac\\uc6a9 import/\\ubcc0\\uc218 \\uac10\\uc9c0:')\n            print(r.stdout.strip())\n            sys.exit(2)\nexcept FileNotFoundError:\n    pass\nexcept Exception:\n    pass\n\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"\nimport sys, json, subprocess\ntry:\n    data = json.load(sys.stdin)\n    tool_uses = data.get('tool_uses', [])\n    py_modified = False\n    for tu in tool_uses:\n        tool = tu.get('tool', '')\n        if tool in ('Edit', 'Write'):\n            fp = tu.get('tool_input', {}).get('file_path', '')\n            if fp.endswith('.py'):\n                py_modified = True\n                break\n    if not py_modified:\n        sys.exit(0)\n    r = subprocess.run(\n        ['python', '-m', 'pytest', '-x', '-q', '--tb=short', 'tests/'],\n        capture_output=True, text=True, timeout=120\n    )\n    print(r.stdout[-2000:] if len(r.stdout) > 2000 else r.stdout)\n    if r.stderr:\n        print(r.stderr[-500:] if len(r.stderr) > 500 else r.stderr)\n    if r.returncode != 0:\n        print('[Stop] \\u274c \\ud14c\\uc2a4\\ud2b8 \\uc2e4\\ud328 \\u2014 \\uc218\\uc815 \\ud544\\uc694')\n        sys.exit(2)\n    else:\n        print('[Stop] \\u2705 \\ud14c\\uc2a4\\ud2b8 \\ud1b5\\uacfc')\nexcept subprocess.TimeoutExpired:\n    print('[Stop] \\u26a0\\ufe0f \\ud14c\\uc2a4\\ud2b8 \\ud0c0\\uc784\\uc544\\uc6c3 (120s)')\nexcept Exception as e:\n    print(f'[Stop] \\ud6c5 \\uc624\\ub958: {e}')\n\""
           }
         ]
       }

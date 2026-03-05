@@ -192,3 +192,13 @@ Tag: English summary (한글 설명)
 | `rules/` | 경로별 코딩 패턴 (`paths:` 스코프 활용) | 전역 규칙, 실행 절차 |
 | `skills/` | 순서 있는 반복 작업, 부작용 있는 명령 | 단순 단일 명령, 자동 실행 검사 |
 | `hooks/` | 항상 자동 실행 검증, 빠른 체크 | 느린 작업 (→ Skill), 사람 판단 필요 작업 |
+
+### 등록된 훅 목록
+
+| 이벤트 | matcher | 역할 |
+|---|---|---|
+| `SessionStart` | `compact` | 컨텍스트 압축 시 7가지 핵심 비즈니스 규칙 리마인더 재주입 |
+| `PreToolUse` | `Edit\|Write` | `.py` 파일 SQL 안티패턴 사전 차단 (`pd.read_sql` 직접 사용, `== '수료'`, `COUNT(*)` 별칭 누락) |
+| `PreToolUse` | `Bash` | `DATABASE_URL` 설정 시 ETL 스크립트(`hrd_etl.py`, `market_etl.py`, `init_db.py`) 실행 차단 |
+| `PostToolUse` | `Edit\|Write` | CJK 한자 析(U+6790) 감지 + ruff 미사용 import/변수 검사 |
+| `Stop` | *(전체)* | `.py` 파일 수정 턴 종료 시 `pytest -x -q` 자동 실행 |
