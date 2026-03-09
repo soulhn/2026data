@@ -11,7 +11,7 @@ import requests
 from utils import (
     get_connection, get_retry_session, adapt_query, is_pg, load_data,
     calc_attendance_rate, NOT_ATTEND_STATUSES, _attendance_penalty,
-    get_billing_periods, calc_revenue,
+    get_billing_periods, calc_revenue, clean_time,
 )
 from init_db import init_all_tables
 from config import ETL_BATCH_PAGE_SIZE, ETL_UPDATE_CUTOFF_DAYS, ETL_FULL_SKIP_MONTHS, CacheKey
@@ -51,10 +51,6 @@ load_dotenv()
 
 API_KEY = os.getenv("HRD_API_KEY")
 COURSE_ID = os.getenv("HANWHA_COURSE_ID")
-
-def clean_time(time_str):
-    if not time_str or time_str == '0000' or len(time_str) != 4: return None
-    return f"{time_str[:2]}:{time_str[2:]}"
 
 def get_month_list(start_date_str, end_date_str):
     if not start_date_str or not end_date_str: return []

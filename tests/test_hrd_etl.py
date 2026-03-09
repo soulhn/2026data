@@ -1,6 +1,7 @@
 """hrd_etl.py 유틸리티 함수 + batch_execute 테스트"""
 import sqlite3
-from hrd_etl import clean_time, get_month_list, batch_execute
+from hrd_etl import get_month_list, batch_execute
+from utils import clean_time
 
 
 class TestCleanTime:
