@@ -12,7 +12,7 @@ from datetime import datetime
 import pandas as pd
 from dotenv import load_dotenv
 
-from config import API_MAX_WORKERS, API_TIMEOUT
+import config
 from utils import clean_time, get_retry_session, load_data
 
 load_dotenv()
@@ -37,7 +37,7 @@ def fetch_course_list(session, api_key, course_id):
     res = session.get(BASE_URL_COURSE, params={
         "returnType": "JSON", "authKey": api_key,
         "srchTrprId": course_id, "outType": "2",
-    }, timeout=API_TIMEOUT)
+    }, timeout=config.API_TIMEOUT)
     course_list = json.loads(res.json()["returnJSON"])
 
     rows = []
@@ -73,7 +73,7 @@ def fetch_trainee_roster(session, api_key, course_id, trpr_degr):
     res = session.get(BASE_URL_DETAIL, params={
         "returnType": "JSON", "authKey": api_key, "outType": "2",
         "srchTrprId": course_id, "srchTrprDegr": trpr_degr,
-    }, timeout=API_TIMEOUT)
+    }, timeout=config.API_TIMEOUT)
     raw_json = res.json().get("returnJSON")
     if not raw_json:
         return pd.DataFrame(columns=["TRPR_ID", "TRPR_DEGR", "TRNEE_ID", "TRNEE_NM", "TRNEE_STATUS"])
@@ -106,7 +106,7 @@ def fetch_attendance_month(session, api_key, course_id, trpr_degr, yyyymm):
         "returnType": "JSON", "authKey": api_key, "outType": "2",
         "srchTrprId": course_id, "srchTrprDegr": trpr_degr,
         "srchTorgId": "student_detail", "atendMo": yyyymm,
-    }, timeout=API_TIMEOUT)
+    }, timeout=config.API_TIMEOUT)
     raw_json = res.json().get("returnJSON")
     if not raw_json:
         return pd.DataFrame(columns=[
@@ -157,7 +157,7 @@ def fetch_active_data_realtime(api_key, course_id):
     futures_roster = []
     futures_attend = []
 
-    with ThreadPoolExecutor(max_workers=API_MAX_WORKERS) as executor:
+    with ThreadPoolExecutor(max_workers=config.API_MAX_WORKERS) as executor:
         for degr in courses_df["TRPR_DEGR"].unique():
             futures_roster.append(
                 executor.submit(fetch_trainee_roster, session, api_key, course_id, degr)
