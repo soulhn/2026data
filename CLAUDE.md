@@ -28,6 +28,8 @@ HRD-Net 공공데이터 기반 훈련 과정 성과 분석 대시보드 (Streaml
 [GitHub Actions]                [Supabase]              [Streamlit Cloud]
 hrd_etl.py (평일 매시간)  →   PostgreSQL DB    ←    대시보드 (읽기 전용)
 market_etl.py (매일 21시) →                    ←    https://playdata.streamlit.app
+                                                ←    운영 현황: hrd_api.py로 API 직접 호출
+                                                     (60초 캐시, 실패 시 DB 폴백)
 ```
 
 ### DB 이중 지원 (SQLite / PostgreSQL)
@@ -170,8 +172,8 @@ Tag: English summary (한글 설명)
 
 ## 환경 변수
 
-- `HRD_API_KEY` — HRD-Net API 인증키
-- `HANWHA_COURSE_ID` — 내부 관리 대상 과정 ID
+- `HRD_API_KEY` — HRD-Net API 인증키 (GitHub Actions + Streamlit secrets 양쪽 등록 시 운영 현황 실시간 API 활성화)
+- `HANWHA_COURSE_ID` — 내부 관리 대상 과정 ID (GitHub Actions + Streamlit secrets 양쪽 등록 필요)
 - `DATABASE_URL` — PostgreSQL 연결 문자열 (없으면 SQLite 폴백)
 
 ## Claude Code 구조 관리
