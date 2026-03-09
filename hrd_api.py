@@ -62,7 +62,10 @@ def fetch_course_list(session, api_key, course_id):
             "TOT_PAR_MKS": c.get("totParMks"),
             "TOT_TRP_CNT": c.get("totTrpCnt"),
         })
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df = df.sort_values("TRPR_DEGR", ascending=False).reset_index(drop=True)
+    return df
 
 
 def fetch_trainee_roster(session, api_key, course_id, trpr_degr):
