@@ -13,7 +13,12 @@ RISK_EARLY_LEAVE = 5             # 조퇴 N회 이상
 # ── 캐시 TTL (초) ──
 CACHE_TTL_DEFAULT = 600          # 일반 페이지 (10분)
 CACHE_TTL_REALTIME = 300         # 실시간 출결 (5분)
+CACHE_TTL_API = 60               # 실시간 API 캐시 (운영 현황)
 CACHE_TTL_MARKET = 86400         # 시장 동향 (24시간 — ETL 주기와 동기화)
+
+# ── 실시간 API 파라미터 ──
+API_MAX_WORKERS = 8              # ThreadPoolExecutor 워커 수
+API_TIMEOUT = 30                 # API 요청 타임아웃 (초)
 
 # ── ETL 파라미터 ──
 ETL_ARCHIVE_START = dt.date(2023, 1, 1)

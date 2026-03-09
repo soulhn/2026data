@@ -351,6 +351,13 @@ def is_completed(status):
     return status.str.contains('수료|조기취업', na=False)
 
 
+def clean_time(time_str):
+    """HHMM → HH:MM 변환. 유효하지 않으면 None."""
+    if not time_str or time_str == '0000' or len(time_str) != 4:
+        return None
+    return f"{time_str[:2]}:{time_str[2:]}"
+
+
 def parse_time_to_minutes(t):
     """HH:MM 형태의 시간을 분으로 변환"""
     try:

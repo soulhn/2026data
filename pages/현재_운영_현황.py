@@ -6,9 +6,10 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_data, check_password, calc_attendance_rate, page_error_boundary
+from utils import check_password, calc_attendance_rate, page_error_boundary
+from hrd_api import get_active_data_with_fallback, get_full_attendance_logs
 from config import (
-    CACHE_TTL_REALTIME, LATE_CUTOFF_HHMM, ATTENDANCE_TARGET,
+    CACHE_TTL_API, LATE_CUTOFF_HHMM, ATTENDANCE_TARGET,
     RISK_ABSENT, RISK_LATE, RISK_EARLY_LEAVE, RECENT_TREND_DAYS,
 )
 
@@ -18,36 +19,21 @@ with page_error_boundary():
     st.title("📋 운영 현황")
 
 
-    @st.cache_data(ttl=CACHE_TTL_REALTIME)
+    @st.cache_data(ttl=CACHE_TTL_API)
     def get_active_data():
-        today_str = datetime.now().strftime('%Y-%m-%d')
-        active_courses = load_data(
-            "SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT, "
-            "TOT_FXNUM, TOT_PAR_MKS, TOT_TRP_CNT "
-            "FROM TB_COURSE_MASTER WHERE TR_END_DT >= ? ORDER BY TR_STA_DT",
-            params=[today_str],
-        )
-        if active_courses.empty:
-            return None, None, None
-        course_ids = ",".join([f"'{x}'" for x in active_courses['TRPR_ID'].unique()])
-        degrs = ",".join([str(x) for x in active_courses['TRPR_DEGR'].unique()])
-        active_trainees = load_data(
-            f"SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM, TRNEE_STATUS "
-            f"FROM TB_TRAINEE_INFO WHERE TRPR_ID IN ({course_ids}) AND TRPR_DEGR IN ({degrs})"
-        )
-        recent_logs = load_data(
-            f"SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, ATEND_DT, IN_TIME, OUT_TIME, "
-            f"ATEND_STATUS, COLLECTED_AT "
-            f"FROM TB_ATTENDANCE_LOG WHERE TRPR_ID IN ({course_ids}) AND TRPR_DEGR IN ({degrs}) ORDER BY ATEND_DT DESC"
-        )
-        return active_courses, active_trainees, recent_logs
+        return get_active_data_with_fallback()
 
 
     try:
-        courses_df, trainees_df, logs_df = get_active_data()
+        courses_df, trainees_df, logs_df, data_source = get_active_data()
     except Exception as e:
         st.error(f"데이터 로드 중 오류: {e}")
         st.stop()
+
+    if data_source == "API":
+        st.caption("실시간 (API)")
+    else:
+        st.caption("DB 기준")
 
     if courses_df is None:
         st.info("현재 진행 중인 과정이 없습니다. 꿀 같은 휴식 시간입니다! ☕")
@@ -81,6 +67,9 @@ with page_error_boundary():
             format_func=lambda x: f"{x}회차 ({courses_df[courses_df['TRPR_DEGR']==x]['TRPR_NM'].iloc[0]})",
         )
         st.divider()
+        if st.button("🔄 실시간 갱신"):
+            get_active_data.clear()
+            st.rerun()
         st.caption("💡 '미퇴실'은 입실은 했으나 퇴실 기록이 없는 상태입니다.")
 
 
@@ -359,14 +348,21 @@ with page_error_boundary():
             st.divider()
 
         # ── [4] 누적 출결 위험 지표 ──────────────────────────────────────
-        if not this_logs.empty:
+        # API 모드에서는 당월만 조회하므로 누적 지표용 전체 로그 병합
+        if data_source == "API" and not this_logs.empty:
+            full_logs_all = get_full_attendance_logs(courses_df, logs_df)
+            full_this_logs = full_logs_all[full_logs_all['TRPR_DEGR'] == selected_degr].copy()
+        else:
+            full_this_logs = this_logs
+
+        if not full_this_logs.empty:
             st.markdown("##### ⚠️ 누적 출결 위험 지표")
-            total_dates = sorted(this_logs['ATEND_DT'].unique())
+            total_dates = sorted(full_this_logs['ATEND_DT'].unique())
             st.caption(
                 f"**집계 기간:** {total_dates[0]} ~ {total_dates[-1]} (총 {len(total_dates)}일)  \n"
                 f"- 누적 결석 **{RISK_ABSENT}회 이상** / 지각 **{RISK_LATE}회 이상** / 조퇴 **{RISK_EARLY_LEAVE}회 이상**"
             )
-            cumul = this_logs.groupby('TRNEE_ID').agg(
+            cumul = full_this_logs.groupby('TRNEE_ID').agg(
                 누적_결석=('ATEND_STATUS', lambda x: (x == '결석').sum()),
                 누적_지각=('ATEND_STATUS', lambda x: (x == '지각').sum()),
                 누적_조퇴=('ATEND_STATUS', lambda x: (x == '조퇴').sum()),
@@ -375,7 +371,7 @@ with page_error_boundary():
             ).reset_index()
             cumul = cumul.merge(active_students[['TRNEE_ID', 'TRNEE_NM']], on='TRNEE_ID', how='inner')
             # 표준 출석률: 매출_분석.py 기준 (중도탈락미출석 분모 제외, 조퇴·외출 포함, 패널티 적용)
-            _att_by_stu = this_logs.groupby('TRNEE_ID').apply(calc_attendance_rate).reset_index()
+            _att_by_stu = full_this_logs.groupby('TRNEE_ID').apply(calc_attendance_rate).reset_index()
             _att_by_stu.columns = ['TRNEE_ID', '출석률(%)']
             cumul = cumul.merge(_att_by_stu, on='TRNEE_ID', how='left')
             cumul['출석률(%)'] = cumul['출석률(%)'].fillna(0.0)
@@ -409,17 +405,17 @@ with page_error_boundary():
             st.divider()
 
         # ── [4-2] 개강 초반 이탈 예측 ─────────────────────────────────────
-        if not this_logs.empty:
+        if not full_this_logs.empty:
             st.markdown("##### 🔮 개강 초반 출석 패턴 (이탈 선행 지표)")
             st.caption(
                 "개강 후 처음 14일간 출석률이 낮은 수강생은 중도탈락 위험이 높습니다. "
                 "(기준: 첫 14일 출석률 70% 미만)"
             )
-            all_dates = sorted(this_logs['ATEND_DT'].unique())
+            all_dates = sorted(full_this_logs['ATEND_DT'].unique())
             early_dates = all_dates[:14]
 
             if len(early_dates) >= 3:
-                early_logs = this_logs[this_logs['ATEND_DT'].isin(early_dates)]
+                early_logs = full_this_logs[full_this_logs['ATEND_DT'].isin(early_dates)]
                 early_agg = early_logs.groupby('TRNEE_ID').agg(
                     초반_출석=('ATEND_STATUS', lambda x: x.isin(['출석', '지각']).sum()),
                     초반_기록=('ATEND_DT', 'count'),
