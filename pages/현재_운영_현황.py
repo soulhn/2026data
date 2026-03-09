@@ -298,12 +298,8 @@ with page_error_boundary():
                     names = df[df['ATEND_STATUS'] == '외출']['TRNEE_NM'].tolist()
                 return ", ".join(names) if names else "없음"
 
-            last_collect = (
-                pd.to_datetime(this_logs['COLLECTED_AT']).max() + timedelta(hours=9)
-                if 'COLLECTED_AT' in this_logs.columns and not this_logs.empty
-                else datetime.now()
-            )
-            report_text = f"""[{last_collect.strftime('%H시 %M분')} 기준]
+            now_kst = datetime.utcnow() + timedelta(hours=9)
+            report_text = f"""[{now_kst.strftime('%H시 %M분')} 기준]
 
     - 총인원: {total_cnt}명
      ㄴ 현 인원: {not_left_cnt}명
