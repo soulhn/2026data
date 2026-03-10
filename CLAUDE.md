@@ -154,6 +154,9 @@ market_etl.py (매일 21시) →                    ←    https://playdata.stre
 
 ```
 Tag: English summary (한글 설명)
+
+- 변경 이유 / 증상 / 영향 범위를 bullet으로 기록
+- 필요 시 추가 bullet
 ```
 
 | Tag | 용도 |
@@ -167,8 +170,16 @@ Tag: English summary (한글 설명)
 
 - `Co-Authored-By` 라인 포함하지 않음
 - 영어 요약은 동사 원형으로 시작 (Add, Fix, Update, Remove 등)
+- 본문(body)은 제목 아래 빈 줄 후 작성, 변경 이유·증상·영향 범위를 bullet(`-`)으로 2~3줄 기록
 
-예시: `Fix: Correct completion rate calculation (수료율 계산 오류 수정)`
+예시:
+```
+Fix: Correct completion rate calculation (수료율 계산 오류 수정)
+
+- 수료 판정이 정확일치(=='수료')로 되어 있어 80%이상수료 등이 누락됨
+- str.contains('수료|조기취업')로 변경하여 모든 수료 유형 포함
+- home.py, 종료과정_성과.py 두 파일에 영향
+```
 
 ## 환경 변수
 
