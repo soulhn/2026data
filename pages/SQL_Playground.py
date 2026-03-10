@@ -8,7 +8,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import check_password, load_data, is_pg, DB_FILE, page_error_boundary
 
-st.set_page_config(page_title="SQL 연습", page_icon="🔍", layout="wide")
+st.set_page_config(page_title="SQL Playground", page_icon="🔍", layout="wide")
 check_password()
 
 # ── 테이블 스키마 참조 (DB_명세.py SCHEMAS 기반) ──
@@ -85,7 +85,7 @@ def _validate_query(sql: str) -> str | None:
     return None
 
 
-def _ensure_limit(sql: str, max_rows: int = 1000) -> str:
+def _ensure_limit(sql: str, max_rows: int = 100) -> str:
     """LIMIT 절이 없으면 자동 추가."""
     stripped = sql.strip().rstrip(";")
     if not re.search(r"\bLIMIT\b", stripped, re.IGNORECASE):
@@ -183,11 +183,11 @@ EXAMPLES = {
 
 
 with page_error_boundary():
-    st.title("🔍 SQL 연습")
+    st.title("🔍 SQL Playground")
     st.caption("실제 HRD-Net 데이터로 SQL 쿼리를 직접 실행해 볼 수 있습니다.")
 
     db_label = "PostgreSQL (Supabase)" if is_pg() else f"SQLite ({DB_FILE})"
-    st.info(f"현재 연결: **{db_label}** · SELECT 전용 (읽기만 가능) · LIMIT 미지정 시 최대 1,000행")
+    st.info(f"현재 연결: **{db_label}** · SELECT 전용 (읽기만 가능) · LIMIT 미지정 시 최대 100행")
     st.divider()
 
     # ── 사이드바: 테이블 구조 참조 ──
@@ -229,7 +229,7 @@ with page_error_boundary():
         else:
             final_sql = _ensure_limit(sql_input)
             if final_sql != sql_input.strip().rstrip(";"):
-                st.caption("ℹ️ LIMIT 1000이 자동으로 추가되었습니다.")
+                st.caption("ℹ️ LIMIT 100이 자동으로 추가되었습니다.")
             try:
                 t0 = time.time()
                 result_df = load_data(final_sql)
