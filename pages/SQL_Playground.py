@@ -190,13 +190,13 @@ with page_error_boundary():
     st.info(f"현재 연결: **{db_label}** · SELECT 전용 (읽기만 가능) · LIMIT 미지정 시 최대 100행")
     st.divider()
 
-    # ── 사이드바: 테이블 구조 참조 ──
-    with st.sidebar:
-        st.subheader("📋 테이블 구조 참조")
-        for tbl_name, cols in SCHEMAS.items():
-            with st.expander(tbl_name):
-                df_schema = pd.DataFrame(cols, columns=["컬럼명", "타입", "설명"])
-                st.dataframe(df_schema, hide_index=True, use_container_width=True)
+    # ── 테이블 구조 참조 ──
+    st.subheader("📋 테이블 구조 참조")
+    for tbl_name, cols in SCHEMAS.items():
+        with st.expander(tbl_name):
+            df_schema = pd.DataFrame(cols, columns=["컬럼명", "타입", "설명"])
+            st.dataframe(df_schema, hide_index=True, use_container_width=True)
+    st.divider()
 
     # ── 예제 쿼리 버튼 ──
     st.subheader("📝 예제 쿼리")
