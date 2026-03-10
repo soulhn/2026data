@@ -50,7 +50,7 @@ market_etl.py (매일 21시)        →               ←
 
 ## 네비게이션 구조
 
-`st.navigation()` 기반 8페이지 구성:
+`st.navigation()` 기반 9페이지 구성:
 
 | 페이지 | 파일 | 아이콘 | 분류 |
 |---|---|---|---|
@@ -60,6 +60,7 @@ market_etl.py (매일 21시)        →               ←
 | 현재 운영 현황 | `pages/현재_운영_현황.py` | 📋 | 내부 |
 | 매출 분석 | `pages/매출_분석.py` | 💰 | 내부 |
 | DB 명세 | `pages/DB_명세.py` | 🗄️ | 공통 |
+| SQL Playground | `pages/SQL_Playground.py` | 🔍 | 공통 |
 | AI 리포트 | `pages/AI_리포트.py` | 🤖 | AI |
 | 용어 사전 | `pages/용어_사전.py` | 📖 | 공통 |
 
@@ -92,6 +93,7 @@ market_etl.py (매일 21시)        →               ←
  ┃ ┣ 📜 현재_운영_현황.py         # [내부] 출석률 게이지, 출결추이, 누적 위험지표
  ┃ ┣ 📜 매출_분석.py              # [내부] 단위기간별 훈련비 매출 4탭 + 전체 기수 비교
  ┃ ┣ 📜 DB_명세.py               # [공통] DB 테이블·컬럼 명세 및 원본 데이터 조회
+ ┃ ┣ 📜 SQL_Playground.py       # [공통] SELECT 전용 SQL 쿼리 실행 (예제 쿼리 제공)
  ┃ ┣ 📜 AI_리포트.py             # [AI] Gemini 기반 기수별 성과 리포트 자동 생성
  ┃ ┗ 📜 용어_사전.py             # [공통] GLOSSARY.md 기반 UI 용어 사전 조회
  ┣ 📂 tests                     # pytest 테스트 (182개)

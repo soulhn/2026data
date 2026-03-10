@@ -370,6 +370,21 @@
 
 ---
 
+### pages/SQL_Playground.py — SQL Playground
+
+#### st.subheader / st.info
+
+| 현재 | 표준 | 변경 필요 |
+|------|------|----------|
+| `SQL Playground` | `SQL Playground` | - |
+| `테이블 구조 참조` | `테이블 구조 참조` | - |
+| `예제 쿼리` | `예제 쿼리` | - |
+| `SQL 쿼리 입력` | `SQL 쿼리 입력` | - |
+
+> SQL Playground는 SELECT 전용 쿼리 실행 페이지. 테이블 스키마 참조, 초급/중급/고급 예제 쿼리 제공. LIMIT 미지정 시 최대 100행 자동 추가.
+
+---
+
 ### pages/AI_리포트.py — AI 리포트
 
 | 현재 | 표준 | 변경 필요 |
