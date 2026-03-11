@@ -30,9 +30,9 @@ with page_error_boundary():
     with tab1:
         # KPI
         kpi = kpi_data[0] if kpi_data else {}
-        total_cnt = kpi.get('CNT', 0)
-        active_cnt = kpi.get('ACTIVE_CNT', 0)
-        company_cnt = kpi.get('COMPANY_CNT', 0)
+        total_cnt = int(kpi.get('CNT') or 0)
+        active_cnt = int(kpi.get('ACTIVE_CNT') or 0)
+        company_cnt = int(kpi.get('COMPANY_CNT') or 0)
 
         st.subheader("핵심 지표")
         k1, k2, k3 = st.columns(3)
