@@ -96,6 +96,47 @@ def init_all_tables():
     ''')
 
     # ==========================================
+    # [외부] 채용공고 (사람인 API)
+    # ==========================================
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS TB_JOB_POSTING (
+            JOB_ID          TEXT PRIMARY KEY,
+            ACTIVE          INTEGER,
+            COMPANY_NM      TEXT,
+            POSITION_TITLE  TEXT,
+            IND_CD          TEXT,
+            IND_NM          TEXT,
+            JOB_MID_CD      TEXT,
+            JOB_MID_NM      TEXT,
+            JOB_CD          TEXT,
+            JOB_NM          TEXT,
+            LOC_CD          TEXT,
+            LOC_NM          TEXT,
+            JOB_TYPE_CD     TEXT,
+            JOB_TYPE_NM     TEXT,
+            EDU_LV_CD       TEXT,
+            EDU_LV_NM       TEXT,
+            EXPERIENCE_CD   TEXT,
+            EXPERIENCE_MIN  INTEGER,
+            EXPERIENCE_MAX  INTEGER,
+            EXPERIENCE_NM   TEXT,
+            SALARY_CD       TEXT,
+            SALARY_NM       TEXT,
+            CLOSE_TYPE_CD   TEXT,
+            CLOSE_TYPE_NM   TEXT,
+            POSTING_DT      TEXT,
+            EXPIRATION_DT   TEXT,
+            OPENING_DT      TEXT,
+            KEYWORD         TEXT,
+            POSITION_URL    TEXT,
+            SEARCH_KEYWORD  TEXT,
+            YEAR_MONTH      TEXT,
+            REGION          TEXT,
+            COLLECTED_AT    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # ==========================================
     # [캐시] 시장 동향 집계 캐시 (ETL 후 pre-compute)
     # ==========================================
     cursor.execute('''
@@ -142,6 +183,13 @@ def init_all_tables():
         ('IDX_ATTEND_DEGR',   'TB_ATTENDANCE_LOG', 'TRPR_DEGR'),
         ('IDX_ATTEND_DATE',   'TB_ATTENDANCE_LOG', 'ATEND_DT'),
         ('IDX_COURSE_END_DT', 'TB_COURSE_MASTER',  'TR_END_DT'),
+        ('IDX_JOB_JOB_CD',       'TB_JOB_POSTING', 'JOB_CD'),
+        ('IDX_JOB_JOB_MID_CD',   'TB_JOB_POSTING', 'JOB_MID_CD'),
+        ('IDX_JOB_LOC_CD',       'TB_JOB_POSTING', 'LOC_CD'),
+        ('IDX_JOB_IND_CD',       'TB_JOB_POSTING', 'IND_CD'),
+        ('IDX_JOB_YEAR_MONTH',   'TB_JOB_POSTING', 'YEAR_MONTH'),
+        ('IDX_JOB_POSTING_DT',   'TB_JOB_POSTING', 'POSTING_DT'),
+        ('IDX_JOB_SEARCH_KW',    'TB_JOB_POSTING', 'SEARCH_KEYWORD'),
     ]
     for idx_name, table, col in indexes:
         try:

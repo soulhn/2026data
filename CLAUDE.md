@@ -8,6 +8,7 @@ python -m pytest tests/ -v      # 전체 테스트
 python init_db.py               # DB 스키마 초기화 (최초 1회)
 python hrd_etl.py               # 내부 과정/출결 ETL (수동 실행)
 python market_etl.py            # 시장 동향 ETL (30만+ records)
+python saramin_etl.py           # 채용공고 ETL (사람인 API, 일일 500회 제한)
 ```
 
 ## ⚠️ 한글 코드포인트 규칙 (CRITICAL)
@@ -28,7 +29,7 @@ HRD-Net 공공데이터 기반 훈련 과정 성과 분석 대시보드 (Streaml
 [GitHub Actions]                [Supabase]              [Streamlit Cloud]
 hrd_etl.py (평일 매시간)  →   PostgreSQL DB    ←    대시보드 (읽기 전용)
 market_etl.py (매일 21시) →                    ←    https://playdata.streamlit.app
-                                                ←    운영 현황: hrd_api.py로 API 직접 호출
+saramin_etl.py (매일 09시)→                    ←    운영 현황: hrd_api.py로 API 직접 호출
                                                      (60초 캐시, 실패 시 DB 폴백)
 ```
 
@@ -41,6 +42,7 @@ market_etl.py (매일 21시) →                    ←    https://playdata.stre
 ### ETL 자동화
 - `hrd_etl.yml` — 평일 KST 09:00~18:00 매시간
 - `market_etl.yml` — 매일 KST 21:00
+- `saramin_etl.yml` — 매일 KST 09:00 (사람인 채용공고)
 
 ## 주의사항
 
@@ -186,6 +188,7 @@ Fix: Correct completion rate calculation (수료율 계산 오류 수정)
 - `HRD_API_KEY` — HRD-Net API 인증키 (GitHub Actions + Streamlit secrets 양쪽 등록 시 운영 현황 실시간 API 활성화)
 - `HANWHA_COURSE_ID` — 내부 관리 대상 과정 ID (GitHub Actions + Streamlit secrets 양쪽 등록 필요)
 - `DATABASE_URL` — PostgreSQL 연결 문자열 (없으면 SQLite 폴백)
+- `SARAMIN_API_KEY` — 사람인 채용공고 API 키 (GitHub Actions + Streamlit secrets 등록)
 
 ## Claude Code 구조 관리
 
@@ -212,6 +215,6 @@ Fix: Correct completion rate calculation (수료율 계산 오류 수정)
 |---|---|---|
 | `SessionStart` | `compact` | 컨텍스트 압축 시 7가지 핵심 비즈니스 규칙 리마인더 재주입 |
 | `PreToolUse` | `Edit\|Write` | `.py` 파일 SQL 안티패턴 사전 차단 (`pd.read_sql` 직접 사용, `== '수료'`, `COUNT(*)` 별칭 누락) |
-| `PreToolUse` | `Bash` | `DATABASE_URL` 설정 시 ETL 스크립트(`hrd_etl.py`, `market_etl.py`, `init_db.py`) 실행 차단 |
+| `PreToolUse` | `Bash` | `DATABASE_URL` 설정 시 ETL 스크립트(`hrd_etl.py`, `market_etl.py`, `init_db.py`, `saramin_etl.py`) 실행 차단 |
 | `PostToolUse` | `Edit\|Write` | CJK 한자 析(U+6790) 감지 + ruff 미사용 import/변수 검사 |
 | `Stop` | *(전체)* | `.py` 파일 수정 턴 종료 시 `pytest -x -q` 자동 실행 |

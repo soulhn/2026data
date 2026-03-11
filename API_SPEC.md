@@ -76,3 +76,13 @@
 
 ### 주요 응답 필드 (출결 상세 `atabList`)
 `CSTMR_ID`, `CSTMR_NM`, `ATEND_DE`(출석일), `ATEND_STTUS_NM`(출결여부), `LPSIL_TIME`(입실시간), `LEVROM_TIME`(퇴실시간), `KOR_DAY_NM`(요일)
+
+---
+
+## 사람인 채용공고 API
+
+별도 명세 파일: [`SARAMIN_API_SPEC.md`](SARAMIN_API_SPEC.md)
+
+- **엔드포인트:** `https://oapi.saramin.co.kr/guide/v1/job-search`
+- **인증:** `access-key` 쿼리 파라미터, 일일 500회 제한
+- **용도:** IT 채용공고 수집 → `TB_JOB_POSTING` 테이블 → 채용 동향 대시보드
