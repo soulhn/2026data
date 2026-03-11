@@ -1,6 +1,6 @@
 # HRD-Net 훈련 과정 성과 분석 & 시장 동향 시스템
 
-> **라이브 데모**: [playdata.streamlit.app](https://playdata.streamlit.app) | **PRD**: [PRD.md](./PRD.md) | **API 명세**: [API_SPEC.md](./API_SPEC.md)
+> **라이브 데모**: [playdata.streamlit.app](https://playdata.streamlit.app) | **PRD**: [PRD.md](./docs/PRD.md) | **API 명세**: [HRD-Net](./docs/api/hrd_net.md) · [사람인](./docs/api/saramin.md) | **개발 일지**: [DEV_LOG.md](./docs/DEV_LOG.md)
 
 ## 왜 만들었는가
 
@@ -76,7 +76,7 @@ market_etl.py (매일 21시)        →               ←
 | `TB_MARKET_TREND` | 시장 동향 (전국 IT 훈련과정) | `(TRPR_ID, TRPR_DEGR)` | ~320,000 |
 | `TB_MARKET_CACHE` | ETL 사전 집계 캐시 (시장 분석 가속) | `CACHE_KEY` | ~20 |
 
-> 컬럼별 상세 명세는 대시보드 **DB 명세** 페이지에서 확인 가능. API 매핑은 [API_SPEC.md](./API_SPEC.md) 참조
+> 컬럼별 상세 명세는 대시보드 **DB 명세** 페이지에서 확인 가능. API 매핑은 [docs/api/hrd_net.md](./docs/api/hrd_net.md) 참조
 
 ---
 
@@ -113,9 +113,13 @@ market_etl.py (매일 21시)        →               ←
  ┣ 📜 hrd_api.py                # [실시간] 운영 현황 API 직접 호출 (DB 폴백)
  ┣ 📜 utils.py                  # [공통] DB 연결, adapt_query, 유틸리티
  ┣ 📜 requirements.txt          # 의존성 (pytest 포함)
- ┣ 📜 GLOSSARY.md               # UI 용어 사전 (지표 표기 기준)
- ┣ 📜 PRD.md                    # 제품 요구사항 명세
- ┣ 📜 API_SPEC.md               # HRD-Net API 명세
+ ┣ 📂 docs
+ ┃ ┣ 📜 PRD.md                    # 제품 요구사항 명세
+ ┃ ┣ 📜 GLOSSARY.md               # UI 용어 사전 (지표 표기 기준)
+ ┃ ┣ 📜 DEV_LOG.md                # 개발 일지 (의사결정·삽질 기록)
+ ┃ ┗ 📂 api
+ ┃   ┣ 📜 hrd_net.md              # HRD-Net API 명세
+ ┃   ┗ 📜 saramin.md              # 사람인 API 명세
  ┗ 📜 CLAUDE.md                 # Claude Code 프로젝트 컨텍스트
 ```
 

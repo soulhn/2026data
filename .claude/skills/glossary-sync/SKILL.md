@@ -1,10 +1,10 @@
 ---
 name: glossary-sync
-description: 코드에서 UI 용어를 추출하여 GLOSSARY.md와 대조하고 누락 항목을 등록한다
+description: 코드에서 UI 용어를 추출하여 docs/GLOSSARY.md와 대조하고 누락 항목을 등록한다
 allowed-tools: Bash(python3:*), Read, Edit, Glob, Grep
 ---
 
-코드 파일에서 UI 용어(st.metric 레이블, 테이블 컬럼, 차트 축, 탭 이름)를 자동 추출하여 GLOSSARY.md Section C와 대조한다.
+코드 파일에서 UI 용어(st.metric 레이블, 테이블 컬럼, 차트 축, 탭 이름)를 자동 추출하여 docs/GLOSSARY.md Section C와 대조한다.
 
 **인수**: `$ARGUMENTS`가 있으면 해당 파일만 스캔, 없으면 `home.py` + `pages/*.py` 전체 스캔.
 
@@ -27,11 +27,11 @@ allowed-tools: Bash(python3:*), Read, Edit, Glob, Grep
 - `st.subheader`는 스캔 대상에서 **제외** (동적 텍스트 다수)
 - 빈 문자열, 순수 숫자, 변수만으로 구성된 값은 제외
 
-## Step 2 — GLOSSARY.md 대조
+## Step 2 — docs/GLOSSARY.md 대조
 
-1. `GLOSSARY.md`를 읽고 Section C(페이지별 용어 카탈로그)에서 각 페이지의 등록된 용어 목록을 파싱
+1. `docs/GLOSSARY.md`를 읽고 Section C(페이지별 용어 카탈로그)에서 각 페이지의 등록된 용어 목록을 파싱
 2. Step 1에서 추출한 용어와 비교하여 **누락 항목** 목록 생성
-3. 역방향도 확인: GLOSSARY.md에는 있지만 코드에서 사라진 용어도 보고
+3. 역방향도 확인: docs/GLOSSARY.md에는 있지만 코드에서 사라진 용어도 보고
 
 ## Step 3 — 보고
 
@@ -52,7 +52,7 @@ allowed-tools: Bash(python3:*), Read, Edit, Glob, Grep
 - pages/구페이지.py: `옛날 지표` (metric)
 ```
 
-- 누락이 없으면 `✅ 동기화 완료 — 모든 UI 용어가 GLOSSARY.md에 등록되어 있습니다.` 출력
+- 누락이 없으면 `✅ 동기화 완료 — 모든 UI 용어가 docs/GLOSSARY.md에 등록되어 있습니다.` 출력
 - Section A 표기 규칙 위반 사항도 함께 보고 (수식어+지표 공백, 단위 표기 등)
 
 ## Step 4 — 반영 (사용자 승인 후)

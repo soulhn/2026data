@@ -81,7 +81,7 @@
 
 ## 사람인 채용공고 API
 
-별도 명세 파일: [`SARAMIN_API_SPEC.md`](SARAMIN_API_SPEC.md)
+별도 명세 파일: [`saramin.md`](saramin.md)
 
 - **엔드포인트:** `https://oapi.saramin.co.kr/guide/v1/job-search`
 - **인증:** `access-key` 쿼리 파라미터, 일일 500회 제한

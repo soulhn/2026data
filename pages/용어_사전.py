@@ -13,7 +13,7 @@ with page_error_boundary():
     st.caption("대시보드에 표시되는 지표명·단위·표기 기준을 확인합니다.")
 
     # ── GLOSSARY.md 읽기 & 섹션 분할 ──
-    glossary_path = Path(__file__).resolve().parent.parent / "GLOSSARY.md"
+    glossary_path = Path(__file__).resolve().parent.parent / "docs" / "GLOSSARY.md"
     raw = glossary_path.read_text(encoding="utf-8")
 
     def _extract_section(text: str, header: str, next_headers: list[str]) -> str:

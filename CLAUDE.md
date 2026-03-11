@@ -86,7 +86,7 @@ saramin_etl.py (매일 09시)→                    ←    운영 현황: hrd_ap
 - **수료 판정**: `TRNEE_STATUS.str.contains('수료|조기취업')` — HRD-Net 실제 값이 `'정상수료'`, `'80%이상수료'` 등이므로 `== '수료'` 정확일치 금지
 - **취업률 미제공 유형**: `no_empl_data` 플래그로 판별 → `"미제공"` 표시. `st.stop()`은 탭 내부 사용 금지(이후 탭 렌더링 중단) → `if/else` 패턴 사용
 - **UI 텍스트**: `st.subheader`, `st.metric`, 탭 레이블 등 화면 노출 텍스트는 한글만 사용 — 한자 혼용 금지
-- **UI 용어 표기**: 지표 표시명은 `GLOSSARY.md` 기준 준수. 수식어+지표 사이 공백 필수
+- **UI 용어 표기**: 지표 표시명은 `docs/GLOSSARY.md` 기준 준수. 수식어+지표 사이 공백 필수
 
 ## 핵심 지표 정의 (비즈니스 기준)
 
@@ -238,6 +238,26 @@ Fix: Correct completion rate calculation (수료율 계산 오류 수정)
 | `rules/` | 경로별 코딩 패턴 (`paths:` 스코프 활용) | 전역 규칙, 실행 절차 |
 | `skills/` | 순서 있는 반복 작업, 부작용 있는 명령 | 단순 단일 명령, 자동 실행 검사 |
 | `hooks/` | 항상 자동 실행 검증, 빠른 체크 | 느린 작업 (→ Skill), 사람 판단 필요 작업 |
+
+### 문서 관리 규칙
+
+문서는 `docs/` 하위에 관리한다. 루트에는 `README.md`와 `CLAUDE.md`만 둔다.
+
+| 경로 | 내용 |
+|---|---|
+| `docs/PRD.md` | 기획 문서 |
+| `docs/GLOSSARY.md` | UI 용어 사전 |
+| `docs/DEV_LOG.md` | 개발 일지 (의사결정·삽질 기록) |
+| `docs/api/` | 외부 API 명세 (hrd_net.md, saramin.md) |
+
+**자동 갱신 규칙** — 아래 작업 시 관련 문서도 함께 갱신한다:
+
+| 작업 | 갱신 대상 |
+|---|---|
+| 신규 ETL/API 추가 | `docs/api/`에 명세 파일 추가, `CLAUDE.md` 아키텍처·환경변수 업데이트 |
+| 신규 페이지 추가 | `CLAUDE.md` navigation 주의사항 확인, `docs/GLOSSARY.md` 용어 점검 |
+| 주요 기능 추가/아키텍처 변경 | `docs/DEV_LOG.md`에 결정 배경·대안·삽질 기록 추가 |
+| 비즈니스 지표 정의 변경 | `CLAUDE.md` 핵심 지표 정의 섹션 업데이트 |
 
 ### 등록된 훅 목록
 
