@@ -6,7 +6,7 @@ paths:
 
 ## UI 용어 표기 규칙
 
-지표 표시명은 `GLOSSARY.md` 기준을 따른다.
+지표 표시명은 `docs/GLOSSARY.md` 기준을 따른다.
 
 ### 띄어쓰기
 
