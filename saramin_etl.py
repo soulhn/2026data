@@ -179,6 +179,10 @@ def collect_keyword(session, keyword, api_call_count):
 
         rows, total = parse_jobs_xml(resp.content)
         if not rows:
+            if page == 0:
+                # 첫 페이지에서 결과 없으면 응답 내용 로깅
+                preview = resp.content[:500].decode('utf-8', errors='replace')
+                logger.warning(f"[{keyword}] 응답 파싱 결과 0건. 응답 미리보기: {preview}")
             break
 
         # search_keyword, year_month, region 추가
