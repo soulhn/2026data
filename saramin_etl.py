@@ -23,7 +23,7 @@ logging.basicConfig(
 
 load_dotenv()
 
-BASE_URL = "https://oapi.saramin.co.kr/guide/v1/job-search"
+BASE_URL = "https://oapi.saramin.co.kr/job-search"
 API_KEY = os.getenv("SARAMIN_API_KEY")
 
 if not API_KEY:
