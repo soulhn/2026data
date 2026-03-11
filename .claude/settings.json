@@ -51,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -c \"\nimport sys, json, os\ntry:\n    data = json.load(sys.stdin)\n    cmd = data.get('tool_input', {}).get('command', '')\n    etl_scripts = ['hrd_etl.py', 'market_etl.py', 'init_db.py']\n    if any(s in cmd for s in etl_scripts):\n        if os.environ.get('DATABASE_URL'):\n            matched = [s for s in etl_scripts if s in cmd][0]\n            print(f'[PreToolUse] \\u26d4 \\ud504\\ub85c\\ub355\\uc158 DB \\uc5f0\\uacb0 \\uc0c1\\ud0dc\\uc5d0\\uc11c {matched} \\uc2e4\\ud589 \\ucc28\\ub2e8')\n            print('DATABASE_URL\\uc774 \\uc124\\uc815\\ub418\\uc5b4 \\uc788\\uc2b5\\ub2c8\\ub2e4. \\ub85c\\uceec DB\\ub85c \\uc804\\ud658 \\ud6c4 \\uc2e4\\ud589\\ud558\\uc138\\uc694.')\n            sys.exit(2)\nexcept Exception:\n    pass\n\""
+            "command": "python3 -c \"\nimport sys, json, os\ntry:\n    data = json.load(sys.stdin)\n    cmd = data.get('tool_input', {}).get('command', '')\n    etl_scripts = ['hrd_etl.py', 'market_etl.py', 'init_db.py', 'saramin_etl.py']\n    if any(s in cmd for s in etl_scripts):\n        if os.environ.get('DATABASE_URL'):\n            matched = [s for s in etl_scripts if s in cmd][0]\n            print(f'[PreToolUse] \\u26d4 \\ud504\\ub85c\\ub355\\uc158 DB \\uc5f0\\uacb0 \\uc0c1\\ud0dc\\uc5d0\\uc11c {matched} \\uc2e4\\ud589 \\ucc28\\ub2e8')\n            print('DATABASE_URL\\uc774 \\uc124\\uc815\\ub418\\uc5b4 \\uc788\\uc2b5\\ub2c8\\ub2e4. \\ub85c\\uceec DB\\ub85c \\uc804\\ud658 \\ud6c4 \\uc2e4\\ud589\\ud558\\uc138\\uc694.')\n            sys.exit(2)\nexcept Exception:\n    pass\n\""
           }
         ]
       }

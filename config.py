@@ -15,6 +15,7 @@ CACHE_TTL_DEFAULT = 600          # 일반 페이지 (10분)
 CACHE_TTL_REALTIME = 300         # 실시간 출결 (5분)
 CACHE_TTL_API = 60               # 실시간 API 캐시 (운영 현황)
 CACHE_TTL_MARKET = 86400         # 시장 동향 (24시간 — ETL 주기와 동기화)
+CACHE_TTL_SARAMIN = 86400        # 채용 동향 (24시간 — ETL 주기와 동기화)
 
 # ── 실시간 API 파라미터 ──
 API_MAX_WORKERS = 8              # ThreadPoolExecutor 워커 수
@@ -41,6 +42,17 @@ CERT_MIN_COURSES = 5
 CERT_EMPL_MIN_COURSES = 10
 TOP_CERTS_LIMIT = 20
 RECENT_TREND_DAYS = 10
+
+# ── 사람인 채용공고 ETL ──
+SARAMIN_PAGE_SIZE = 110
+SARAMIN_MAX_PAGES = 3
+SARAMIN_API_CALL_LIMIT = 480
+SARAMIN_SLEEP_INTERVAL = 1.0
+SARAMIN_KEYWORDS = [
+    'Python', 'Java', 'JavaScript', 'React', 'Spring',
+    'AI', '백엔드', '프론트엔드', 'DevOps', '데이터',
+    '클라우드', 'Flutter', '보안', 'DBA', '쿠버네티스',
+]
 
 # ── 매출 분석 상수 ──
 DAILY_TRAINING_FEE = 145_200        # 일 훈련비 단가 (원)
@@ -104,3 +116,9 @@ class CacheKey:
     DB_MARKET_TYPE = "db_market_type"
     DB_MARKET_REGION = "db_market_region"
     DB_MARKET_YEAR = "db_market_year"
+    # saramin_etl.py 에서 생성
+    SARAMIN_KPI = "saramin_kpi"
+    SARAMIN_MONTHLY = "saramin_monthly"
+    SARAMIN_JOB_CD = "saramin_job_cd"
+    SARAMIN_LOC = "saramin_loc"
+    SARAMIN_KEYWORD_TREND = "saramin_keyword_trend"
