@@ -5,7 +5,6 @@ import os
 import time
 import datetime as dt
 
-from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 from utils import get_connection, get_retry_session, adapt_query, is_pg
@@ -39,12 +38,12 @@ LOC_CODE_TO_REGION = {
 }
 
 
-def _ts_to_date(ts_str):
-    """Unix timestamp 문자열 → YYYY-MM-DD. 실패 시 None."""
-    if not ts_str:
+def _ts_to_date(ts_val):
+    """Unix timestamp (int/str) → YYYY-MM-DD. 실패 시 None."""
+    if not ts_val:
         return None
     try:
-        return dt.datetime.fromtimestamp(int(ts_str)).strftime('%Y-%m-%d')
+        return dt.datetime.fromtimestamp(int(ts_val)).strftime('%Y-%m-%d')
     except (ValueError, TypeError, OSError):
         return None
 
@@ -57,85 +56,90 @@ def _extract_region(loc_cd):
     return LOC_CODE_TO_REGION.get(code_prefix)
 
 
-def _xml_text(el, tag):
-    """XML 요소에서 태그 텍스트 추출. CDATA 자동 처리."""
-    if el is None:
-        return ''
-    found = el.find(tag)
-    if found is None:
-        return ''
-    return found.get_text(strip=True)
+def _safe_int(val):
+    """안전한 int 변환."""
+    if val is None or val == '':
+        return None
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return None
 
 
-def parse_jobs_xml(xml_content):
-    """XML 응답에서 채용공고 목록을 파싱합니다."""
-    soup = BeautifulSoup(xml_content, 'lxml-xml')
-    jobs_tag = soup.find('jobs')
-    if not jobs_tag:
-        return [], 0
+def _get_nested(d, *keys, default=''):
+    """중첩 dict에서 안전하게 값 추출."""
+    for k in keys:
+        if not isinstance(d, dict):
+            return default
+        d = d.get(k, default)
+    return d if d is not None else default
 
-    total = int(jobs_tag.get('total', 0))
+
+def parse_jobs_json(data):
+    """JSON 응답에서 채용공고 목록을 파싱합니다."""
+    if isinstance(data, (bytes, str)):
+        data = json.loads(data)
+
+    jobs_wrapper = data.get('jobs', {})
+    total = int(jobs_wrapper.get('total', 0))
+    job_list = jobs_wrapper.get('job', [])
+
+    if not job_list:
+        return [], total
+
     rows = []
-    for job in jobs_tag.find_all('job'):
-        job_id = job.get('id', '')
+    for job in job_list:
+        job_id = str(job.get('id', ''))
         active = int(job.get('active', 0))
         url = job.get('url', '')
 
-        company = job.find('company')
-        company_nm = _xml_text(company, 'name')
+        company_nm = _get_nested(job, 'company', 'detail', 'name')
+        position = job.get('position', {})
+        title = position.get('title', '')
 
-        position = job.find('position')
-        title = _xml_text(position, 'title')
+        industry = position.get('industry', {})
+        ind_cd = str(industry.get('code', ''))
+        ind_nm = industry.get('name', '')
 
-        industry = position.find('industry') if position else None
-        ind_cd = _xml_text(industry, 'code')
-        ind_nm = _xml_text(industry, 'name')
+        location = position.get('location', {})
+        loc_cd = str(location.get('code', ''))
+        loc_nm = location.get('name', '')
 
-        location = position.find('location') if position else None
-        loc_cd = _xml_text(location, 'code')
-        loc_nm = _xml_text(location, 'name')
+        job_type = position.get('job-type', {})
+        job_type_cd = str(job_type.get('code', ''))
+        job_type_nm = job_type.get('name', '')
 
-        job_type = position.find('job-type') if position else None
-        job_type_cd = _xml_text(job_type, 'code')
-        job_type_nm = _xml_text(job_type, 'name')
+        job_mid = position.get('job-mid-code', {})
+        job_mid_cd = str(job_mid.get('code', ''))
+        job_mid_nm = job_mid.get('name', '')
 
-        job_mid = position.find('job-mid-code') if position else None
-        job_mid_cd = _xml_text(job_mid, 'code')
-        job_mid_nm = _xml_text(job_mid, 'name')
+        job_code = position.get('job-code', {})
+        job_cd = str(job_code.get('code', ''))
+        job_nm = job_code.get('name', '')
 
-        job_code = position.find('job-code') if position else None
-        job_cd = _xml_text(job_code, 'code')
-        job_nm = _xml_text(job_code, 'name')
+        exp = position.get('experience-level', {})
+        exp_cd = str(exp.get('code', ''))
+        exp_min = _safe_int(exp.get('min'))
+        exp_max = _safe_int(exp.get('max'))
+        exp_nm = exp.get('name', '')
 
-        exp = position.find('experience-level') if position else None
-        exp_cd = _xml_text(exp, 'code')
-        exp_min_str = _xml_text(exp, 'min')
-        exp_max_str = _xml_text(exp, 'max')
-        exp_min = int(exp_min_str) if exp_min_str.isdigit() else None
-        exp_max = int(exp_max_str) if exp_max_str.isdigit() else None
-        exp_nm = _xml_text(exp, 'name')
+        edu = position.get('required-education-level', {})
+        edu_cd = str(edu.get('code', ''))
+        edu_nm = edu.get('name', '')
 
-        edu = position.find('required-education-level') if position else None
-        edu_cd = _xml_text(edu, 'code')
-        edu_nm = _xml_text(edu, 'name')
+        keyword = job.get('keyword', '')
 
-        keyword = _xml_text(job, 'keyword')
+        salary = job.get('salary', {})
+        salary_cd = str(salary.get('code', ''))
+        salary_nm = salary.get('name', '')
 
-        salary = job.find('salary')
-        salary_cd = _xml_text(salary, 'code')
-        salary_nm = _xml_text(salary, 'name')
+        close_type = job.get('close-type', {})
+        close_cd = str(close_type.get('code', ''))
+        close_nm = close_type.get('name', '')
 
-        close_type = job.find('close-type')
-        close_cd = _xml_text(close_type, 'code')
-        close_nm = _xml_text(close_type, 'name')
-
-        posting_ts = _xml_text(job, 'posting-timestamp')
-        expiration_ts = _xml_text(job, 'expiration-timestamp')
-        opening_ts = _xml_text(job, 'opening-timestamp')
-
-        posting_dt = _ts_to_date(posting_ts)
-        expiration_dt = _ts_to_date(expiration_ts)
-        opening_dt = _ts_to_date(opening_ts)
+        posting_dt = _ts_to_date(job.get('posting-timestamp'))
+        expiration_dt = _ts_to_date(job.get('expiration-timestamp'))
+        opening_dt = _ts_to_date(job.get('opening-timestamp'))
 
         year_month = posting_dt[:7] if posting_dt and len(posting_dt) >= 7 else None
         region = _extract_region(loc_cd)
@@ -177,22 +181,24 @@ def collect_keyword(session, keyword, api_call_count):
             logger.error(f"[{keyword}] 페이지 {page} 요청 실패: {e}")
             break
 
-        rows, total = parse_jobs_xml(resp.content)
+        try:
+            data = resp.json()
+        except Exception:
+            preview = resp.content[:500].decode('utf-8', errors='replace')
+            logger.warning(f"[{keyword}] JSON 파싱 실패. 응답 미리보기: {preview}")
+            break
+
+        rows, total = parse_jobs_json(data)
         if not rows:
-            if page == 0:
-                # 첫 페이지에서 결과 없으면 응답 내용 로깅
-                preview = resp.content[:500].decode('utf-8', errors='replace')
-                logger.warning(f"[{keyword}] 응답 파싱 결과 0건. 응답 미리보기: {preview}")
             break
 
         # search_keyword, year_month, region 추가
         extended = []
         for r in rows:
             posting_dt = r[24]
-            year_month = posting_dt[:7] if posting_dt and len(posting_dt) >= 7 else None
-            loc_cd = r[10]
-            region = _extract_region(loc_cd)
-            extended.append(r + (keyword, year_month, region))
+            ym = posting_dt[:7] if posting_dt and len(posting_dt) >= 7 else None
+            rgn = _extract_region(r[10])
+            extended.append(r + (keyword, ym, rgn))
         all_rows.extend(extended)
 
         logger.info(f"[{keyword}] 페이지 {page}: {len(rows)}건 (전체 {total}건)")
@@ -315,7 +321,7 @@ def compute_and_cache_aggregations():
     aggs = [
         (CacheKey.SARAMIN_KPI, adapt_query("""
             SELECT COUNT(*) AS CNT,
-                   SUM(CASE WHEN ACTIVE = 1 THEN 1 ELSE 0 END) AS ACTIVE_CNT,
+                   COALESCE(SUM(CASE WHEN ACTIVE = 1 THEN 1 ELSE 0 END), 0) AS ACTIVE_CNT,
                    COUNT(DISTINCT COMPANY_NM) AS COMPANY_CNT
             FROM TB_JOB_POSTING
         """)),

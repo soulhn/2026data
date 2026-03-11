@@ -1,4 +1,5 @@
 """사람인 채용공고 ETL 테스트"""
+import json
 import pytest
 import saramin_etl
 import init_db
@@ -16,122 +17,71 @@ def mock_saramin_db(monkeypatch, mock_db_connection):
     return mock_db_connection
 
 
-SAMPLE_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
-<jobs count="2" start="0" total="2">
-  <job id="12345" active="1" url="https://saramin.co.kr/12345">
-    <company>
-      <name><![CDATA[TestCorp]]></name>
-    </company>
-    <position>
-      <title><![CDATA[Python Backend Developer]]></title>
-      <industry>
-        <code>301</code>
-        <name><![CDATA[IT]]></name>
-      </industry>
-      <location>
-        <code>101000</code>
-        <name><![CDATA[Seoul]]></name>
-      </location>
-      <job-type>
-        <code>1</code>
-        <name><![CDATA[Full-time]]></name>
-      </job-type>
-      <job-mid-code>
-        <code>2</code>
-        <name><![CDATA[IT Dev]]></name>
-      </job-mid-code>
-      <job-code>
-        <code>84</code>
-        <name><![CDATA[Backend]]></name>
-      </job-code>
-      <experience-level>
-        <code>1</code>
-        <min>0</min>
-        <max>0</max>
-        <name><![CDATA[Entry]]></name>
-      </experience-level>
-      <required-education-level>
-        <code>5</code>
-        <name><![CDATA[Bachelor]]></name>
-      </required-education-level>
-    </position>
-    <keyword><![CDATA[Python, Django]]></keyword>
-    <salary>
-      <code>99</code>
-      <name><![CDATA[TBD]]></name>
-    </salary>
-    <close-type>
-      <code>1</code>
-      <name><![CDATA[Deadline]]></name>
-    </close-type>
-    <posting-timestamp>1710000000</posting-timestamp>
-    <expiration-timestamp>1712592000</expiration-timestamp>
-    <opening-timestamp>1710000000</opening-timestamp>
-  </job>
-  <job id="67890" active="0" url="https://saramin.co.kr/67890">
-    <company>
-      <name><![CDATA[AnotherCorp]]></name>
-    </company>
-    <position>
-      <title><![CDATA[Java Developer]]></title>
-      <industry>
-        <code>302</code>
-        <name><![CDATA[SW]]></name>
-      </industry>
-      <location>
-        <code>102000</code>
-        <name><![CDATA[Gyeonggi]]></name>
-      </location>
-      <job-type>
-        <code>2</code>
-        <name><![CDATA[Contract]]></name>
-      </job-type>
-      <job-mid-code>
-        <code>2</code>
-        <name><![CDATA[IT Dev]]></name>
-      </job-mid-code>
-      <job-code>
-        <code>92</code>
-        <name><![CDATA[Server]]></name>
-      </job-code>
-      <experience-level>
-        <code>2</code>
-        <min>3</min>
-        <max>5</max>
-        <name><![CDATA[Experienced]]></name>
-      </experience-level>
-      <required-education-level>
-        <code>0</code>
-        <name><![CDATA[Any]]></name>
-      </required-education-level>
-    </position>
-    <keyword><![CDATA[Java, Spring]]></keyword>
-    <salary>
-      <code>22</code>
-      <name><![CDATA[3500]]></name>
-    </salary>
-    <close-type>
-      <code>2</code>
-      <name><![CDATA[When filled]]></name>
-    </close-type>
-    <posting-timestamp>1709900000</posting-timestamp>
-    <expiration-timestamp>1712500000</expiration-timestamp>
-    <opening-timestamp>1709900000</opening-timestamp>
-  </job>
-</jobs>
-"""
+SAMPLE_JSON = {
+    "jobs": {
+        "count": 2,
+        "start": 0,
+        "total": "2",
+        "job": [
+            {
+                "id": "12345",
+                "active": 1,
+                "url": "https://saramin.co.kr/12345",
+                "company": {"detail": {"name": "TestCorp"}},
+                "position": {
+                    "title": "Python Backend Developer",
+                    "industry": {"code": "301", "name": "IT"},
+                    "location": {"code": "101000", "name": "Seoul"},
+                    "job-type": {"code": "1", "name": "Full-time"},
+                    "job-mid-code": {"code": "2", "name": "IT Dev"},
+                    "job-code": {"code": "84", "name": "Backend"},
+                    "experience-level": {"code": "1", "min": 0, "max": 0, "name": "Entry"},
+                    "required-education-level": {"code": "5", "name": "Bachelor"},
+                },
+                "keyword": "Python, Django",
+                "salary": {"code": "99", "name": "TBD"},
+                "close-type": {"code": "1", "name": "Deadline"},
+                "posting-timestamp": "1710000000",
+                "expiration-timestamp": "1712592000",
+                "opening-timestamp": "1710000000",
+            },
+            {
+                "id": "67890",
+                "active": 0,
+                "url": "https://saramin.co.kr/67890",
+                "company": {"detail": {"name": "AnotherCorp"}},
+                "position": {
+                    "title": "Java Developer",
+                    "industry": {"code": "302", "name": "SW"},
+                    "location": {"code": "102000", "name": "Gyeonggi"},
+                    "job-type": {"code": "2", "name": "Contract"},
+                    "job-mid-code": {"code": "2", "name": "IT Dev"},
+                    "job-code": {"code": "92", "name": "Server"},
+                    "experience-level": {"code": "2", "min": 3, "max": 5, "name": "Experienced"},
+                    "required-education-level": {"code": "0", "name": "Any"},
+                },
+                "keyword": "Java, Spring",
+                "salary": {"code": "22", "name": "3500"},
+                "close-type": {"code": "2", "name": "When filled"},
+                "posting-timestamp": "1709900000",
+                "expiration-timestamp": "1712500000",
+                "opening-timestamp": "1709900000",
+            },
+        ],
+    }
+}
 
-EMPTY_XML = b"""<?xml version="1.0" encoding="UTF-8"?><jobs count="0" start="0" total="0"></jobs>"""
+EMPTY_JSON = {"jobs": {"count": 0, "start": 0, "total": "0", "job": []}}
 
 
-class TestParseJobsXml:
+class TestParseJobsJson:
     def test_parse_two_jobs(self):
-        rows, total = saramin_etl.parse_jobs_xml(SAMPLE_XML)
+        rows, total = saramin_etl.parse_jobs_json(SAMPLE_JSON)
         assert total == 2
         assert len(rows) == 2
 
     def test_first_job_fields(self):
-        rows, _ = saramin_etl.parse_jobs_xml(SAMPLE_XML)
+        rows, _ = saramin_etl.parse_jobs_json(SAMPLE_JSON)
         r = rows[0]
         assert r[0] == '12345'        # JOB_ID
         assert r[1] == 1              # ACTIVE
@@ -140,7 +90,7 @@ class TestParseJobsXml:
         assert r[10] == '101000'      # LOC_CD
 
     def test_experience_parsing(self):
-        rows, _ = saramin_etl.parse_jobs_xml(SAMPLE_XML)
+        rows, _ = saramin_etl.parse_jobs_json(SAMPLE_JSON)
         r1 = rows[0]
         assert r1[16] == '1'    # EXPERIENCE_CD
         assert r1[17] == 0      # EXPERIENCE_MIN
@@ -151,18 +101,24 @@ class TestParseJobsXml:
         assert r2[17] == 3
         assert r2[18] == 5
 
-    def test_empty_xml(self):
-        rows, total = saramin_etl.parse_jobs_xml(EMPTY_XML)
+    def test_empty_json(self):
+        rows, total = saramin_etl.parse_jobs_json(EMPTY_JSON)
         assert total == 0
         assert rows == []
 
     def test_posting_dt_converted(self):
-        rows, _ = saramin_etl.parse_jobs_xml(SAMPLE_XML)
-        # posting_dt at index 24 should be YYYY-MM-DD
+        rows, _ = saramin_etl.parse_jobs_json(SAMPLE_JSON)
         dt_str = rows[0][24]
         assert dt_str is not None
         assert len(dt_str) == 10
         assert dt_str[4] == '-'
+
+    def test_parse_from_bytes(self):
+        """bytes (resp.content) 입력도 처리 가능."""
+        raw = json.dumps(SAMPLE_JSON).encode('utf-8')
+        rows, total = saramin_etl.parse_jobs_json(raw)
+        assert total == 2
+        assert len(rows) == 2
 
 
 class TestHelpers:
@@ -171,6 +127,9 @@ class TestHelpers:
         assert saramin_etl._ts_to_date('') is None
         assert saramin_etl._ts_to_date(None) is None
         assert saramin_etl._ts_to_date('invalid') is None
+
+    def test_ts_to_date_int(self):
+        assert saramin_etl._ts_to_date(1710000000) is not None
 
     def test_extract_region(self):
         assert saramin_etl._extract_region('101000') == '서울'
@@ -185,18 +144,16 @@ class TestHelpers:
 
 class TestSaveRows:
     def test_save_and_upsert(self, mock_saramin_db):
-        rows, _ = saramin_etl.parse_jobs_xml(SAMPLE_XML)
-        # extend with search_keyword, year_month, region
+        rows, _ = saramin_etl.parse_jobs_json(SAMPLE_JSON)
         extended = [r + ('Python', r[24][:7] if r[24] else None, saramin_etl._extract_region(r[10])) for r in rows]
         saved = saramin_etl.save_rows(extended)
         assert saved == 2
 
-        # Verify data in DB
         cursor = mock_saramin_db.cursor()
         cursor.execute("SELECT COUNT(*) AS cnt FROM TB_JOB_POSTING")
         assert cursor.fetchone()[0] == 2
 
-        # Upsert same data — should not increase count
+        # Upsert same data — count stays same
         saved2 = saramin_etl.save_rows(extended)
         assert saved2 == 2
         cursor.execute("SELECT COUNT(*) AS cnt FROM TB_JOB_POSTING")
@@ -208,7 +165,7 @@ class TestSaveRows:
 
 class TestCacheAggregations:
     def test_aggregations_run(self, mock_saramin_db):
-        rows, _ = saramin_etl.parse_jobs_xml(SAMPLE_XML)
+        rows, _ = saramin_etl.parse_jobs_json(SAMPLE_JSON)
         extended = [r + ('Python', r[24][:7] if r[24] else None, saramin_etl._extract_region(r[10])) for r in rows]
         saramin_etl.save_rows(extended)
         saramin_etl.compute_and_cache_aggregations()
