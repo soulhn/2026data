@@ -44,6 +44,36 @@ saramin_etl.py (매일 09시)→                    ←    운영 현황: hrd_ap
 - `market_etl.yml` — 매일 KST 21:00
 - `saramin_etl.yml` — 매일 KST 09:00 (사람인 채용공고)
 
+### 사람인 ETL 수집 전략 (`saramin_etl.py`)
+
+| 항목 | 값 | 설정 위치 |
+|---|---|---|
+| **검색 키워드** | Python, Java, JavaScript, React, Spring, AI, 백엔드, 프론트엔드, DevOps, 데이터, 클라우드, Flutter, 보안, DBA, 쿠버네티스 (15개) | `config.SARAMIN_KEYWORDS` |
+| **페이지당 건수** | 110건 (API 최대값) | `config.SARAMIN_PAGE_SIZE` |
+| **키워드당 최대 페이지** | 3 (최대 330건/키워드) | `config.SARAMIN_MAX_PAGES` |
+| **일일 API 호출 한도** | 480회 (500회 중 안전마진) | `config.SARAMIN_API_CALL_LIMIT` |
+| **호출 간격** | 1초 | `config.SARAMIN_SLEEP_INTERVAL` |
+| **정렬** | `pd` (게시일 최신순) | `saramin_etl.py` 고정 |
+| **중복 처리** | `ON CONFLICT(JOB_ID) DO UPDATE` — 키워드 간 중복 공고 자동 병합 | `saramin_etl.py` |
+| **캐시 집계** | KPI, 월별 추이, 직무별, 지역별, 키워드별 추이 (5종) → `TB_MARKET_CACHE` | `saramin_etl.py` |
+| **응답 형식** | JSON (API 기본값) | `saramin_etl.py` |
+| **저장 테이블** | `TB_JOB_POSTING` (32 컬럼, PK: `JOB_ID`) | `init_db.py` |
+
+### 사람인 ETL 수집 전략 (`saramin_etl.py`)
+
+| 항목 | 값 | 설정 위치 |
+|---|---|---|
+| **검색 키워드** | Python, Java, JavaScript, React, Spring, AI, 백엔드, 프론트엔드, DevOps, 데이터, 클라우드, Flutter, 보안, DBA, 쿠버네티스 (15개) | `config.SARAMIN_KEYWORDS` |
+| **페이지당 건수** | 110건 (API 최대값) | `config.SARAMIN_PAGE_SIZE` |
+| **키워드당 최대 페이지** | 3 (최대 330건/키워드) | `config.SARAMIN_MAX_PAGES` |
+| **일일 API 호출 한도** | 480회 (500회 중 안전마진) | `config.SARAMIN_API_CALL_LIMIT` |
+| **호출 간격** | 1초 | `config.SARAMIN_SLEEP_INTERVAL` |
+| **정렬** | `pd` (게시일 최신순) | `saramin_etl.py` 고정 |
+| **중복 처리** | `ON CONFLICT(JOB_ID) DO UPDATE` — 키워드 간 중복 공고 자동 병합 | `saramin_etl.py` |
+| **캐시 집계** | KPI, 월별 추이, 직무별, 지역별, 키워드별 추이 (5종) → `TB_MARKET_CACHE` | `saramin_etl.py` |
+| **응답 형식** | JSON (API 기본값) | `saramin_etl.py` |
+| **저장 테이블** | `TB_JOB_POSTING` (32 컬럼, PK: `JOB_ID`) | `init_db.py` |
+
 ## 주의사항
 
 - **adapt_query() 필수**: 모든 SQL 쿼리는 `adapt_query()` 통과 → PG 호환. 직접 `pd.read_sql()` 대신 `load_data()` 사용 권장
