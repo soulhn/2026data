@@ -1,6 +1,6 @@
 # 사람인 채용공고 API 명세
 
-**Base URL:** `https://oapi.saramin.co.kr/guide/v1/`
+**Base URL:** `https://oapi.saramin.co.kr/`
 **인증:** `access-key` 쿼리 파라미터 (일일 500회 제한)
 **응답 형식:** XML(기본) 또는 JSON (`Accept: application/json` 헤더)
 
@@ -8,7 +8,7 @@
 
 ## 엔드포인트: 채용공고 검색
 
-**URL:** `https://oapi.saramin.co.kr/guide/v1/job-search`
+**URL:** `https://oapi.saramin.co.kr/job-search`
 
 ### 요청 파라미터
 
