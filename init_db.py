@@ -127,6 +127,7 @@ def init_all_tables():
             POSTING_DT      TEXT,
             EXPIRATION_DT   TEXT,
             OPENING_DT      TEXT,
+            MODIFICATION_DT TEXT,
             KEYWORD         TEXT,
             POSITION_URL    TEXT,
             SEARCH_KEYWORD  TEXT,
@@ -203,6 +204,24 @@ def init_all_tables():
             if is_pg():
                 conn.rollback()
             pass  # 이미 존재하거나 컬럼 미존재 시 무시
+
+    # ==========================================
+    # 컬럼 마이그레이션 (기존 테이블에 새 컬럼 추가)
+    # ==========================================
+    migrations = [
+        ('TB_JOB_POSTING', 'MODIFICATION_DT', 'TEXT'),
+    ]
+    for table, col, col_type in migrations:
+        try:
+            if is_pg():
+                conn.commit()
+            cursor.execute(f'ALTER TABLE {table} ADD COLUMN {col} {col_type}')
+            if is_pg():
+                conn.commit()
+        except Exception:
+            if is_pg():
+                conn.rollback()
+            pass  # 이미 존재하는 컬럼이면 무시
 
     # ==========================================
     # 백필: YEAR_MONTH, REGION (1회성)

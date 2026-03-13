@@ -140,6 +140,7 @@ def parse_jobs_json(data):
         posting_dt = _ts_to_date(job.get('posting-timestamp'))
         expiration_dt = _ts_to_date(job.get('expiration-timestamp'))
         opening_dt = _ts_to_date(job.get('opening-timestamp'))
+        modification_dt = _ts_to_date(job.get('modification-timestamp'))
 
         year_month = posting_dt[:7] if posting_dt and len(posting_dt) >= 7 else None
         region = _extract_region(loc_cd)
@@ -150,7 +151,7 @@ def parse_jobs_json(data):
             loc_cd, loc_nm, job_type_cd, job_type_nm,
             edu_cd, edu_nm, exp_cd, exp_min, exp_max, exp_nm,
             salary_cd, salary_nm, close_cd, close_nm,
-            posting_dt, expiration_dt, opening_dt,
+            posting_dt, expiration_dt, opening_dt, modification_dt,
             keyword, url,
         ))
 
@@ -171,6 +172,7 @@ def collect_keyword(session, keyword, api_call_count):
             'count': str(SARAMIN_PAGE_SIZE),
             'start': str(page * SARAMIN_PAGE_SIZE),
             'sort': 'pd',
+            'published': '1',
         }
 
         try:
@@ -220,10 +222,10 @@ _UPSERT_QUERY_RAW = '''
         LOC_CD, LOC_NM, JOB_TYPE_CD, JOB_TYPE_NM,
         EDU_LV_CD, EDU_LV_NM, EXPERIENCE_CD, EXPERIENCE_MIN, EXPERIENCE_MAX, EXPERIENCE_NM,
         SALARY_CD, SALARY_NM, CLOSE_TYPE_CD, CLOSE_TYPE_NM,
-        POSTING_DT, EXPIRATION_DT, OPENING_DT,
+        POSTING_DT, EXPIRATION_DT, OPENING_DT, MODIFICATION_DT,
         KEYWORD, POSITION_URL,
         SEARCH_KEYWORD, YEAR_MONTH, REGION
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(JOB_ID) DO UPDATE SET
         ACTIVE=excluded.ACTIVE,
         COMPANY_NM=excluded.COMPANY_NM,
@@ -251,6 +253,7 @@ _UPSERT_QUERY_RAW = '''
         POSTING_DT=excluded.POSTING_DT,
         EXPIRATION_DT=excluded.EXPIRATION_DT,
         OPENING_DT=excluded.OPENING_DT,
+        MODIFICATION_DT=excluded.MODIFICATION_DT,
         KEYWORD=excluded.KEYWORD,
         POSITION_URL=excluded.POSITION_URL,
         SEARCH_KEYWORD=excluded.SEARCH_KEYWORD,
