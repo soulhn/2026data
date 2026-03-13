@@ -218,12 +218,12 @@ def collect_keyword(session, keyword, api_call_count):
             rgn = _extract_region(r[10])
             all_extended.append(r + (keyword, ym, rgn))
 
-        start_offset += len(rows)
+        start_offset += 1
 
         if page == 0:
             logger.info(f"[{keyword}] 전체 {total}건, 페이지당 {SARAMIN_PAGE_SIZE}건, 최대 {SARAMIN_MAX_PAGES}페이지")
 
-        if start_offset >= total:
+        if start_offset * SARAMIN_PAGE_SIZE >= total:
             break
 
     logger.info(f"[{keyword}] {len(all_extended)}건 수집 완료 (API {page + 1}회 호출)")
