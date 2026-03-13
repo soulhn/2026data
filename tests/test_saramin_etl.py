@@ -173,4 +173,4 @@ class TestCacheAggregations:
         cursor = mock_saramin_db.cursor()
         cursor.execute("SELECT COUNT(*) AS cnt FROM TB_MARKET_CACHE WHERE CACHE_KEY LIKE 'saramin_%'")
         count = cursor.fetchone()[0]
-        assert count == 5
+        assert count == 10
