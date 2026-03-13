@@ -1,5 +1,6 @@
 """프로젝트 전역 설정 상수"""
 import datetime as dt
+import os
 
 # ── 출결 기준 ──
 LATE_CUTOFF_HHMM = 910          # 9시 10분 이후 입실 → 지각
@@ -48,6 +49,7 @@ SARAMIN_PAGE_SIZE = 110
 SARAMIN_MAX_PAGES = 30
 SARAMIN_API_CALL_LIMIT = 480
 SARAMIN_SLEEP_INTERVAL = 1.0
+SARAMIN_PUBLISHED_DAYS = int(os.environ.get("SARAMIN_PUBLISHED_DAYS", "7"))
 SARAMIN_KEYWORDS = [
     'Python', 'Java', 'JavaScript', 'React', 'Spring',
     'AI', '백엔드', '프론트엔드', 'DevOps', '데이터',

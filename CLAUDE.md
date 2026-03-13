@@ -53,7 +53,7 @@ saramin_etl.py (매일 09시)→                    ←    운영 현황: hrd_ap
 | **키워드당 최대 페이지** | 30 (최대 3,300건/키워드, 동적 조기 종료) | `config.SARAMIN_MAX_PAGES` |
 | **일일 API 호출 한도** | 480회 (500회 중 안전마진) | `config.SARAMIN_API_CALL_LIMIT` |
 | **호출 간격** | 1초 | `config.SARAMIN_SLEEP_INTERVAL` |
-| **게시일 필터** | `published=1` (1일 이내 신규 공고만) | `saramin_etl.py` 고정 |
+| **게시일 필터** | `published=7` (7일 이내 공고, 환경변수 `SARAMIN_PUBLISHED_DAYS`로 변경 가능) | `config.SARAMIN_PUBLISHED_DAYS` |
 | **정렬** | `pd` (게시일 최신순) | `saramin_etl.py` 고정 |
 | **중복 처리** | `ON CONFLICT(JOB_ID) DO UPDATE` — 키워드 간 중복 공고 자동 병합 | `saramin_etl.py` |
 | **캐시 집계** | KPI, 월별 추이, 직무별, 지역별, 키워드별 추이 (5종) → `TB_MARKET_CACHE` | `saramin_etl.py` |
