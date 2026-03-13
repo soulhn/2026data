@@ -11,7 +11,8 @@ from utils import get_connection, get_retry_session, adapt_query, is_pg
 from init_db import init_all_tables
 from config import (
     SARAMIN_PAGE_SIZE, SARAMIN_MAX_PAGES, SARAMIN_API_CALL_LIMIT,
-    SARAMIN_SLEEP_INTERVAL, SARAMIN_KEYWORDS, ETL_BATCH_SIZE, CacheKey,
+    SARAMIN_SLEEP_INTERVAL, SARAMIN_KEYWORDS, SARAMIN_PUBLISHED_DAYS,
+    ETL_BATCH_SIZE, CacheKey,
 )
 
 logger = logging.getLogger(__name__)
@@ -172,7 +173,7 @@ def collect_keyword(session, keyword, api_call_count):
             'count': str(SARAMIN_PAGE_SIZE),
             'start': str(page * SARAMIN_PAGE_SIZE),
             'sort': 'pd',
-            'published': '1',
+            'published': str(SARAMIN_PUBLISHED_DAYS),
         }
 
         try:
