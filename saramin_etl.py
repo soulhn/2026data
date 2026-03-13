@@ -10,8 +10,8 @@ from dotenv import load_dotenv
 from utils import get_connection, get_retry_session, adapt_query, is_pg
 from init_db import init_all_tables
 from config import (
-    SARAMIN_PAGE_SIZE, SARAMIN_MAX_PAGES, SARAMIN_API_CALL_LIMIT,
-    SARAMIN_SLEEP_INTERVAL, SARAMIN_KEYWORDS, SARAMIN_PUBLISHED_DAYS,
+    SARAMIN_PAGE_SIZE, SARAMIN_API_CALL_LIMIT,
+    SARAMIN_KEYWORDS, SARAMIN_PUBLISHED_DAYS,
     ETL_BATCH_SIZE, CacheKey,
 )
 
@@ -160,59 +160,52 @@ def parse_jobs_json(data):
 
 
 def collect_keyword(session, keyword, api_call_count):
-    """단일 키워드로 채용공고 수집. (api_call_count, rows) 반환."""
-    all_rows = []
-    for page in range(SARAMIN_MAX_PAGES):
-        if api_call_count >= SARAMIN_API_CALL_LIMIT:
-            logger.warning(f"API 호출 한도 도달 ({api_call_count}회). 수집 조기 종료.")
-            break
+    """단일 키워드로 채용공고 수집. (api_call_count, rows) 반환.
 
-        params = {
-            'access-key': API_KEY,
-            'keywords': keyword,
-            'count': str(SARAMIN_PAGE_SIZE),
-            'start': str(page * SARAMIN_PAGE_SIZE),
-            'sort': 'pd',
-            'published': str(SARAMIN_PUBLISHED_DAYS),
-        }
+    사람인 API는 1회 호출당 최대 110건만 반환하며 페이징을 지원하지 않음.
+    """
+    if api_call_count >= SARAMIN_API_CALL_LIMIT:
+        logger.warning(f"API 호출 한도 도달 ({api_call_count}회). 수집 조기 종료.")
+        return api_call_count, []
 
-        try:
-            resp = session.get(BASE_URL, params=params, timeout=30)
-            api_call_count += 1
-            resp.raise_for_status()
-        except Exception as e:
-            logger.error(f"[{keyword}] 페이지 {page} 요청 실패: {e}")
-            break
+    params = {
+        'access-key': API_KEY,
+        'keywords': keyword,
+        'count': str(SARAMIN_PAGE_SIZE),
+        'start': '0',
+        'sort': 'pd',
+        'published': str(SARAMIN_PUBLISHED_DAYS),
+    }
 
-        try:
-            data = resp.json()
-        except Exception:
-            preview = resp.content[:500].decode('utf-8', errors='replace')
-            logger.warning(f"[{keyword}] JSON 파싱 실패. 응답 미리보기: {preview}")
-            break
+    try:
+        resp = session.get(BASE_URL, params=params, timeout=30)
+        api_call_count += 1
+        resp.raise_for_status()
+    except Exception as e:
+        logger.error(f"[{keyword}] 요청 실패: {e}")
+        return api_call_count, []
 
-        rows, total = parse_jobs_json(data)
-        if not rows:
-            break
+    try:
+        data = resp.json()
+    except Exception:
+        preview = resp.content[:500].decode('utf-8', errors='replace')
+        logger.warning(f"[{keyword}] JSON 파싱 실패. 응답 미리보기: {preview}")
+        return api_call_count, []
 
-        # search_keyword, year_month, region 추가
-        extended = []
-        for r in rows:
-            posting_dt = r[24]
-            ym = posting_dt[:7] if posting_dt and len(posting_dt) >= 7 else None
-            rgn = _extract_region(r[10])
-            extended.append(r + (keyword, ym, rgn))
-        all_rows.extend(extended)
+    rows, total = parse_jobs_json(data)
+    if not rows:
+        return api_call_count, []
 
-        logger.info(f"[{keyword}] 페이지 {page}: {len(rows)}건 (전체 {total}건)")
+    extended = []
+    for r in rows:
+        posting_dt = r[24]
+        ym = posting_dt[:7] if posting_dt and len(posting_dt) >= 7 else None
+        rgn = _extract_region(r[10])
+        extended.append(r + (keyword, ym, rgn))
 
-        # 더 이상 데이터 없으면 종료
-        if (page + 1) * SARAMIN_PAGE_SIZE >= total:
-            break
+    logger.info(f"[{keyword}] {len(rows)}건 수집 (전체 {total}건)")
 
-        time.sleep(SARAMIN_SLEEP_INTERVAL)
-
-    return api_call_count, all_rows
+    return api_call_count, extended
 
 
 # ── DB 저장 ──
