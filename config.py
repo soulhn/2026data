@@ -48,6 +48,7 @@ RECENT_TREND_DAYS = 10
 SARAMIN_PAGE_SIZE = 110
 SARAMIN_API_CALL_LIMIT = 480
 SARAMIN_PUBLISHED_DAYS = int(os.environ.get("SARAMIN_PUBLISHED_DAYS", "7"))
+SARAMIN_MAX_PAGES = int(os.environ.get("SARAMIN_MAX_PAGES", "5"))
 SARAMIN_KEYWORDS = [
     'Python', 'Java', 'JavaScript', 'React', 'Spring',
     'AI', '백엔드', '프론트엔드', 'DevOps', '데이터',

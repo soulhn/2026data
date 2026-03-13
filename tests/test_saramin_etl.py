@@ -141,6 +141,11 @@ class TestHelpers:
     def test_extract_region_multi_code(self):
         assert saramin_etl._extract_region('101000,102000') == '서울'
 
+    def test_published_range(self):
+        pub_min, pub_max = saramin_etl._published_range(7)
+        assert int(pub_max) > int(pub_min)
+        assert int(pub_max) - int(pub_min) >= 6 * 86400  # at least 6 days span
+
 
 class TestSaveRows:
     def test_save_and_upsert(self, mock_saramin_db):
