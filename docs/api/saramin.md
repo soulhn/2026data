@@ -28,7 +28,9 @@
 | `job_cd` | 선택 | 직무코드 (쉼표구분) |
 | `job_type` | 선택 | 근무형태코드 (쉼표구분) |
 | `edu_lv` | 선택 | 학력코드 |
-| `fields` | 선택 | 추가 응답 필드 (쉼표구분) |
+| `fields` | 선택 | 추가 응답 필드 (쉼표구분): `posting-date`, `expiration-date`, `count`, `keyword-code` 등 |
+| `sr` | 선택 | 채용형태 필터: `directhire` (직접채용만, 헤드헌팅·파견 제외) |
+| `job_mid_cd` | 선택 | 상위 직무코드 (하단 코드표 참조) |
 
 ### 응답 구조
 
