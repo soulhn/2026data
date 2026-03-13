@@ -49,7 +49,7 @@ saramin_etl.py (매일 09시)→                    ←    운영 현황: hrd_ap
 | 항목 | 값 | 설정 위치 |
 |---|---|---|
 | **검색 키워드** | Python, Java, JavaScript, React, Spring, AI, 백엔드, 프론트엔드, DevOps, 데이터, 클라우드, Flutter, 보안, DBA, 쿠버네티스 (15개) | `config.SARAMIN_KEYWORDS` |
-| **키워드당 건수** | 페이지당 최대 110건, 최대 5페이지 (550건/키워드) | `config.SARAMIN_PAGE_SIZE`, `config.SARAMIN_MAX_PAGES` |
+| **키워드당 건수** | 최대 110건/키워드 (API 페이징 미지원) | `config.SARAMIN_PAGE_SIZE` |
 | **일일 API 호출 한도** | 480회 (500회 중 안전마진) | `config.SARAMIN_API_CALL_LIMIT` |
 | **게시일 필터** | `published_min/max` unix timestamp (환경변수 `SARAMIN_PUBLISHED_DAYS`로 범위 설정, 기본 7일) | `config.SARAMIN_PUBLISHED_DAYS` |
 | **정렬** | `pd` (게시일 최신순) | `saramin_etl.py` 고정 |

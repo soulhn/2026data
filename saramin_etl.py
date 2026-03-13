@@ -12,7 +12,7 @@ from init_db import init_all_tables
 from config import (
     SARAMIN_PAGE_SIZE, SARAMIN_API_CALL_LIMIT,
     SARAMIN_KEYWORDS, SARAMIN_PUBLISHED_DAYS,
-    SARAMIN_MAX_PAGES, ETL_BATCH_SIZE, CacheKey,
+    ETL_BATCH_SIZE, CacheKey,
 )
 
 logger = logging.getLogger(__name__)
@@ -168,67 +168,55 @@ def _published_range(days):
 
 
 def collect_keyword(session, keyword, api_call_count):
-    """단일 키워드로 채용공고 수집 (페이징 지원). (api_call_count, rows) 반환."""
+    """단일 키워드로 채용공고 수집. (api_call_count, rows) 반환.
+
+    사람인 API는 1회 호출당 최대 110건만 반환하며 페이징을 지원하지 않음.
+    """
     if api_call_count >= SARAMIN_API_CALL_LIMIT:
         logger.warning(f"API 호출 한도 도달 ({api_call_count}회). 수집 조기 종료.")
         return api_call_count, []
 
     pub_min, pub_max = _published_range(SARAMIN_PUBLISHED_DAYS)
 
-    all_extended = []
-    start_offset = 0
+    params = {
+        'access-key': API_KEY,
+        'keywords': keyword,
+        'count': str(SARAMIN_PAGE_SIZE),
+        'start': '0',
+        'sort': 'pd',
+        'published_min': pub_min,
+        'published_max': pub_max,
+    }
 
-    for page in range(SARAMIN_MAX_PAGES):
-        if api_call_count >= SARAMIN_API_CALL_LIMIT:
-            logger.warning(f"API 호출 한도 도달 ({api_call_count}회). 수집 조기 종료.")
-            break
+    try:
+        resp = session.get(BASE_URL, params=params, timeout=30)
+        api_call_count += 1
+        resp.raise_for_status()
+    except Exception as e:
+        logger.error(f"[{keyword}] 요청 실패: {e}")
+        return api_call_count, []
 
-        params = {
-            'access-key': API_KEY,
-            'keywords': keyword,
-            'count': str(SARAMIN_PAGE_SIZE),
-            'start': str(start_offset),
-            'sort': 'pd',
-            'published_min': pub_min,
-            'published_max': pub_max,
-        }
+    try:
+        data = resp.json()
+    except Exception:
+        preview = resp.content[:500].decode('utf-8', errors='replace')
+        logger.warning(f"[{keyword}] JSON 파싱 실패. 응답 미리보기: {preview}")
+        return api_call_count, []
 
-        try:
-            resp = session.get(BASE_URL, params=params, timeout=30)
-            api_call_count += 1
-            resp.raise_for_status()
-        except Exception as e:
-            logger.error(f"[{keyword}] 요청 실패 (page {page}): {e}")
-            break
+    rows, total = parse_jobs_json(data)
+    if not rows:
+        return api_call_count, []
 
-        try:
-            data = resp.json()
-        except Exception:
-            preview = resp.content[:500].decode('utf-8', errors='replace')
-            logger.warning(f"[{keyword}] JSON 파싱 실패. 응답 미리보기: {preview}")
-            break
+    extended = []
+    for r in rows:
+        posting_dt = r[24]
+        ym = posting_dt[:7] if posting_dt and len(posting_dt) >= 7 else None
+        rgn = _extract_region(r[10])
+        extended.append(r + (keyword, ym, rgn))
 
-        rows, total = parse_jobs_json(data)
-        if not rows:
-            break
+    logger.info(f"[{keyword}] {len(rows)}건 수집 (전체 {total}건)")
 
-        for r in rows:
-            posting_dt = r[24]
-            ym = posting_dt[:7] if posting_dt and len(posting_dt) >= 7 else None
-            rgn = _extract_region(r[10])
-            all_extended.append(r + (keyword, ym, rgn))
-
-        start_offset += 1
-
-        if page == 0:
-            logger.info(f"[{keyword}] 전체 {total}건, 페이지당 {SARAMIN_PAGE_SIZE}건, 최대 {SARAMIN_MAX_PAGES}페이지")
-
-        if start_offset * SARAMIN_PAGE_SIZE >= total:
-            break
-
-    logger.info(f"[{keyword}] {len(all_extended)}건 수집 완료 (API {page + 1}회 호출)")
-
-    return api_call_count, all_extended
+    return api_call_count, extended
 
 
 # ── DB 저장 ──
@@ -439,7 +427,7 @@ def main():
         logger.error("SARAMIN_API_KEY가 설정되지 않았습니다. ETL 종료.")
         return
 
-    logger.info(f"[설정] published={SARAMIN_PUBLISHED_DAYS}일, 키워드 {len(SARAMIN_KEYWORDS)}개, 페이지당 {SARAMIN_PAGE_SIZE}건, 최대 {SARAMIN_MAX_PAGES}페이지")
+    logger.info(f"[설정] published={SARAMIN_PUBLISHED_DAYS}일, 키워드 {len(SARAMIN_KEYWORDS)}개, 최대 {SARAMIN_PAGE_SIZE}건/키워드")
     session = get_retry_session()
     api_call_count = 0
     total_saved = 0
