@@ -128,9 +128,11 @@ with page_error_boundary():
             fig = px.bar(
                 df_job.head(15), x='CNT', y='JOB_MID_NM',
                 orientation='h',
-                labels={'CNT': '공고수', 'JOB_MID_NM': '직무'},
             )
-            fig.update_layout(yaxis={'categoryorder': 'total ascending'}, height=400)
+            fig.update_layout(
+                yaxis={'categoryorder': 'total ascending', 'title': None},
+                xaxis_title=None, height=400,
+            )
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("진행중 공고 직무 데이터가 없습니다.")
@@ -162,10 +164,12 @@ with page_error_boundary():
             if not df_em.empty:
                 fig = px.bar(
                     df_em, x='YEAR_MONTH', y='CNT',
-                    labels={'YEAR_MONTH': '마감월', 'CNT': '공고수'},
                 )
                 fig.update_xaxes(type='category')
-                fig.update_layout(showlegend=False, height=350)
+                fig.update_layout(
+                    showlegend=False, height=350,
+                    xaxis_title=None, yaxis_title=None,
+                )
                 st.plotly_chart(fig, use_container_width=True)
             st.divider()
 
@@ -187,9 +191,11 @@ with page_error_boundary():
                 fig = px.bar(
                     df_ej.head(15), x='CNT', y='JOB_MID_NM',
                     orientation='h',
-                    labels={'CNT': '공고수', 'JOB_MID_NM': '직무'},
                 )
-                fig.update_layout(yaxis={'categoryorder': 'total ascending'}, height=400)
+                fig.update_layout(
+                    yaxis={'categoryorder': 'total ascending', 'title': None},
+                    xaxis_title=None, height=400,
+                )
                 st.plotly_chart(fig, use_container_width=True)
             st.divider()
 
@@ -217,9 +223,11 @@ with page_error_boundary():
                 fig = px.bar(
                     df_dur.head(15), x='AVG_DAYS', y='JOB_MID_NM',
                     orientation='h',
-                    labels={'AVG_DAYS': '평균 게시일', 'JOB_MID_NM': '직무'},
                 )
-                fig.update_layout(yaxis={'categoryorder': 'total ascending'}, height=400)
+                fig.update_layout(
+                    yaxis={'categoryorder': 'total ascending', 'title': None},
+                    xaxis_title=None, height=400,
+                )
                 st.plotly_chart(fig, use_container_width=True)
 
     # ================================================================
@@ -250,10 +258,12 @@ with page_error_boundary():
             df_kw_top = df_kw[df_kw['SEARCH_KEYWORD'].isin(top_kws)]
             fig = px.line(
                 df_kw_top, x='YEAR_MONTH', y='CNT', color='SEARCH_KEYWORD',
-                labels={'YEAR_MONTH': '월', 'CNT': '공고수', 'SEARCH_KEYWORD': '키워드'},
             )
             fig.update_xaxes(type='category')
-            fig.update_layout(height=400)
+            fig.update_layout(
+                height=400, xaxis_title=None, yaxis_title=None,
+                legend_title_text=None,
+            )
             st.plotly_chart(fig, use_container_width=True)
         st.divider()
 
@@ -273,7 +283,8 @@ with page_error_boundary():
         if not df_edu.empty:
             fig = px.bar(
                 df_edu, x='EDU_LV_NM', y='CNT',
-                labels={'EDU_LV_NM': '학력', 'CNT': '공고수'},
             )
-            fig.update_layout(height=350)
+            fig.update_layout(
+                height=350, xaxis_title=None, yaxis_title=None,
+            )
             st.plotly_chart(fig, use_container_width=True)
