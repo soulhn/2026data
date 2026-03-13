@@ -321,10 +321,25 @@ def compute_and_cache_aggregations():
                 conn.rollback()
             return False
 
+    today_str = dt.date.today().isoformat()
+
+    # 만료 판정: EXPIRATION_DT < 오늘 OR ACTIVE = 0
+    if is_pg():
+        expired_cond = f"(EXPIRATION_DT < '{today_str}' OR ACTIVE = 0)"
+        active_cond = f"((EXPIRATION_DT IS NULL OR EXPIRATION_DT >= '{today_str}') AND ACTIVE = 1)"
+        duration_expr = "(EXPIRATION_DT::date - POSTING_DT::date)"
+        exp_month_expr = "TO_CHAR(EXPIRATION_DT::date, 'YYYY-MM')"
+    else:
+        expired_cond = f"(EXPIRATION_DT < '{today_str}' OR ACTIVE = 0)"
+        active_cond = f"((EXPIRATION_DT IS NULL OR EXPIRATION_DT >= '{today_str}') AND ACTIVE = 1)"
+        duration_expr = "(JULIANDAY(EXPIRATION_DT) - JULIANDAY(POSTING_DT))"
+        exp_month_expr = "SUBSTR(EXPIRATION_DT, 1, 7)"
+
     aggs = [
-        (CacheKey.SARAMIN_KPI, adapt_query("""
+        (CacheKey.SARAMIN_KPI, adapt_query(f"""
             SELECT COUNT(*) AS CNT,
-                   COALESCE(SUM(CASE WHEN ACTIVE = 1 THEN 1 ELSE 0 END), 0) AS ACTIVE_CNT,
+                   COALESCE(SUM(CASE WHEN {active_cond} THEN 1 ELSE 0 END), 0) AS ACTIVE_CNT,
+                   COALESCE(SUM(CASE WHEN {expired_cond} THEN 1 ELSE 0 END), 0) AS EXPIRED_CNT,
                    COUNT(DISTINCT COMPANY_NM) AS COMPANY_CNT
             FROM TB_JOB_POSTING
         """)),
@@ -352,6 +367,44 @@ def compute_and_cache_aggregations():
             WHERE SEARCH_KEYWORD IS NOT NULL AND YEAR_MONTH IS NOT NULL
             GROUP BY SEARCH_KEYWORD, YEAR_MONTH
             ORDER BY SEARCH_KEYWORD, YEAR_MONTH
+        """)),
+        # ── 신규 5종: 진행중/종료 분리 집계 ──
+        (CacheKey.SARAMIN_ACTIVE_LOC, adapt_query(f"""
+            SELECT REGION, COUNT(*) AS CNT
+            FROM TB_JOB_POSTING
+            WHERE REGION IS NOT NULL AND {active_cond}
+            GROUP BY REGION ORDER BY CNT DESC
+        """)),
+        (CacheKey.SARAMIN_ACTIVE_JOB_CD, adapt_query(f"""
+            SELECT JOB_MID_NM, COUNT(*) AS CNT
+            FROM TB_JOB_POSTING
+            WHERE JOB_MID_NM IS NOT NULL AND JOB_MID_NM != '' AND {active_cond}
+            GROUP BY JOB_MID_NM ORDER BY CNT DESC
+        """)),
+        (CacheKey.SARAMIN_EXPIRED_MONTHLY, adapt_query(f"""
+            SELECT {exp_month_expr} AS YEAR_MONTH, COUNT(*) AS CNT
+            FROM TB_JOB_POSTING
+            WHERE EXPIRATION_DT IS NOT NULL AND {expired_cond}
+            GROUP BY {exp_month_expr} ORDER BY {exp_month_expr}
+        """)),
+        (CacheKey.SARAMIN_EXPIRED_JOB_CD, adapt_query(f"""
+            SELECT JOB_MID_NM, COUNT(*) AS CNT
+            FROM TB_JOB_POSTING
+            WHERE JOB_MID_NM IS NOT NULL AND JOB_MID_NM != '' AND {expired_cond}
+            GROUP BY JOB_MID_NM ORDER BY CNT DESC
+        """)),
+        (CacheKey.SARAMIN_POSTING_DURATION, adapt_query(f"""
+            SELECT JOB_MID_NM, AVG_DAYS, CNT FROM (
+                SELECT JOB_MID_NM,
+                       ROUND(AVG({duration_expr}), 1) AS AVG_DAYS,
+                       COUNT(*) AS CNT
+                FROM TB_JOB_POSTING
+                WHERE JOB_MID_NM IS NOT NULL AND JOB_MID_NM != ''
+                  AND POSTING_DT IS NOT NULL AND EXPIRATION_DT IS NOT NULL
+                  AND {expired_cond}
+                GROUP BY JOB_MID_NM
+            ) sub WHERE CNT >= 3
+            ORDER BY AVG_DAYS
         """)),
     ]
 
