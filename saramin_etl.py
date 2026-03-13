@@ -423,6 +423,7 @@ def main():
         logger.error("SARAMIN_API_KEY가 설정되지 않았습니다. ETL 종료.")
         return
 
+    logger.info(f"[설정] published={SARAMIN_PUBLISHED_DAYS}일, 키워드 {len(SARAMIN_KEYWORDS)}개, 페이지당 {SARAMIN_PAGE_SIZE}건")
     session = get_retry_session()
     api_call_count = 0
     total_saved = 0
