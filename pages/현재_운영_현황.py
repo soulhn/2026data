@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import check_password, calc_attendance_rate, page_error_boundary
 from hrd_api import get_active_data_with_fallback, get_full_attendance_logs
 from config import (
-    CACHE_TTL_API, LATE_CUTOFF_HHMM, ATTENDANCE_TARGET,
+    CACHE_TTL_API, LATE_CUTOFF_HHMM, CLASS_END_HHMM, ATTENDANCE_TARGET,
     RISK_ABSENT, RISK_LATE, RISK_EARLY_LEAVE, RECENT_TREND_DAYS,
 )
 
@@ -89,11 +89,27 @@ with page_error_boundary():
     )
     df_monitor['ATEND_STATUS'] = df_monitor.apply(apply_late_rule, axis=1)
 
+    # 조퇴 판정: API 상태가 '조퇴'이거나, OUT_TIME이 18시 이전인 경우
+    def _is_early_leave(row):
+        if str(row['ATEND_STATUS']).strip() == '조퇴':
+            return True
+        out = row['OUT_TIME']
+        if pd.notna(out) and str(out).strip():
+            digits = ''.join(filter(str.isdigit, str(out)))
+            if len(digits) >= 3:
+                try:
+                    return int(digits[:4]) < CLASS_END_HHMM
+                except Exception:
+                    pass
+        return False
+
+    df_monitor['IS_EARLY_LEAVE'] = df_monitor.apply(_is_early_leave, axis=1)
+
     total_cnt       = len(active_students)
     present_cnt     = len(df_monitor[df_monitor['IN_TIME'].notna()])
     not_left_cnt    = len(df_monitor[(df_monitor['IN_TIME'].notna()) & (df_monitor['OUT_TIME'].isna())])
     late_cnt        = len(df_monitor[df_monitor['ATEND_STATUS'] == '지각'])
-    early_cnt       = len(df_monitor[df_monitor['ATEND_STATUS'] == '조퇴'])
+    early_cnt       = len(df_monitor[df_monitor['IS_EARLY_LEAVE']])
     out_cnt         = len(df_monitor[df_monitor['ATEND_STATUS'] == '외출'])
     absent_students = df_monitor[df_monitor['IN_TIME'].isna()]
     real_absent_cnt = len(absent_students)
@@ -291,7 +307,7 @@ with page_error_boundary():
                     for _, row in df[df['ATEND_STATUS'] == '지각'].iterrows():
                         names.append(f"{row['TRNEE_NM']}({str(row['IN_TIME']).strip()})")
                 elif type_ == 'early':
-                    for _, row in df[df['ATEND_STATUS'] == '조퇴'].iterrows():
+                    for _, row in df[df['IS_EARLY_LEAVE']].iterrows():
                         t = str(row['OUT_TIME']).strip() if pd.notna(row['OUT_TIME']) else ''
                         names.append(f"{row['TRNEE_NM']}({t})" if t else row['TRNEE_NM'])
                 elif type_ == 'out':

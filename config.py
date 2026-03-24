@@ -4,6 +4,7 @@ import os
 
 # ── 출결 기준 ──
 LATE_CUTOFF_HHMM = 910          # 9시 10분 이후 입실 → 지각
+CLASS_END_HHMM = 1750            # 17시 50분 이전 퇴실 → 조퇴
 ATTENDANCE_TARGET = 90           # 목표 출석률 (%)
 
 # ── 누적 위험군 임계값 ──
