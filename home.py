@@ -240,26 +240,40 @@ def render_dashboard():
     with st.sidebar:
         st.info("좌측 메뉴를 선택하여 상세 분석 페이지로 이동하세요.")
         st.markdown("""
-* **📈 시장 분석:** 시장 전체 훈련과정 비교 분석
-* **💼 채용 동향:** IT 채용공고 트렌드 분석
-* **📊 종료과정 성과:** 종료된 과정의 성과 심층 분석
-* **📋 현재 운영 현황:** 현재 운영 중인 과정의 출결/이탈 관리
-* **💰 매출 분석:** 단위기간별 훈련비 청구 현황
-* **🗄️ DB 명세:** 수집 현황 및 원본 데이터 확인
-* **🤖 AI 리포트:** AI 기반 성과 분석 리포트 자동 생성
+**📊 성과 분석**
+* 종료과정 성과 · 운영 현황 · 매출 분석
+
+**🌏 외부 동향**
+* 시장 전체 훈련과정 비교 분석
+
+**💼 채용**
+* IT 채용공고 트렌드 분석
+
+**🛠️ 도구**
+* AI 리포트 · DB 명세 · SQL Playground · 용어 사전
         """)
 
 
-pg = st.navigation([
-    st.Page(render_dashboard, title="성과 대시보드", icon="🏠"),
-    st.Page("pages/시장_분석.py", title="시장 분석", icon="📈"),
-    st.Page("pages/채용_동향.py", title="채용 동향", icon="💼"),
-    st.Page("pages/종료과정_성과.py", title="종료과정 성과", icon="📊"),
-    st.Page("pages/현재_운영_현황.py", title="현재 운영 현황", icon="📋"),
-    st.Page("pages/매출_분석.py", title="매출 분석", icon="💰"),
-    st.Page("pages/DB_명세.py", title="DB 명세", icon="🗄️"),
-    st.Page("pages/SQL_Playground.py", title="SQL Playground", icon="🔍"),
-    st.Page("pages/AI_리포트.py", title="AI 리포트", icon="🤖"),
-    st.Page("pages/용어_사전.py", title="용어 사전", icon="📖"),
-])
+pg = st.navigation({
+    "개요": [
+        st.Page(render_dashboard, title="성과 대시보드", icon="🏠"),
+    ],
+    "성과 분석": [
+        st.Page("pages/종료과정_성과.py", title="종료과정 성과", icon="📊"),
+        st.Page("pages/현재_운영_현황.py", title="현재 운영 현황", icon="📋"),
+        st.Page("pages/매출_분석.py", title="매출 분석", icon="💰"),
+    ],
+    "외부 동향": [
+        st.Page("pages/시장_분석.py", title="시장 분석", icon="📈"),
+    ],
+    "채용": [
+        st.Page("pages/채용_동향.py", title="채용 동향", icon="💼"),
+    ],
+    "도구": [
+        st.Page("pages/AI_리포트.py", title="AI 리포트", icon="🤖"),
+        st.Page("pages/DB_명세.py", title="DB 명세", icon="🗄️"),
+        st.Page("pages/SQL_Playground.py", title="SQL Playground", icon="🔍"),
+        st.Page("pages/용어_사전.py", title="용어 사전", icon="📖"),
+    ],
+})
 pg.run()
