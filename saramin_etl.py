@@ -268,6 +268,35 @@ _UPSERT_QUERY_RAW = '''
 '''
 
 
+_KW_INSERT_RAW = '''
+    INSERT OR IGNORE INTO TB_JOB_POSTING_KEYWORD (JOB_ID, SEARCH_KEYWORD)
+    VALUES (?, ?)
+'''
+
+
+def save_keyword_mappings(rows):
+    """수집된 rows에서 (JOB_ID, SEARCH_KEYWORD) 쌍을 junction 테이블에 저장."""
+    if not rows:
+        return 0
+    pairs = list({(r[0], r[30]) for r in rows})
+    conn = get_connection()
+    cursor = conn.cursor()
+    kw_query = adapt_query(_KW_INSERT_RAW)
+    try:
+        if is_pg():
+            from psycopg2.extras import execute_batch
+            execute_batch(cursor, kw_query, pairs, page_size=100)
+        else:
+            cursor.executemany(kw_query, pairs)
+        conn.commit()
+        return len(pairs)
+    except Exception as e:
+        logger.error(f"키워드 매핑 저장 중 오류: {e}")
+        return 0
+    finally:
+        conn.close()
+
+
 def save_rows(rows):
     """수집된 rows를 DB에 배치 저장합니다."""
     if not rows:
@@ -367,11 +396,17 @@ def compute_and_cache_aggregations():
             GROUP BY REGION ORDER BY CNT DESC
         """)),
         (CacheKey.SARAMIN_KEYWORD_TREND, adapt_query("""
-            SELECT SEARCH_KEYWORD, YEAR_MONTH, COUNT(*) AS CNT
-            FROM TB_JOB_POSTING
-            WHERE SEARCH_KEYWORD IS NOT NULL AND YEAR_MONTH IS NOT NULL
-            GROUP BY SEARCH_KEYWORD, YEAR_MONTH
-            ORDER BY SEARCH_KEYWORD, YEAR_MONTH
+            SELECT jk.SEARCH_KEYWORD, jp.YEAR_MONTH, COUNT(*) AS CNT
+            FROM TB_JOB_POSTING_KEYWORD jk
+            JOIN TB_JOB_POSTING jp ON jk.JOB_ID = jp.JOB_ID
+            WHERE jk.SEARCH_KEYWORD IS NOT NULL AND jp.YEAR_MONTH IS NOT NULL
+            GROUP BY jk.SEARCH_KEYWORD, jp.YEAR_MONTH
+            ORDER BY jk.SEARCH_KEYWORD, jp.YEAR_MONTH
+        """)),
+        (CacheKey.SARAMIN_KEYWORD_DIST, adapt_query("""
+            SELECT SEARCH_KEYWORD, COUNT(*) AS CNT
+            FROM TB_JOB_POSTING_KEYWORD
+            GROUP BY SEARCH_KEYWORD ORDER BY CNT DESC
         """)),
         # ── 신규 5종: 진행중/종료 분리 집계 ──
         (CacheKey.SARAMIN_ACTIVE_LOC, adapt_query(f"""
@@ -440,6 +475,7 @@ def main():
         api_call_count, rows = collect_keyword(session, keyword, api_call_count)
         if rows:
             saved = save_rows(rows)
+            save_keyword_mappings(rows)
             total_saved += saved
             logger.info(f"[{keyword}] {saved}건 저장 (누적: {total_saved:,}건)")
 

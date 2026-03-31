@@ -9,8 +9,8 @@ import datetime as dt
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from utils import check_password, is_pg, load_data, page_error_boundary
-from config import CACHE_TTL_SARAMIN
+from utils import check_password, is_pg, load_data, load_cache_json, page_error_boundary
+from config import CACHE_TTL_SARAMIN, CacheKey
 
 with page_error_boundary():
     check_password()
@@ -234,22 +234,49 @@ with page_error_boundary():
     # 탭 3: 키워드 분석
     # ================================================================
     with tab3:
-        # 키워드별 추이
+        # 검색 키워드별 공고 수
+        st.subheader("검색 키워드별 공고 수")
+
+        @st.cache_data(ttl=CACHE_TTL_SARAMIN)
+        def get_keyword_dist():
+            cached = load_cache_json(CacheKey.SARAMIN_KEYWORD_DIST)
+            if cached:
+                return pd.DataFrame(cached)
+            return load_data("""
+                SELECT SEARCH_KEYWORD, COUNT(*) AS CNT
+                FROM TB_JOB_POSTING_KEYWORD
+                GROUP BY SEARCH_KEYWORD ORDER BY CNT DESC
+            """)
+
+        df_kd = get_keyword_dist()
+        if not df_kd.empty:
+            fig = px.bar(
+                df_kd, x='CNT', y='SEARCH_KEYWORD', orientation='h',
+            )
+            fig.update_layout(
+                yaxis={'categoryorder': 'total ascending', 'title': None},
+                xaxis_title=None, height=400,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("키워드 데이터가 아직 수집되지 않았습니다.")
+        st.divider()
+
+        # 키워드별 월별 추이
         st.subheader("키워드별 월별 공고 추이")
 
         @st.cache_data(ttl=CACHE_TTL_SARAMIN)
         def get_keyword_trend():
-            if is_pg():
-                month_expr = "TO_CHAR(POSTING_DT::date, 'YYYY-MM')"
-            else:
-                month_expr = "SUBSTR(POSTING_DT, 1, 7)"
-            return load_data(f"""
-                SELECT SEARCH_KEYWORD, {month_expr} AS YEAR_MONTH, COUNT(*) AS CNT
-                FROM TB_JOB_POSTING
-                WHERE SEARCH_KEYWORD IS NOT NULL AND SEARCH_KEYWORD != ''
-                  AND POSTING_DT IS NOT NULL
-                GROUP BY SEARCH_KEYWORD, {month_expr}
-                ORDER BY YEAR_MONTH
+            cached = load_cache_json(CacheKey.SARAMIN_KEYWORD_TREND)
+            if cached:
+                return pd.DataFrame(cached)
+            return load_data("""
+                SELECT jk.SEARCH_KEYWORD, jp.YEAR_MONTH, COUNT(*) AS CNT
+                FROM TB_JOB_POSTING_KEYWORD jk
+                JOIN TB_JOB_POSTING jp ON jk.JOB_ID = jp.JOB_ID
+                WHERE jk.SEARCH_KEYWORD IS NOT NULL AND jp.YEAR_MONTH IS NOT NULL
+                GROUP BY jk.SEARCH_KEYWORD, jp.YEAR_MONTH
+                ORDER BY jp.YEAR_MONTH
             """)
 
         df_kw = get_keyword_trend()

@@ -3,7 +3,7 @@
 모든 테이블의 CREATE/ALTER를 한 곳에서 관리합니다.
 """
 import sqlite3
-from utils import get_connection, DB_FILE, is_pg
+from utils import get_connection, DB_FILE, is_pg, adapt_query
 
 
 def init_all_tables():
@@ -138,6 +138,18 @@ def init_all_tables():
     ''')
 
     # ==========================================
+    # [매핑] 채용공고 ↔ 검색 키워드 (다대다)
+    # ==========================================
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS TB_JOB_POSTING_KEYWORD (
+            JOB_ID          TEXT NOT NULL,
+            SEARCH_KEYWORD  TEXT NOT NULL,
+            COLLECTED_AT    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (JOB_ID, SEARCH_KEYWORD)
+        )
+    ''')
+
+    # ==========================================
     # [캐시] 시장 동향 집계 캐시 (ETL 후 pre-compute)
     # ==========================================
     cursor.execute('''
@@ -191,6 +203,7 @@ def init_all_tables():
         ('IDX_JOB_YEAR_MONTH',   'TB_JOB_POSTING', 'YEAR_MONTH'),
         ('IDX_JOB_POSTING_DT',   'TB_JOB_POSTING', 'POSTING_DT'),
         ('IDX_JOB_SEARCH_KW',    'TB_JOB_POSTING', 'SEARCH_KEYWORD'),
+        ('IDX_JOB_KW_KEYWORD',   'TB_JOB_POSTING_KEYWORD', 'SEARCH_KEYWORD'),
     ]
     for idx_name, table, col in indexes:
         try:
@@ -247,6 +260,24 @@ def init_all_tables():
         except Exception:
             if is_pg():
                 conn.rollback()
+
+    # ==========================================
+    # 백필: TB_JOB_POSTING_KEYWORD (기존 SEARCH_KEYWORD → junction)
+    # ==========================================
+    kw_backfill = (
+        "INSERT OR IGNORE INTO TB_JOB_POSTING_KEYWORD (JOB_ID, SEARCH_KEYWORD) "
+        "SELECT JOB_ID, SEARCH_KEYWORD FROM TB_JOB_POSTING "
+        "WHERE SEARCH_KEYWORD IS NOT NULL AND SEARCH_KEYWORD != ''"
+    )
+    try:
+        if is_pg():
+            conn.commit()
+        cursor.execute(adapt_query(kw_backfill))
+        if is_pg():
+            conn.commit()
+    except Exception:
+        if is_pg():
+            conn.rollback()
 
     conn.commit()
     conn.close()

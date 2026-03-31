@@ -123,6 +123,7 @@ class CacheKey:
     SARAMIN_JOB_CD = "saramin_job_cd"
     SARAMIN_LOC = "saramin_loc"
     SARAMIN_KEYWORD_TREND = "saramin_keyword_trend"
+    SARAMIN_KEYWORD_DIST = "saramin_keyword_dist"
     SARAMIN_ACTIVE_LOC = "saramin_active_loc"
     SARAMIN_ACTIVE_JOB_CD = "saramin_active_job_cd"
     SARAMIN_EXPIRED_MONTHLY = "saramin_expired_monthly"
