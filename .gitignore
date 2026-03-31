@@ -7,3 +7,10 @@ __pycache__/
 .streamlit/secrets.toml
 settings.local.json
 
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
