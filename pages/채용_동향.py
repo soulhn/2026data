@@ -244,7 +244,8 @@ with page_error_boundary():
                 return pd.DataFrame(cached)
             return load_data("""
                 SELECT SEARCH_KEYWORD, COUNT(*) AS CNT
-                FROM TB_JOB_POSTING_KEYWORD
+                FROM TB_JOB_POSTING
+                WHERE SEARCH_KEYWORD IS NOT NULL AND SEARCH_KEYWORD != ''
                 GROUP BY SEARCH_KEYWORD ORDER BY CNT DESC
             """)
 
@@ -270,13 +271,17 @@ with page_error_boundary():
             cached = load_cache_json(CacheKey.SARAMIN_KEYWORD_TREND)
             if cached:
                 return pd.DataFrame(cached)
-            return load_data("""
-                SELECT jk.SEARCH_KEYWORD, jp.YEAR_MONTH, COUNT(*) AS CNT
-                FROM TB_JOB_POSTING_KEYWORD jk
-                JOIN TB_JOB_POSTING jp ON jk.JOB_ID = jp.JOB_ID
-                WHERE jk.SEARCH_KEYWORD IS NOT NULL AND jp.YEAR_MONTH IS NOT NULL
-                GROUP BY jk.SEARCH_KEYWORD, jp.YEAR_MONTH
-                ORDER BY jp.YEAR_MONTH
+            if is_pg():
+                month_expr = "TO_CHAR(POSTING_DT::date, 'YYYY-MM')"
+            else:
+                month_expr = "SUBSTR(POSTING_DT, 1, 7)"
+            return load_data(f"""
+                SELECT SEARCH_KEYWORD, {month_expr} AS YEAR_MONTH, COUNT(*) AS CNT
+                FROM TB_JOB_POSTING
+                WHERE SEARCH_KEYWORD IS NOT NULL AND SEARCH_KEYWORD != ''
+                  AND POSTING_DT IS NOT NULL
+                GROUP BY SEARCH_KEYWORD, {month_expr}
+                ORDER BY YEAR_MONTH
             """)
 
         df_kw = get_keyword_trend()
