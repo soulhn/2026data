@@ -271,16 +271,12 @@ with page_error_boundary():
             cached = load_cache_json(CacheKey.SARAMIN_KEYWORD_TREND)
             if cached:
                 return pd.DataFrame(cached)
-            if is_pg():
-                month_expr = "TO_CHAR(POSTING_DT::date, 'YYYY-MM')"
-            else:
-                month_expr = "SUBSTR(POSTING_DT, 1, 7)"
-            return load_data(f"""
-                SELECT SEARCH_KEYWORD, {month_expr} AS YEAR_MONTH, COUNT(*) AS CNT
+            return load_data("""
+                SELECT SEARCH_KEYWORD, YEAR_MONTH, COUNT(*) AS CNT
                 FROM TB_JOB_POSTING
                 WHERE SEARCH_KEYWORD IS NOT NULL AND SEARCH_KEYWORD != ''
-                  AND POSTING_DT IS NOT NULL
-                GROUP BY SEARCH_KEYWORD, {month_expr}
+                  AND YEAR_MONTH IS NOT NULL
+                GROUP BY SEARCH_KEYWORD, YEAR_MONTH
                 ORDER BY YEAR_MONTH
             """)
 
