@@ -168,14 +168,49 @@ class TestSaveRows:
         assert saramin_etl.save_rows([]) == 0
 
 
+class TestKeywordMappings:
+    def test_multi_keyword_preserved(self, mock_saramin_db):
+        """같은 공고가 여러 키워드로 수집되면 junction 테이블에 모두 보존됨."""
+        rows, _ = saramin_etl.parse_jobs_json(SAMPLE_JSON)
+        ext1 = [r + ('Python', r[24][:7] if r[24] else None, saramin_etl._extract_region(r[10])) for r in rows]
+        saramin_etl.save_rows(ext1)
+        saramin_etl.save_keyword_mappings(ext1)
+
+        ext2 = [r + ('AI', r[24][:7] if r[24] else None, saramin_etl._extract_region(r[10])) for r in rows]
+        saramin_etl.save_rows(ext2)
+        saramin_etl.save_keyword_mappings(ext2)
+
+        cursor = mock_saramin_db.cursor()
+        cursor.execute("SELECT COUNT(*) AS cnt FROM TB_JOB_POSTING")
+        assert cursor.fetchone()[0] == 2
+
+        cursor.execute("SELECT COUNT(*) AS cnt FROM TB_JOB_POSTING_KEYWORD")
+        assert cursor.fetchone()[0] == 4  # 2 jobs × 2 keywords
+
+    def test_duplicate_keyword_ignored(self, mock_saramin_db):
+        """같은 (JOB_ID, SEARCH_KEYWORD) 쌍은 중복 저장되지 않음."""
+        rows, _ = saramin_etl.parse_jobs_json(SAMPLE_JSON)
+        ext = [r + ('Python', r[24][:7] if r[24] else None, saramin_etl._extract_region(r[10])) for r in rows]
+        saramin_etl.save_keyword_mappings(ext)
+        saramin_etl.save_keyword_mappings(ext)
+
+        cursor = mock_saramin_db.cursor()
+        cursor.execute("SELECT COUNT(*) AS cnt FROM TB_JOB_POSTING_KEYWORD")
+        assert cursor.fetchone()[0] == 2
+
+    def test_save_empty(self, mock_saramin_db):
+        assert saramin_etl.save_keyword_mappings([]) == 0
+
+
 class TestCacheAggregations:
     def test_aggregations_run(self, mock_saramin_db):
         rows, _ = saramin_etl.parse_jobs_json(SAMPLE_JSON)
         extended = [r + ('Python', r[24][:7] if r[24] else None, saramin_etl._extract_region(r[10])) for r in rows]
         saramin_etl.save_rows(extended)
+        saramin_etl.save_keyword_mappings(extended)
         saramin_etl.compute_and_cache_aggregations()
 
         cursor = mock_saramin_db.cursor()
         cursor.execute("SELECT COUNT(*) AS cnt FROM TB_MARKET_CACHE WHERE CACHE_KEY LIKE 'saramin_%'")
         count = cursor.fetchone()[0]
-        assert count == 10
+        assert count == 11
