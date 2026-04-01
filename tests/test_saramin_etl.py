@@ -146,6 +146,21 @@ class TestHelpers:
         assert int(pub_max) > int(pub_min)
         assert int(pub_max) - int(pub_min) >= 6 * 86400  # at least 6 days span
 
+    def test_daily_ranges_count(self):
+        ranges = saramin_etl._daily_ranges(3)
+        assert len(ranges) == 4  # 3일 전, 2일 전, 1일 전, 오늘
+
+    def test_daily_ranges_each_one_day(self):
+        ranges = saramin_etl._daily_ranges(2)
+        for pub_min, pub_max in ranges:
+            span = int(pub_max) - int(pub_min)
+            assert 86300 <= span <= 86400  # 약 1일 (23:59:59 - 00:00:00)
+
+    def test_daily_ranges_no_overlap(self):
+        ranges = saramin_etl._daily_ranges(3)
+        for i in range(len(ranges) - 1):
+            assert int(ranges[i][1]) < int(ranges[i + 1][0])
+
 
 class TestSaveRows:
     def test_save_and_upsert(self, mock_saramin_db):

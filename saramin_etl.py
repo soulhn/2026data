@@ -177,61 +177,82 @@ def _published_range(days):
     return str(int(start.timestamp())), str(int(end.timestamp()))
 
 
+def _daily_ranges(days):
+    """SARAMIN_PUBLISHED_DAYS를 1일 단위로 분할하여 (min, max) 쌍 리스트 반환."""
+    now = dt.datetime.now()
+    ranges = []
+    for d in range(days, 0, -1):
+        day_start = (now - dt.timedelta(days=d)).replace(hour=0, minute=0, second=0)
+        day_end = (now - dt.timedelta(days=d)).replace(hour=23, minute=59, second=59)
+        ranges.append((str(int(day_start.timestamp())), str(int(day_end.timestamp()))))
+    # 오늘
+    today_start = now.replace(hour=0, minute=0, second=0)
+    today_end = now.replace(hour=23, minute=59, second=59)
+    ranges.append((str(int(today_start.timestamp())), str(int(today_end.timestamp()))))
+    return ranges
+
+
 def collect_keyword(session, keyword, api_call_count):
-    """단일 키워드로 채용공고 수집. (api_call_count, rows) 반환.
+    """단일 키워드로 채용공고 수집. 1일 단위로 분할 호출하여 110건 한계 대응.
 
     사람인 API는 1회 호출당 최대 110건만 반환하며 페이징을 지원하지 않음.
+    SARAMIN_PUBLISHED_DAYS 기간을 1일씩 나누어 호출하면 수집량이 N배 증가.
     """
-    if api_call_count >= SARAMIN_API_CALL_LIMIT:
-        logger.warning(f"API 호출 한도 도달 ({api_call_count}회). 수집 조기 종료.")
-        return api_call_count, []
+    all_extended = []
+    truncated_days = 0
 
-    pub_min, pub_max = _published_range(SARAMIN_PUBLISHED_DAYS)
+    for pub_min, pub_max in _daily_ranges(SARAMIN_PUBLISHED_DAYS):
+        if api_call_count >= SARAMIN_API_CALL_LIMIT:
+            logger.warning(f"API 호출 한도 도달 ({api_call_count}회). 수집 조기 종료.")
+            break
 
-    params = {
-        'access-key': API_KEY,
-        'keywords': keyword,
-        'count': str(SARAMIN_PAGE_SIZE),
-        'start': '0',
-        'sort': 'pd',
-        'published_min': pub_min,
-        'published_max': pub_max,
-    }
+        params = {
+            'access-key': API_KEY,
+            'keywords': keyword,
+            'count': str(SARAMIN_PAGE_SIZE),
+            'start': '0',
+            'sort': 'pd',
+            'published_min': pub_min,
+            'published_max': pub_max,
+        }
 
-    try:
-        resp = session.get(BASE_URL, params=params, timeout=30)
-        api_call_count += 1
-        resp.raise_for_status()
-    except Exception as e:
-        logger.error(f"[{keyword}] 요청 실패: {e}")
-        return api_call_count, []
+        try:
+            resp = session.get(BASE_URL, params=params, timeout=30)
+            api_call_count += 1
+            resp.raise_for_status()
+        except Exception as e:
+            logger.error(f"[{keyword}] 요청 실패: {e}")
+            continue
 
-    try:
-        data = resp.json()
-    except Exception:
-        preview = resp.content[:500].decode('utf-8', errors='replace')
-        logger.warning(f"[{keyword}] JSON 파싱 실패. 응답 미리보기: {preview}")
-        return api_call_count, []
+        try:
+            data = resp.json()
+        except Exception:
+            preview = resp.content[:500].decode('utf-8', errors='replace')
+            logger.warning(f"[{keyword}] JSON 파싱 실패. 응답 미리보기: {preview}")
+            continue
 
-    rows, total = parse_jobs_json(data)
-    if not rows:
-        return api_call_count, []
+        rows, total = parse_jobs_json(data)
+        if not rows:
+            continue
 
-    extended = []
-    for r in rows:
-        _ym_src = r[24] or r[26] or r[27]  # POSTING_DT or OPENING_DT or MODIFICATION_DT
-        ym = _ym_src[:7] if _ym_src and len(_ym_src) >= 7 else None
-        rgn = _extract_region(r[10])
-        extended.append(r + (keyword, ym, rgn))
+        if len(rows) >= SARAMIN_PAGE_SIZE:
+            truncated_days += 1
 
-    logger.info(f"[{keyword}] {len(rows)}건 수집 (전체 {total}건)")
-    if len(rows) >= SARAMIN_PAGE_SIZE:
+        for r in rows:
+            _ym_src = r[24] or r[26] or r[27]  # POSTING_DT or OPENING_DT or MODIFICATION_DT
+            ym = _ym_src[:7] if _ym_src and len(_ym_src) >= 7 else None
+            rgn = _extract_region(r[10])
+            all_extended.append(r + (keyword, ym, rgn))
+
+    if all_extended:
+        logger.info(f"[{keyword}] {len(all_extended)}건 수집 ({SARAMIN_PUBLISHED_DAYS + 1}일 분할)")
+    if truncated_days:
         logger.warning(
-            f"[{keyword}] 수집 건수가 PAGE_SIZE({SARAMIN_PAGE_SIZE})에 도달 — "
-            f"데이터가 잘렸을 수 있습니다. 키워드 세분화를 검토하세요."
+            f"[{keyword}] {truncated_days}일이 PAGE_SIZE({SARAMIN_PAGE_SIZE})에 도달 — "
+            f"키워드 세분화를 검토하세요."
         )
 
-    return api_call_count, extended
+    return api_call_count, all_extended
 
 
 # ── DB 저장 ──
@@ -512,7 +533,12 @@ def main():
         logger.error("SARAMIN_API_KEY가 설정되지 않았습니다. ETL 종료.")
         return
 
-    logger.info(f"[설정] published={SARAMIN_PUBLISHED_DAYS}일, 키워드 {len(SARAMIN_KEYWORDS)}개, 최대 {SARAMIN_PAGE_SIZE}건/키워드")
+    daily_calls = SARAMIN_PUBLISHED_DAYS + 1
+    logger.info(
+        f"[설정] published={SARAMIN_PUBLISHED_DAYS}일 (1일 단위 분할, "
+        f"키워드당 {daily_calls}회), 키워드 {len(SARAMIN_KEYWORDS)}개, "
+        f"최대 {SARAMIN_PAGE_SIZE}건/호출"
+    )
     session = get_retry_session()
     api_call_count = 0
     total_saved = 0
