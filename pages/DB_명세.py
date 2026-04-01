@@ -219,11 +219,15 @@ with page_error_boundary():
     @st.cache_data(ttl=CACHE_TTL_DEFAULT)
     def load_fill_rates():
         """각 테이블의 컬럼별 채움률(%) 계산. 테이블당 쿼리 1개."""
+        out = {}
         cached = load_cache_json(CacheKey.DB_FILL_RATES)
         if cached:
-            return cached
-        out = {}
-        for tbl, info in SCHEMAS.items():
+            out.update(cached)
+        # 캐시에 없는 테이블은 직접 쿼리
+        missing = [t for t in SCHEMAS if t not in out]
+        if not missing:
+            return out
+        for tbl, info in ((t, SCHEMAS[t]) for t in missing):
             exprs = []
             for col, dtype, _ in info["columns"]:
                 if dtype == "TEXT":
@@ -255,13 +259,16 @@ with page_error_boundary():
     @st.cache_data(ttl=CACHE_TTL_DEFAULT)
     def load_sample_values():
         """지정된 카테고리 컬럼의 실제 고유값 목록 조회."""
+        out = {}
         cached = load_cache_json(CacheKey.DB_SAMPLE_VALUES)
         if cached:
-            return cached
-        out = {}
+            out.update(cached)
+        missing = {t: c for t, c in SAMPLE_COLS.items() if t not in out}
+        if not missing:
+            return out
         conn = get_connection()
         cur = conn.cursor()
-        for tbl, cols in SAMPLE_COLS.items():
+        for tbl, cols in missing.items():
             out[tbl] = {}
             for col in cols:
                 try:
