@@ -48,15 +48,16 @@ saramin_etl.py (매일 09시)→                    ←    운영 현황: hrd_ap
 
 | 항목 | 값 | 설정 위치 |
 |---|---|---|
-| **검색 키워드** | Python, Java, JavaScript, React, Spring, AI, 백엔드, 프론트엔드, DevOps, 데이터, 클라우드, Flutter, 보안, DBA, 쿠버네티스 (15개) | `config.SARAMIN_KEYWORDS` |
-| **키워드당 건수** | 최대 110건/키워드 (API 페이징 미지원) | `config.SARAMIN_PAGE_SIZE` |
+| **검색 키워드** | Python 백엔드/데이터/AI, Java Spring/백엔드, JavaScript, React, Spring, AI 엔지니어/머신러닝, 백엔드, 프론트엔드, DevOps, 데이터 엔지니어/분석, 클라우드, Flutter, 보안, DBA, 쿠버네티스 (20개, 인기 키워드 세분화) | `config.SARAMIN_KEYWORDS` |
+| **키워드당 건수** | 최대 110건/키워드 (API 페이징 미지원, 도달 시 WARNING 로그) | `config.SARAMIN_PAGE_SIZE` |
 | **일일 API 호출 한도** | 480회 (500회 중 안전마진) | `config.SARAMIN_API_CALL_LIMIT` |
-| **게시일 필터** | `published_min/max` unix timestamp (환경변수 `SARAMIN_PUBLISHED_DAYS`로 범위 설정, 기본 7일) | `config.SARAMIN_PUBLISHED_DAYS` |
+| **게시일 필터** | `published_min/max` unix timestamp (환경변수 `SARAMIN_PUBLISHED_DAYS`로 범위 설정, 기본 3일) | `config.SARAMIN_PUBLISHED_DAYS` |
 | **정렬** | `pd` (게시일 최신순) | `saramin_etl.py` 고정 |
-| **중복 처리** | `ON CONFLICT(JOB_ID) DO UPDATE` — 키워드 간 중복 공고 자동 병합 | `saramin_etl.py` |
-| **캐시 집계** | KPI, 월별 추이, 직무별, 지역별, 키워드별 추이 (5종) → `TB_MARKET_CACHE` | `saramin_etl.py` |
+| **중복 처리** | `ON CONFLICT(JOB_ID) DO UPDATE` — 키워드 간 중복 공고 자동 병합, SEARCH_KEYWORD는 최초값 보존 | `saramin_etl.py` |
+| **다중 지역** | `TB_JOB_POSTING_REGION` junction 테이블로 다중 지역 공고 정확 반영 | `init_db.py` |
+| **캐시 집계** | KPI, 월별 추이, 직무별, 지역별, 키워드별 추이 등 11종 → `TB_MARKET_CACHE` | `saramin_etl.py` |
 | **응답 형식** | JSON (API 기본값) | `saramin_etl.py` |
-| **저장 테이블** | `TB_JOB_POSTING` (33 컬럼, PK: `JOB_ID`) | `init_db.py` |
+| **저장 테이블** | `TB_JOB_POSTING` (33 컬럼, PK: `JOB_ID`), `TB_JOB_POSTING_KEYWORD`, `TB_JOB_POSTING_REGION` | `init_db.py` |
 
 ## 주의사항
 

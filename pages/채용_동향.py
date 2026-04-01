@@ -66,11 +66,11 @@ with page_error_boundary():
             @st.cache_data(ttl=CACHE_TTL_SARAMIN)
             def get_active_loc():
                 return load_data(f"""
-                    SELECT REGION, COUNT(*) AS CNT
-                    FROM TB_JOB_POSTING
-                    WHERE REGION IS NOT NULL AND REGION != ''
-                      AND {active_where}
-                    GROUP BY REGION ORDER BY CNT DESC
+                    SELECT jr.REGION, COUNT(*) AS CNT
+                    FROM TB_JOB_POSTING_REGION jr
+                    JOIN TB_JOB_POSTING jp ON jr.JOB_ID = jp.JOB_ID
+                    WHERE {active_where}
+                    GROUP BY jr.REGION ORDER BY CNT DESC
                 """)
 
             df_loc = get_active_loc()

@@ -150,6 +150,18 @@ def init_all_tables():
     ''')
 
     # ==========================================
+    # [매핑] 채용공고 ↔ 지역 (다대다)
+    # ==========================================
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS TB_JOB_POSTING_REGION (
+            JOB_ID          TEXT NOT NULL,
+            REGION          TEXT NOT NULL,
+            COLLECTED_AT    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (JOB_ID, REGION)
+        )
+    ''')
+
+    # ==========================================
     # [캐시] 시장 동향 집계 캐시 (ETL 후 pre-compute)
     # ==========================================
     cursor.execute('''
@@ -216,6 +228,7 @@ def init_all_tables():
         ('IDX_JOB_POSTING_DT',   'TB_JOB_POSTING', 'POSTING_DT'),
         ('IDX_JOB_SEARCH_KW',    'TB_JOB_POSTING', 'SEARCH_KEYWORD'),
         ('IDX_JOB_KW_KEYWORD',   'TB_JOB_POSTING_KEYWORD', 'SEARCH_KEYWORD'),
+        ('IDX_JOB_RGN_REGION',   'TB_JOB_POSTING_REGION',  'REGION'),
     ]
     for idx_name, table, col in indexes:
         try:
@@ -285,6 +298,24 @@ def init_all_tables():
         if is_pg():
             conn.commit()
         cursor.execute(adapt_query(kw_backfill))
+        if is_pg():
+            conn.commit()
+    except Exception:
+        if is_pg():
+            conn.rollback()
+
+    # ==========================================
+    # 백필: TB_JOB_POSTING_REGION (기존 REGION → junction)
+    # ==========================================
+    rgn_backfill = (
+        "INSERT OR IGNORE INTO TB_JOB_POSTING_REGION (JOB_ID, REGION) "
+        "SELECT JOB_ID, REGION FROM TB_JOB_POSTING "
+        "WHERE REGION IS NOT NULL AND REGION != ''"
+    )
+    try:
+        if is_pg():
+            conn.commit()
+        cursor.execute(adapt_query(rgn_backfill))
         if is_pg():
             conn.commit()
     except Exception:

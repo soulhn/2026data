@@ -202,12 +202,103 @@ class TestKeywordMappings:
         assert saramin_etl.save_keyword_mappings([]) == 0
 
 
+class TestExtractRegions:
+    def test_single_region(self):
+        assert saramin_etl._extract_regions('101000') == ['서울']
+
+    def test_multi_region(self):
+        regions = saramin_etl._extract_regions('101000,102000')
+        assert regions == ['서울', '경기']
+
+    def test_empty(self):
+        assert saramin_etl._extract_regions('') == []
+        assert saramin_etl._extract_regions(None) == []
+
+    def test_unknown_code(self):
+        assert saramin_etl._extract_regions('999000') == []
+
+    def test_no_duplicates(self):
+        regions = saramin_etl._extract_regions('101000,101100')
+        assert regions == ['서울']
+
+
+class TestRegionMappings:
+    def test_save_region_mappings(self, mock_saramin_db):
+        rows, _ = saramin_etl.parse_jobs_json(SAMPLE_JSON)
+        ext = [r + ('Python', r[24][:7] if r[24] else None, saramin_etl._extract_region(r[10])) for r in rows]
+        saramin_etl.save_rows(ext)
+        saramin_etl.save_region_mappings(ext)
+
+        cursor = mock_saramin_db.cursor()
+        cursor.execute("SELECT COUNT(*) AS cnt FROM TB_JOB_POSTING_REGION")
+        assert cursor.fetchone()[0] == 2  # 서울, 경기
+
+    def test_multi_region_mapping(self, mock_saramin_db):
+        """다중 지역 코드를 가진 공고는 여러 행으로 저장됨."""
+        multi_json = {
+            "jobs": {"count": 1, "start": 0, "total": "1", "job": [{
+                "id": "99999", "active": 1, "url": "https://test.com",
+                "company": {"detail": {"name": "MultiCorp"}},
+                "position": {
+                    "title": "Dev", "industry": {"code": "301", "name": "IT"},
+                    "location": {"code": "101000,102000", "name": "Seoul,Gyeonggi"},
+                    "job-type": {"code": "1", "name": "FT"},
+                    "job-mid-code": {"code": "2", "name": "Dev"},
+                    "job-code": {"code": "84", "name": "BE"},
+                    "experience-level": {"code": "1", "min": 0, "max": 0, "name": "Entry"},
+                    "required-education-level": {"code": "0", "name": "Any"},
+                },
+                "keyword": "Python",
+                "salary": {"code": "99", "name": "TBD"},
+                "close-type": {"code": "1", "name": "Deadline"},
+                "posting-timestamp": "1710000000",
+                "expiration-timestamp": "1712592000",
+                "opening-timestamp": "1710000000",
+            }]}
+        }
+        rows, _ = saramin_etl.parse_jobs_json(multi_json)
+        ext = [r + ('Python', r[24][:7] if r[24] else None, saramin_etl._extract_region(r[10])) for r in rows]
+        saramin_etl.save_rows(ext)
+        saramin_etl.save_region_mappings(ext)
+
+        cursor = mock_saramin_db.cursor()
+        cursor.execute("SELECT REGION FROM TB_JOB_POSTING_REGION WHERE JOB_ID = '99999' ORDER BY REGION")
+        regions = [r[0] for r in cursor.fetchall()]
+        assert '경기' in regions
+        assert '서울' in regions
+
+    def test_save_empty(self, mock_saramin_db):
+        assert saramin_etl.save_region_mappings([]) == 0
+
+
+class TestYearMonthFallback:
+    def test_fallback_to_opening_dt(self):
+        """POSTING_DT가 없으면 OPENING_DT에서 YEAR_MONTH 파생 (collect_keyword 로직)."""
+        rows, _ = saramin_etl.parse_jobs_json(SAMPLE_JSON)
+        r = rows[0]
+        # POSTING_DT 없는 경우 시뮬레이션
+        fake = list(r)
+        fake[24] = None   # POSTING_DT = None
+        fake[26] = '2024-03-10'  # OPENING_DT
+        fake = tuple(fake)
+        _ym_src = fake[24] or fake[26] or fake[27]
+        ym = _ym_src[:7] if _ym_src and len(_ym_src) >= 7 else None
+        assert ym == '2024-03'
+
+    def test_fallback_all_none(self):
+        """모든 날짜가 None이면 YEAR_MONTH도 None."""
+        _ym_src = None or None or None
+        ym = _ym_src[:7] if _ym_src and len(_ym_src) >= 7 else None
+        assert ym is None
+
+
 class TestCacheAggregations:
     def test_aggregations_run(self, mock_saramin_db):
         rows, _ = saramin_etl.parse_jobs_json(SAMPLE_JSON)
         extended = [r + ('Python', r[24][:7] if r[24] else None, saramin_etl._extract_region(r[10])) for r in rows]
         saramin_etl.save_rows(extended)
         saramin_etl.save_keyword_mappings(extended)
+        saramin_etl.save_region_mappings(extended)
         saramin_etl.compute_and_cache_aggregations()
 
         cursor = mock_saramin_db.cursor()

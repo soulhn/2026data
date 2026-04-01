@@ -50,11 +50,24 @@ def _ts_to_date(ts_val):
 
 
 def _extract_region(loc_cd):
-    """지역코드에서 1차 지역명 추출."""
+    """지역코드에서 대표(첫 번째) 지역명 추출."""
     if not loc_cd:
         return None
     code_prefix = str(loc_cd).split(',')[0][:3]
     return LOC_CODE_TO_REGION.get(code_prefix)
+
+
+def _extract_regions(loc_cd):
+    """지역코드에서 모든 지역명 추출 (다중 지역 지원)."""
+    if not loc_cd:
+        return []
+    regions = []
+    for code in str(loc_cd).split(','):
+        prefix = code.strip()[:3]
+        region = LOC_CODE_TO_REGION.get(prefix)
+        if region and region not in regions:
+            regions.append(region)
+    return regions
 
 
 def _safe_int(val):
@@ -143,9 +156,6 @@ def parse_jobs_json(data):
         opening_dt = _ts_to_date(job.get('opening-timestamp'))
         modification_dt = _ts_to_date(job.get('modification-timestamp'))
 
-        year_month = posting_dt[:7] if posting_dt and len(posting_dt) >= 7 else None
-        region = _extract_region(loc_cd)
-
         rows.append((
             job_id, active, company_nm, title,
             ind_cd, ind_nm, job_mid_cd, job_mid_nm, job_cd, job_nm,
@@ -209,12 +219,17 @@ def collect_keyword(session, keyword, api_call_count):
 
     extended = []
     for r in rows:
-        posting_dt = r[24]
-        ym = posting_dt[:7] if posting_dt and len(posting_dt) >= 7 else None
+        _ym_src = r[24] or r[26] or r[27]  # POSTING_DT or OPENING_DT or MODIFICATION_DT
+        ym = _ym_src[:7] if _ym_src and len(_ym_src) >= 7 else None
         rgn = _extract_region(r[10])
         extended.append(r + (keyword, ym, rgn))
 
     logger.info(f"[{keyword}] {len(rows)}건 수집 (전체 {total}건)")
+    if len(rows) >= SARAMIN_PAGE_SIZE:
+        logger.warning(
+            f"[{keyword}] 수집 건수가 PAGE_SIZE({SARAMIN_PAGE_SIZE})에 도달 — "
+            f"데이터가 잘렸을 수 있습니다. 키워드 세분화를 검토하세요."
+        )
 
     return api_call_count, extended
 
@@ -261,7 +276,6 @@ _UPSERT_QUERY_RAW = '''
         MODIFICATION_DT=excluded.MODIFICATION_DT,
         KEYWORD=excluded.KEYWORD,
         POSITION_URL=excluded.POSITION_URL,
-        SEARCH_KEYWORD=excluded.SEARCH_KEYWORD,
         YEAR_MONTH=excluded.YEAR_MONTH,
         REGION=excluded.REGION,
         COLLECTED_AT=CURRENT_TIMESTAMP
@@ -270,6 +284,11 @@ _UPSERT_QUERY_RAW = '''
 
 _KW_INSERT_RAW = '''
     INSERT OR IGNORE INTO TB_JOB_POSTING_KEYWORD (JOB_ID, SEARCH_KEYWORD)
+    VALUES (?, ?)
+'''
+
+_RGN_INSERT_RAW = '''
+    INSERT OR IGNORE INTO TB_JOB_POSTING_REGION (JOB_ID, REGION)
     VALUES (?, ?)
 '''
 
@@ -292,6 +311,37 @@ def save_keyword_mappings(rows):
         return len(pairs)
     except Exception as e:
         logger.error(f"키워드 매핑 저장 중 오류: {e}")
+        return 0
+    finally:
+        conn.close()
+
+
+def save_region_mappings(rows):
+    """수집된 rows에서 (JOB_ID, REGION) 쌍을 junction 테이블에 저장 (다중 지역)."""
+    if not rows:
+        return 0
+    pairs = []
+    for r in rows:
+        job_id = r[0]
+        loc_cd = r[10]  # LOC_CD
+        for region in _extract_regions(loc_cd):
+            pairs.append((job_id, region))
+    if not pairs:
+        return 0
+    pairs = list(set(pairs))
+    conn = get_connection()
+    cursor = conn.cursor()
+    rgn_query = adapt_query(_RGN_INSERT_RAW)
+    try:
+        if is_pg():
+            from psycopg2.extras import execute_batch
+            execute_batch(cursor, rgn_query, pairs, page_size=100)
+        else:
+            cursor.executemany(rgn_query, pairs)
+        conn.commit()
+        return len(pairs)
+    except Exception as e:
+        logger.error(f"지역 매핑 저장 중 오류: {e}")
         return 0
     finally:
         conn.close()
@@ -390,10 +440,9 @@ def compute_and_cache_aggregations():
             GROUP BY JOB_MID_NM ORDER BY CNT DESC
         """)),
         (CacheKey.SARAMIN_LOC, adapt_query("""
-            SELECT REGION, COUNT(*) AS CNT
-            FROM TB_JOB_POSTING
-            WHERE REGION IS NOT NULL
-            GROUP BY REGION ORDER BY CNT DESC
+            SELECT jr.REGION, COUNT(*) AS CNT
+            FROM TB_JOB_POSTING_REGION jr
+            GROUP BY jr.REGION ORDER BY CNT DESC
         """)),
         (CacheKey.SARAMIN_KEYWORD_TREND, adapt_query("""
             SELECT jk.SEARCH_KEYWORD, jp.YEAR_MONTH, COUNT(*) AS CNT
@@ -410,10 +459,11 @@ def compute_and_cache_aggregations():
         """)),
         # ── 신규 5종: 진행중/종료 분리 집계 ──
         (CacheKey.SARAMIN_ACTIVE_LOC, adapt_query(f"""
-            SELECT REGION, COUNT(*) AS CNT
-            FROM TB_JOB_POSTING
-            WHERE REGION IS NOT NULL AND {active_cond}
-            GROUP BY REGION ORDER BY CNT DESC
+            SELECT jr.REGION, COUNT(*) AS CNT
+            FROM TB_JOB_POSTING_REGION jr
+            JOIN TB_JOB_POSTING jp ON jr.JOB_ID = jp.JOB_ID
+            WHERE {active_cond}
+            GROUP BY jr.REGION ORDER BY CNT DESC
         """)),
         (CacheKey.SARAMIN_ACTIVE_JOB_CD, adapt_query(f"""
             SELECT JOB_MID_NM, COUNT(*) AS CNT
@@ -476,6 +526,7 @@ def main():
         if rows:
             saved = save_rows(rows)
             save_keyword_mappings(rows)
+            save_region_mappings(rows)
             total_saved += saved
             logger.info(f"[{keyword}] {saved}건 저장 (누적: {total_saved:,}건)")
 

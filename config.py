@@ -48,10 +48,15 @@ RECENT_TREND_DAYS = 10
 # ── 사람인 채용공고 ETL ──
 SARAMIN_PAGE_SIZE = 110
 SARAMIN_API_CALL_LIMIT = 480
-SARAMIN_PUBLISHED_DAYS = int(os.environ.get("SARAMIN_PUBLISHED_DAYS", "7"))
+SARAMIN_PUBLISHED_DAYS = int(os.environ.get("SARAMIN_PUBLISHED_DAYS", "3"))
 SARAMIN_KEYWORDS = [
-    'Python', 'Java', 'JavaScript', 'React', 'Spring',
-    'AI', '백엔드', '프론트엔드', 'DevOps', '데이터',
+    # 인기 키워드 세분화 (110건/키워드 한계 대응)
+    'Python 백엔드', 'Python 데이터', 'Python AI',
+    'Java Spring', 'Java 백엔드',
+    'JavaScript', 'React', 'Spring',
+    'AI 엔지니어', 'AI 머신러닝',
+    '백엔드', '프론트엔드', 'DevOps',
+    '데이터 엔지니어', '데이터 분석',
     '클라우드', 'Flutter', '보안', 'DBA', '쿠버네티스',
 ]
 
