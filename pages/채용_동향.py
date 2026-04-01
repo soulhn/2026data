@@ -287,7 +287,7 @@ with page_error_boundary():
             fig = px.line(
                 df_kw_top, x='YEAR_MONTH', y='CNT', color='SEARCH_KEYWORD',
             )
-            fig.update_xaxes(type='category')
+            fig.update_xaxes(type='category', categoryorder='category ascending')
             fig.update_layout(
                 height=400, xaxis_title=None, yaxis_title=None,
                 legend_title_text=None,
