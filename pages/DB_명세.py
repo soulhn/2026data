@@ -141,6 +141,55 @@ with page_error_boundary():
                 ("COLLECTED_AT",     "TIMESTAMP", "수집 시각"),
             ],
         },
+        "TB_JOB_POSTING": {
+            "설명": "채용공고. 사람인 API에서 수집한 채용공고 원본 데이터.",
+            "PK": "JOB_ID (TEXT)",
+            "columns": [
+                ("JOB_ID",          "TEXT",      "사람인 공고 ID"),
+                ("ACTIVE",          "INTEGER",   "공고 활성 상태 (1: 진행중, 0: 마감)"),
+                ("COMPANY_NM",      "TEXT",      "기업명"),
+                ("POSITION_TITLE",  "TEXT",      "공고 제목"),
+                ("IND_CD",          "TEXT",      "업종코드"),
+                ("IND_NM",          "TEXT",      "업종명"),
+                ("JOB_MID_CD",      "TEXT",      "상위 직무코드"),
+                ("JOB_MID_NM",      "TEXT",      "상위 직무명"),
+                ("JOB_CD",          "TEXT",      "직무코드 (쉼표구분)"),
+                ("JOB_NM",          "TEXT",      "직무명 (쉼표구분)"),
+                ("LOC_CD",          "TEXT",      "지역코드"),
+                ("LOC_NM",          "TEXT",      "지역명"),
+                ("JOB_TYPE_CD",     "TEXT",      "근무형태코드"),
+                ("JOB_TYPE_NM",     "TEXT",      "근무형태명"),
+                ("EDU_LV_CD",       "TEXT",      "학력코드"),
+                ("EDU_LV_NM",       "TEXT",      "학력 요건명"),
+                ("EXPERIENCE_CD",   "TEXT",      "경력코드"),
+                ("EXPERIENCE_MIN",  "INTEGER",   "최소 경력 (년)"),
+                ("EXPERIENCE_MAX",  "INTEGER",   "최대 경력 (년)"),
+                ("EXPERIENCE_NM",   "TEXT",      "경력 요건명"),
+                ("SALARY_CD",       "TEXT",      "급여코드"),
+                ("SALARY_NM",       "TEXT",      "급여 조건명"),
+                ("CLOSE_TYPE_CD",   "TEXT",      "마감유형코드"),
+                ("CLOSE_TYPE_NM",   "TEXT",      "마감유형명"),
+                ("POSTING_DT",      "TEXT",      "게시일 (YYYY-MM-DD HH:MM:SS)"),
+                ("EXPIRATION_DT",   "TEXT",      "마감일"),
+                ("OPENING_DT",      "TEXT",      "접수 시작일"),
+                ("MODIFICATION_DT", "TEXT",      "수정일"),
+                ("KEYWORD",         "TEXT",      "공고 키워드 (API 원본, 쉼표구분)"),
+                ("POSITION_URL",    "TEXT",      "공고 URL"),
+                ("SEARCH_KEYWORD",  "TEXT",      "수집 시 사용된 검색 키워드 (마지막 매칭)"),
+                ("YEAR_MONTH",      "TEXT",      "게시 연월 (YYYY-MM)"),
+                ("REGION",          "TEXT",      "1차 지역명"),
+                ("COLLECTED_AT",    "TIMESTAMP", "수집 시각"),
+            ],
+        },
+        "TB_JOB_POSTING_KEYWORD": {
+            "설명": "채용공고-키워드 매핑. 공고와 검색 키워드 간 다대다 관계.",
+            "PK": "(JOB_ID, SEARCH_KEYWORD)",
+            "columns": [
+                ("JOB_ID",          "TEXT",      "사람인 공고 ID (FK → TB_JOB_POSTING)"),
+                ("SEARCH_KEYWORD",  "TEXT",      "수집 시 사용된 검색 키워드"),
+                ("COLLECTED_AT",    "TIMESTAMP", "수집 시각"),
+            ],
+        },
         "TB_MARKET_CACHE": {
             "설명": "집계 캐시. ETL 완료 후 시장/출결/훈련생 집계를 JSON으로 저장.",
             "PK": "CACHE_KEY (TEXT)",
@@ -158,6 +207,8 @@ with page_error_boundary():
         "TB_TRAINEE_INFO":   ["TRNEE_STATUS", "TRNEE_TYPE"],
         "TB_ATTENDANCE_LOG": ["ATEND_STATUS", "ATEND_STATUS_CD", "DAY_NM"],
         "TB_COURSE_MASTER":  ["EI_EMPL_RATE_3", "EI_EMPL_RATE_6", "HRD_EMPL_RATE_6"],
+        "TB_JOB_POSTING":    ["JOB_TYPE_NM", "EDU_LV_NM", "EXPERIENCE_NM", "SALARY_NM", "CLOSE_TYPE_NM", "SEARCH_KEYWORD", "REGION"],
+        "TB_JOB_POSTING_KEYWORD": ["SEARCH_KEYWORD"],
         "TB_MARKET_CACHE":   ["CACHE_KEY"],
     }
 
@@ -257,6 +308,9 @@ with page_error_boundary():
         s["trainee_status"] = _load_cached_dist(CacheKey.DB_TRAINEE_DIST, ['훈련생상태', '건수'])
         if s["trainee_status"] is None:
             s["trainee_status"] = load_data("SELECT TRNEE_STATUS as 훈련생상태, COUNT(*) as 건수 FROM TB_TRAINEE_INFO GROUP BY TRNEE_STATUS ORDER BY 건수 DESC")
+        s["job_region"] = load_data("SELECT REGION as 지역, COUNT(*) as 건수 FROM TB_JOB_POSTING WHERE REGION IS NOT NULL AND REGION != '' GROUP BY REGION ORDER BY 건수 DESC")
+        s["job_keyword"] = load_data("SELECT SEARCH_KEYWORD as 키워드, COUNT(*) as 건수 FROM TB_JOB_POSTING_KEYWORD GROUP BY SEARCH_KEYWORD ORDER BY 건수 DESC")
+        s["job_year_month"] = load_data("SELECT YEAR_MONTH as 연월, COUNT(*) as 건수 FROM TB_JOB_POSTING WHERE YEAR_MONTH IS NOT NULL GROUP BY YEAR_MONTH ORDER BY 연월")
         s["cache_items"]   = load_data("SELECT CACHE_KEY as 캐시키, COMPUTED_AT as 계산시각 FROM TB_MARKET_CACHE ORDER BY CACHE_KEY")
         df_last = load_data("SELECT MAX(COLLECTED_AT) AS LAST_AT FROM TB_COURSE_MASTER")
         if not df_last.empty and df_last["LAST_AT"].iloc[0]:
@@ -280,12 +334,13 @@ with page_error_boundary():
 
     # ── 수집 현황 KPI ──
     st.subheader("📡 수집 현황")
-    k1, k2, k3, k4, k5 = st.columns(5)
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
     k1.metric("수집된 과정", f"{counts.get('TB_COURSE_MASTER', 0):,}건")
     k2.metric("수집된 훈련생", f"{counts.get('TB_TRAINEE_INFO', 0):,}명")
     k3.metric("수집된 로그", f"{counts.get('TB_ATTENDANCE_LOG', 0):,}행")
     k4.metric("시장 동향", f"{counts.get('TB_MARKET_TREND', 0):,}건")
-    k5.metric("최종 수집 시각", counts.get("last_at", "-"))
+    k5.metric("채용공고", f"{counts.get('TB_JOB_POSTING', 0):,}건")
+    k6.metric("최종 수집 시각", counts.get("last_at", "-"))
     st.divider()
 
     # ==========================================
@@ -421,6 +476,23 @@ with page_error_boundary():
             elif tbl_name == "TB_TRAINEE_INFO":
                 df = counts.get("trainee_status", pd.DataFrame())
                 st.markdown("*훈련생 상태별*")
+                if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+                else: st.caption("데이터 없음")
+
+            elif tbl_name == "TB_JOB_POSTING":
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("*지역별*")
+                    df = counts.get("job_region", pd.DataFrame())
+                    if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+                with c2:
+                    st.markdown("*월별 수집 건수*")
+                    df = counts.get("job_year_month", pd.DataFrame())
+                    if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+
+            elif tbl_name == "TB_JOB_POSTING_KEYWORD":
+                st.markdown("*키워드별 매핑 건수*")
+                df = counts.get("job_keyword", pd.DataFrame())
                 if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
                 else: st.caption("데이터 없음")
 
