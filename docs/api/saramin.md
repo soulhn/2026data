@@ -213,3 +213,74 @@
 | 8 | 유통·무역·운송 |
 | 9 | 건설업 |
 | 10 | 기관·협회 |
+
+---
+
+## DB 테이블 명세
+
+### TB_JOB_POSTING
+
+채용공고 원본 데이터. PK: `JOB_ID`
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `JOB_ID` | TEXT PK | 사람인 공고 ID |
+| `ACTIVE` | INTEGER | 공고 활성 상태 (1: 진행중, 0: 마감) |
+| `COMPANY_NM` | TEXT | 기업명 |
+| `POSITION_TITLE` | TEXT | 공고 제목 |
+| `IND_CD` | TEXT | 업종코드 |
+| `IND_NM` | TEXT | 업종명 |
+| `JOB_MID_CD` | TEXT | 상위 직무코드 |
+| `JOB_MID_NM` | TEXT | 상위 직무명 (예: IT개발·데이터) |
+| `JOB_CD` | TEXT | 직무코드 (쉼표구분) |
+| `JOB_NM` | TEXT | 직무명 (쉼표구분) |
+| `LOC_CD` | TEXT | 지역코드 |
+| `LOC_NM` | TEXT | 지역명 (예: 서울 > 강남구) |
+| `JOB_TYPE_CD` | TEXT | 근무형태코드 |
+| `JOB_TYPE_NM` | TEXT | 근무형태명 (예: 정규직) |
+| `EDU_LV_CD` | TEXT | 학력코드 |
+| `EDU_LV_NM` | TEXT | 학력 요건명 |
+| `EXPERIENCE_CD` | TEXT | 경력코드 |
+| `EXPERIENCE_MIN` | INTEGER | 최소 경력 (년) |
+| `EXPERIENCE_MAX` | INTEGER | 최대 경력 (년) |
+| `EXPERIENCE_NM` | TEXT | 경력 요건명 (예: 신입, 경력) |
+| `SALARY_CD` | TEXT | 급여코드 |
+| `SALARY_NM` | TEXT | 급여 조건명 |
+| `CLOSE_TYPE_CD` | TEXT | 마감유형코드 |
+| `CLOSE_TYPE_NM` | TEXT | 마감유형명 |
+| `POSTING_DT` | TEXT | 게시일 (YYYY-MM-DD HH:MM:SS) |
+| `EXPIRATION_DT` | TEXT | 마감일 |
+| `OPENING_DT` | TEXT | 접수 시작일 |
+| `MODIFICATION_DT` | TEXT | 수정일 |
+| `KEYWORD` | TEXT | 공고 키워드 (API 원본, 쉼표구분) |
+| `POSITION_URL` | TEXT | 공고 URL |
+| `SEARCH_KEYWORD` | TEXT | 수집 시 사용된 검색 키워드 (마지막 매칭) |
+| `YEAR_MONTH` | TEXT | 게시 연월 (YYYY-MM, `POSTING_DT` 기반) |
+| `REGION` | TEXT | 1차 지역명 (`LOC_NM`에서 추출) |
+| `COLLECTED_AT` | TIMESTAMP | 수집 시각 (기본값 CURRENT_TIMESTAMP) |
+
+**인덱스:** `JOB_CD`, `JOB_MID_CD`, `LOC_CD`, `IND_CD`, `YEAR_MONTH`, `POSTING_DT`, `SEARCH_KEYWORD`
+
+**중복 처리:** `ON CONFLICT(JOB_ID) DO UPDATE` — 동일 공고가 다른 키워드로 재수집 시 업데이트
+
+### TB_JOB_POSTING_KEYWORD
+
+채용공고 ↔ 검색 키워드 다대다 매핑. 하나의 공고가 여러 키워드 검색에 매칭될 수 있음.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `JOB_ID` | TEXT | 사람인 공고 ID (FK → TB_JOB_POSTING) |
+| `SEARCH_KEYWORD` | TEXT | 수집 시 사용된 검색 키워드 |
+| `COLLECTED_AT` | TIMESTAMP | 수집 시각 |
+
+**PK:** (`JOB_ID`, `SEARCH_KEYWORD`) 복합키
+
+### TB_MARKET_CACHE
+
+ETL 후 사전 집계된 캐시 데이터. 대시보드에서 빠른 조회용.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `CACHE_KEY` | TEXT PK | 캐시 식별자 (예: `saramin_keyword_trend`) |
+| `CACHE_DATA` | TEXT | JSON 직렬화된 집계 결과 |
+| `COMPUTED_AT` | TIMESTAMP | 집계 시각 |
