@@ -322,6 +322,29 @@ def init_all_tables():
         if is_pg():
             conn.rollback()
 
+    # ==========================================
+    # 1회성 정리: 2026-04 이전 사람인 데이터 삭제
+    # (수집 조건 변경으로 구 데이터 신뢰도 낮음)
+    # ==========================================
+    cleanup_sqls = [
+        "DELETE FROM TB_JOB_POSTING_KEYWORD WHERE JOB_ID IN (SELECT JOB_ID FROM TB_JOB_POSTING WHERE YEAR_MONTH < '2026-04')",
+        "DELETE FROM TB_JOB_POSTING_REGION WHERE JOB_ID IN (SELECT JOB_ID FROM TB_JOB_POSTING WHERE YEAR_MONTH < '2026-04')",
+        "DELETE FROM TB_JOB_POSTING WHERE YEAR_MONTH < '2026-04'",
+    ]
+    for sql in cleanup_sqls:
+        try:
+            if is_pg():
+                conn.commit()
+            cursor.execute(adapt_query(sql))
+            affected = cursor.rowcount
+            if affected:
+                print(f"[init_db] 정리: {affected}건 삭제")
+            if is_pg():
+                conn.commit()
+        except Exception:
+            if is_pg():
+                conn.rollback()
+
     conn.commit()
     conn.close()
     db_label = "PostgreSQL" if is_pg() else DB_FILE
