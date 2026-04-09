@@ -81,6 +81,7 @@ with page_error_boundary():
 
     target_date = this_logs['ATEND_DT'].max() if not this_logs.empty else datetime.now().strftime('%Y-%m-%d')
     today_logs = this_logs[this_logs['ATEND_DT'] == target_date].copy()
+    today_logs = today_logs.drop_duplicates(subset=['TRNEE_ID'], keep='last')
 
     df_monitor = pd.merge(
         active_students[['TRNEE_ID', 'TRNEE_NM', 'TRNEE_STATUS']],
