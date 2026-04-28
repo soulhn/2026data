@@ -38,10 +38,15 @@ def fetch_course_list(session, api_key, course_id):
         "returnType": "JSON", "authKey": api_key,
         "srchTrprId": course_id, "outType": "2",
     }, timeout=config.API_TIMEOUT)
-    course_list = json.loads(res.json()["returnJSON"])
-    if isinstance(course_list, dict):
-        course_list = [course_list]
-    elif not isinstance(course_list, list):
+    parsed = json.loads(res.json()["returnJSON"])
+    if isinstance(parsed, list):
+        course_list = parsed
+    elif isinstance(parsed, dict):
+        # API가 딕셔너리 래퍼로 감쌀 때 내부 리스트 추출 (trneList/atabList 패턴)
+        inner = next((v for v in parsed.values() if isinstance(v, list)), None)
+        course_list = inner if inner is not None else [parsed]
+        logger.info(f"과정 목록 API 응답이 dict 래퍼: keys={list(parsed.keys())}")
+    else:
         course_list = []
 
     rows = []

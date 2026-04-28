@@ -83,10 +83,15 @@ def run_etl():
             "returnType": "JSON", "authKey": API_KEY,
             "srchTrprId": COURSE_ID, "outType": "2"
         }, timeout=60)
-        course_list = json.loads(res.json()['returnJSON'])
-        if isinstance(course_list, dict):
-            course_list = [course_list]
-        elif not isinstance(course_list, list):
+        parsed = json.loads(res.json()['returnJSON'])
+        if isinstance(parsed, list):
+            course_list = parsed
+        elif isinstance(parsed, dict):
+            # API가 딕셔너리 래퍼로 감쌀 때 내부 리스트 추출 (trneList/atabList 패턴)
+            inner = next((v for v in parsed.values() if isinstance(v, list)), None)
+            course_list = inner if inner is not None else [parsed]
+            logger.info(f"과정 목록 API 응답이 dict 래퍼: keys={list(parsed.keys())}")
+        else:
             course_list = []
         logger.info(f"과정 목록({len(course_list)}건) 조회 성공.")
     except (requests.RequestException, json.JSONDecodeError, KeyError) as e:
