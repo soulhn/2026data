@@ -39,6 +39,10 @@ def fetch_course_list(session, api_key, course_id):
         "srchTrprId": course_id, "outType": "2",
     }, timeout=config.API_TIMEOUT)
     course_list = json.loads(res.json()["returnJSON"])
+    if isinstance(course_list, dict):
+        course_list = [course_list]
+    elif not isinstance(course_list, list):
+        course_list = []
 
     rows = []
     today_str = datetime.now().strftime("%Y-%m-%d")
