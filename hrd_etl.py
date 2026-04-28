@@ -84,6 +84,10 @@ def run_etl():
             "srchTrprId": COURSE_ID, "outType": "2"
         }, timeout=60)
         course_list = json.loads(res.json()['returnJSON'])
+        if isinstance(course_list, dict):
+            course_list = [course_list]
+        elif not isinstance(course_list, list):
+            course_list = []
         logger.info(f"과정 목록({len(course_list)}건) 조회 성공.")
     except (requests.RequestException, json.JSONDecodeError, KeyError) as e:
         logger.error(f"과정 목록 조회 실패: {e}")
