@@ -40,6 +40,33 @@ with page_error_boundary():
         st.write(f"서버 datetime.now(): `{datetime.now().isoformat()}`")
         st.write(f"서버 current_month: `{datetime.now().strftime('%Y%m')}`")
         st.write(f"data_source: `{data_source}`")
+        # 환경변수 / secrets 존재 여부
+        api_key_env = bool(os.getenv("HRD_API_KEY"))
+        course_id_env = bool(os.getenv("HANWHA_COURSE_ID"))
+        api_key_secret = False
+        course_id_secret = False
+        try:
+            api_key_secret = bool(st.secrets.get("HRD_API_KEY"))
+            course_id_secret = bool(st.secrets.get("HANWHA_COURSE_ID"))
+        except Exception:
+            pass
+        st.write(f"HRD_API_KEY: env={api_key_env}, secret={api_key_secret}")
+        st.write(f"HANWHA_COURSE_ID: env={course_id_env}, secret={course_id_secret}")
+        # API 직접 호출 테스트
+        if st.button("API 호출 테스트"):
+            from hrd_api import fetch_active_data_realtime
+            api_key = os.getenv("HRD_API_KEY") or (st.secrets.get("HRD_API_KEY") if hasattr(st, "secrets") else None)
+            course_id = os.getenv("HANWHA_COURSE_ID") or (st.secrets.get("HANWHA_COURSE_ID") if hasattr(st, "secrets") else None)
+            if not api_key or not course_id:
+                st.error("키/ID가 없어 호출 불가")
+            else:
+                try:
+                    cdf, tdf, ldf = fetch_active_data_realtime(api_key, course_id)
+                    st.success(f"성공: courses={len(cdf)}, trainees={len(tdf)}, logs={len(ldf)}")
+                    if not ldf.empty:
+                        st.write(f"logs ATEND_DT 최대: {ldf['ATEND_DT'].max()}")
+                except Exception as e:
+                    st.error(f"실패: {type(e).__name__}: {e}")
         if courses_df is not None and not courses_df.empty:
             st.write(f"활성 기수 수: {len(courses_df)}")
             st.write(f"기수 목록: {sorted(courses_df['TRPR_DEGR'].unique().tolist())}")
