@@ -35,6 +35,20 @@ with page_error_boundary():
     else:
         st.caption("DB 기준")
 
+    # 임시 진단 패널 (이슈 확인 후 제거 예정)
+    with st.expander("🔧 진단 정보", expanded=False):
+        st.write(f"서버 datetime.now(): `{datetime.now().isoformat()}`")
+        st.write(f"서버 current_month: `{datetime.now().strftime('%Y%m')}`")
+        st.write(f"data_source: `{data_source}`")
+        if courses_df is not None and not courses_df.empty:
+            st.write(f"활성 기수 수: {len(courses_df)}")
+            st.write(f"기수 목록: {sorted(courses_df['TRPR_DEGR'].unique().tolist())}")
+        if logs_df is not None and not logs_df.empty:
+            st.write(f"logs_df 행 수: {len(logs_df)}")
+            st.write(f"ATEND_DT 최소: `{logs_df['ATEND_DT'].min()}` / 최대: `{logs_df['ATEND_DT'].max()}`")
+            top_dates = sorted(logs_df['ATEND_DT'].dropna().unique())[-7:]
+            st.write(f"최근 7개 출결일: {list(top_dates)}")
+
     if courses_df is None:
         st.info("현재 진행 중인 과정이 없습니다. 꿀 같은 휴식 시간입니다! ☕")
         st.stop()
