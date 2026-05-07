@@ -24,6 +24,11 @@ with page_error_boundary():
         return get_active_data_with_fallback()
 
 
+    @st.cache_data(ttl=CACHE_TTL_API)
+    def _cached_full_logs(courses_df, api_logs_df):
+        return get_full_attendance_logs(courses_df, api_logs_df)
+
+
     try:
         courses_df, trainees_df, logs_df, data_source = get_active_data()
     except Exception as e:
@@ -404,7 +409,7 @@ with page_error_boundary():
         # ── [4] 누적 출결 위험 지표 ──────────────────────────────────────
         # API 모드에서는 당월만 조회하므로 누적 지표용 전체 로그 병합
         if data_source == "API" and not this_logs.empty:
-            full_logs_all = get_full_attendance_logs(courses_df, logs_df)
+            full_logs_all = _cached_full_logs(courses_df, logs_df)
             full_this_logs = full_logs_all[full_logs_all['TRPR_DEGR'] == selected_degr].copy()
         else:
             full_this_logs = this_logs
