@@ -80,7 +80,7 @@ with page_error_boundary():
                     hole=0.4,
                 )
                 fig.update_layout(height=350)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             else:
                 st.info("진행중 공고 지역 데이터가 없습니다.")
 
@@ -104,7 +104,7 @@ with page_error_boundary():
                     hole=0.4,
                 )
                 fig.update_layout(height=350)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             else:
                 st.info("경력 요건 데이터가 없습니다.")
 
@@ -133,7 +133,7 @@ with page_error_boundary():
                 yaxis={'categoryorder': 'total ascending', 'title': None},
                 xaxis_title=None, height=400,
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         else:
             st.info("진행중 공고 직무 데이터가 없습니다.")
 
@@ -170,7 +170,7 @@ with page_error_boundary():
                     showlegend=False, height=350,
                     xaxis_title=None, yaxis_title=None,
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             st.divider()
 
             # 직무별 종료 공고 분포
@@ -196,7 +196,7 @@ with page_error_boundary():
                     yaxis={'categoryorder': 'total ascending', 'title': None},
                     xaxis_title=None, height=400,
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             st.divider()
 
             # 직무별 평균 게시 기간
@@ -228,7 +228,7 @@ with page_error_boundary():
                     yaxis={'categoryorder': 'total ascending', 'title': None},
                     xaxis_title=None, height=400,
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
     # ================================================================
     # 탭 3: 키워드 분석
@@ -258,7 +258,7 @@ with page_error_boundary():
                 yaxis={'categoryorder': 'total ascending', 'title': None},
                 xaxis_title=None, height=400,
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         else:
             st.info("키워드 데이터가 아직 수집되지 않았습니다.")
         st.divider()
@@ -292,7 +292,7 @@ with page_error_boundary():
                 height=400, xaxis_title=None, yaxis_title=None,
                 legend_title_text=None,
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         st.divider()
 
         # 학력별 분포
@@ -315,4 +315,4 @@ with page_error_boundary():
             fig.update_layout(
                 height=350, xaxis_title=None, yaxis_title=None,
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')

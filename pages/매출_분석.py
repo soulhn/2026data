@@ -142,7 +142,8 @@ with page_error_boundary():
             prop_cnt = (rev_df.groupby(['TRNEE_ID', 'period_num'])['status'].first() == '비례').sum()
             none_cnt = (rev_df.groupby(['TRNEE_ID', 'period_num'])['status'].first() == '미청구').sum()
             base_fee_total = rev_df.groupby(['TRNEE_ID', 'period_num']).apply(
-                lambda g: g.iloc[0]['training_days'] * DAILY_TRAINING_FEE
+                lambda g: g.iloc[0]['training_days'] * DAILY_TRAINING_FEE,
+                include_groups=False,
             ).sum()
             results.append({
                 'TRPR_DEGR': row['TRPR_DEGR'],
@@ -371,7 +372,7 @@ with page_error_boundary():
                 legend=dict(orientation='h', yanchor='bottom', y=1.02),
                 height=380,
             )
-            st.plotly_chart(fig_bar, use_container_width=True)
+            st.plotly_chart(fig_bar, width='stretch')
 
             # 누적 매출 라인차트
             period_summary_sorted = period_summary.sort_values('period_num')
@@ -396,7 +397,7 @@ with page_error_boundary():
                 legend=dict(orientation='h', yanchor='bottom', y=1.02),
                 height=330,
             )
-            st.plotly_chart(fig_line, use_container_width=True)
+            st.plotly_chart(fig_line, width='stretch')
 
             # 단위기간별 출석률 추이 차트
             period_att = rev_df.groupby('period_num')['rate'].mean().reset_index()
@@ -424,7 +425,7 @@ with page_error_boundary():
                 legend=dict(orientation='h', yanchor='bottom', y=1.02),
                 height=280,
             )
-            st.plotly_chart(fig_att, use_container_width=True)
+            st.plotly_chart(fig_att, width='stretch')
 
             # 요약 테이블
             st.subheader("단위기간 요약")
@@ -434,7 +435,7 @@ with page_error_boundary():
             summary_display.columns = ['기간', '상태', '훈련일', '수강생', '전액', '비례', '미청구',
                                         '실제 매출', '달성률(%)']
             summary_display['실제 매출'] = summary_display['실제 매출'].apply(fmt_won)
-            st.dataframe(summary_display, use_container_width=True, hide_index=True)
+            st.dataframe(summary_display, width='stretch', hide_index=True)
 
         # ── 탭 2: 수강생별 상세 ──────────────────────────────
         with tab2:
@@ -508,7 +509,7 @@ with page_error_boundary():
                         lambda v: fmt_won(v) if isinstance(v, (int, float)) and v != 0 else (v if v != 0 else "-")
                     )
 
-                st.dataframe(detail_df.drop(columns=['훈련생ID']), use_container_width=True, hide_index=True)
+                st.dataframe(detail_df.drop(columns=['훈련생ID']), width='stretch', hide_index=True)
 
                 # CSV 다운로드
                 csv_df = pd.DataFrame(flat_rows[:-1])  # 합계 행 제외
@@ -557,7 +558,7 @@ with page_error_boundary():
                         xaxis_title='출석률 (%)', yaxis_title='수강생 수',
                         height=300,
                     )
-                    st.plotly_chart(fig_hist, use_container_width=True)
+                    st.plotly_chart(fig_hist, width='stretch')
 
                 with col_r:
                     # 전액/비례/미청구 파이차트
@@ -570,7 +571,7 @@ with page_error_boundary():
                         textinfo='label+percent+value',
                     ))
                     fig_pie.update_layout(title='청구 유형 분포', height=300)
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    st.plotly_chart(fig_pie, width='stretch')
 
                 # 수강생별 테이블
                 st.subheader(f"{sel_period['label']} 수강생별 상세")
@@ -579,7 +580,7 @@ with page_error_boundary():
                 p_display['출석률'] = (p_display['출석률'] * 100).round(1).astype(str) + '%'
                 p_display['훈련비'] = p_display['훈련비'].apply(fmt_won)
                 p_display = p_display.sort_values('출석일', ascending=False)
-                st.dataframe(p_display, use_container_width=True, hide_index=True)
+                st.dataframe(p_display, width='stretch', hide_index=True)
 
 
 
@@ -617,7 +618,7 @@ with page_error_boundary():
                 yaxis_tickformat=',',
                 height=360,
             )
-            st.plotly_chart(fig_total, use_container_width=True)
+            st.plotly_chart(fig_total, width='stretch')
 
         with col_r:
             # 전액/비례/미청구 스택 바 (비율)
@@ -643,7 +644,7 @@ with page_error_boundary():
                 xaxis_title='기수', yaxis_title='비율 (%)',
                 height=360,
             )
-            st.plotly_chart(fig_stack, use_container_width=True)
+            st.plotly_chart(fig_stack, width='stretch')
 
         # 종합 비교 테이블
         st.subheader("종합 비교 테이블")
@@ -656,4 +657,4 @@ with page_error_boundary():
         table_df['기준 매출'] = table_df['기준 매출'].apply(fmt_won)
         table_df['실제 매출'] = table_df['실제 매출'].apply(fmt_won)
         table_df['비례 손실액'] = table_df['비례 손실액'].apply(fmt_won)
-        st.dataframe(table_df, use_container_width=True, hide_index=True)
+        st.dataframe(table_df, width='stretch', hide_index=True)

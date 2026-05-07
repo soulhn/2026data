@@ -303,7 +303,7 @@ with page_error_boundary():
                             y=alt.Y('인원:Q', axis=alt.Axis(title=['인', '원'], titleAngle=0)),
                             tooltip=['연령대', '인원'],
                         ).properties(height=280),
-                        use_container_width=True,
+                        width='stretch',
                     )
             with right:
                 st.markdown("##### 🏷️ 훈련생 유형별 분포")
@@ -317,7 +317,7 @@ with page_error_boundary():
                             color=alt.value('orange'),
                             tooltip=['유형', '인원'],
                         ).properties(height=280),
-                        use_container_width=True,
+                        width='stretch',
                     )
 
             # 연령대별 수료율 & 결석 분석
@@ -342,7 +342,7 @@ with page_error_boundary():
                                 y=alt.Y('수료율:Q', axis=alt.Axis(title=['수', '료', '율'], titleAngle=0)),
                                 tooltip=['연령대', '수료율', '인원'],
                             ).properties(height=250, title='연령대별 수료율'),
-                            use_container_width=True,
+                            width='stretch',
                         )
                 with ag2:
                     st.altair_chart(
@@ -351,7 +351,7 @@ with page_error_boundary():
                             y=alt.Y('평균_결석:Q', axis=alt.Axis(title=['평', '균', '결', '석', '일'], titleAngle=0)),
                             tooltip=['연령대', '평균_결석', '인원'],
                         ).properties(height=250, title='연령대별 평균 결석'),
-                        use_container_width=True,
+                        width='stretch',
                     )
 
             # 유형별 성과 분석 (신규)
@@ -380,7 +380,7 @@ with page_error_boundary():
                                 color=alt.value('#3498db'),
                                 tooltip=['TRNEE_TYPE', '수료율', '인원'],
                             ).properties(height=250, title='유형별 수료율'),
-                            use_container_width=True,
+                            width='stretch',
                         )
                 with tc2:
                     st.altair_chart(
@@ -390,7 +390,7 @@ with page_error_boundary():
                             color=alt.value('#e74c3c'),
                             tooltip=['TRNEE_TYPE', '평균_결석', '평균_지각'],
                         ).properties(height=250, title='유형별 평균 결석일'),
-                        use_container_width=True,
+                        width='stretch',
                     )
 
         # [Tab 2] 요일별 출결 패턴
@@ -417,7 +417,7 @@ with page_error_boundary():
                     text='CNT:Q',
                     color=alt.condition(alt.datum.CNT > median_val, alt.value('white'), alt.value('black')),
                 )
-                st.altair_chart((heatmap + text).properties(height=300), use_container_width=True)
+                st.altair_chart((heatmap + text).properties(height=300), width='stretch')
 
                 st.markdown("##### 요일별 결석 건수")
                 absent_df = daily_agg[daily_agg['ATEND_STATUS'] == '결석']
@@ -428,7 +428,7 @@ with page_error_boundary():
                             y=alt.Y('CNT:Q', axis=alt.Axis(title=['결', '석', '건', '수'], titleAngle=0)),
                             tooltip=['요일', 'CNT'],
                         ).properties(height=250),
-                        use_container_width=True,
+                        width='stretch',
                     )
                 else:
                     st.success("결석 기록이 없습니다.")
@@ -458,7 +458,7 @@ with page_error_boundary():
                                     y=alt.Y('count()', axis=alt.Axis(title=['건', '수'], titleAngle=0)),
                                     tooltip=['IN_TIME', 'count()'],
                                 ).properties(height=350, title='지각 입실 시간별 건수'),
-                                use_container_width=True,
+                                width='stretch',
                             )
                         with cb:
                             st.markdown("##### 지각 통계")
@@ -492,7 +492,7 @@ with page_error_boundary():
                                 y=alt.Y('count()', axis=alt.Axis(title=['건', '수'], titleAngle=0)),
                                 tooltip=['OUT_TIME', 'count()'],
                             ).properties(height=300, title='조퇴 퇴실 시간별 건수'),
-                            use_container_width=True,
+                            width='stretch',
                         )
                     with lc2:
                         st.markdown("##### 조퇴 통계")
@@ -538,7 +538,7 @@ with page_error_boundary():
                             alt.Y('count()', axis=alt.Axis(title=['건', '수'], titleAngle=0)),
                             tooltip=['count()'],
                         ).properties(height=300, title='체류시간 분포'),
-                        use_container_width=True,
+                        width='stretch',
                     )
 
                     # 학생별 평균 체류시간
@@ -563,7 +563,7 @@ with page_error_boundary():
                             '평균_체류시간': st.column_config.NumberColumn('평균 체류(시간)', format="%.1f"),
                             '기록_일수': st.column_config.NumberColumn('기록 일수', format="%d"),
                         },
-                        use_container_width=True,
+                        width='stretch',
                         hide_index=True,
                     )
 
@@ -615,7 +615,7 @@ with page_error_boundary():
                             col.metric(label, f"{bin_counts[label]}명")
 
                         bin_df = pd.DataFrame({"구간": bin_counts.index, "이탈자 수": bin_counts.values})
-                        st.dataframe(bin_df, hide_index=True, use_container_width=True)
+                        st.dataframe(bin_df, hide_index=True, width='stretch')
                     st.divider()
 
                     # (3) 이탈자 vs 수료자 출결 상태 비교
@@ -646,7 +646,7 @@ with page_error_boundary():
                             text=alt.Text("비율:Q", format=".1f"),
                         )
                         st.altair_chart((bars + text_layer).properties(height=350),
-                                       use_container_width=True)
+                                       width='stretch')
                     st.divider()
 
                     # (4) 이탈 전 2달 평균 출결 지표
@@ -728,7 +728,7 @@ with page_error_boundary():
                         "출석률", min_value=0, max_value=100, format="%.1f%%"
                     ),
                 },
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
             )
 
@@ -848,7 +848,7 @@ with page_error_boundary():
                             )),
                             tooltip=['기수', '지표', '값'],
                         ).properties(height=300),
-                        use_container_width=True,
+                        width='stretch',
                     )
                 st.divider()
 
@@ -862,7 +862,7 @@ with page_error_boundary():
                         y=alt.Y('수료율:Q', axis=alt.Axis(title=['수', '료', '율', '(%)'], titleAngle=0)),
                         tooltip=['기수', '수료율', 'FINI_CNT', 'TOT_PAR_MKS'],
                     ).properties(height=300),
-                    use_container_width=True,
+                    width='stretch',
                 )
             with c_right:
                 st.markdown("##### 기수별 1인당 평균 결석일")
@@ -873,7 +873,7 @@ with page_error_boundary():
                             y=alt.Y('평균_결석일:Q', axis=alt.Axis(title=['평', '균', '결', '석', '일'], titleAngle=0)),
                             tooltip=['기수', '평균_결석일'],
                         ).properties(height=300),
-                        use_container_width=True,
+                        width='stretch',
                     )
             st.divider()
 
@@ -902,7 +902,7 @@ with page_error_boundary():
                             color=alt.Color('연령대:N', title='연령대'),
                             tooltip=['기수', '연령대', '인원'],
                         ).properties(height=300),
-                        use_container_width=True,
+                        width='stretch',
                     )
                 with dc2:
                     st.markdown("###### 기수별 훈련생 유형 구성")
@@ -916,7 +916,7 @@ with page_error_boundary():
                             color=alt.Color('유형:N', title='유형'),
                             tooltip=['기수', '유형', '인원'],
                         ).properties(height=300),
-                        use_container_width=True,
+                        width='stretch',
                     )
 
         # ──────────────────────────────────────────────
@@ -933,7 +933,7 @@ with page_error_boundary():
                     y=alt.Y('중도탈락률:Q', axis=alt.Axis(title=['중', '도', ' ', '탈', '락', '률', '(%)'], titleAngle=0)),
                     tooltip=['기수', alt.Tooltip('중도탈락률:Q', title='중도 탈락률'), alt.Tooltip('DROP_CNT:Q', title='중도 탈락')],
                 ).properties(height=300),
-                use_container_width=True,
+                width='stretch',
             )
             st.divider()
 
@@ -964,7 +964,7 @@ with page_error_boundary():
                     for col, label in zip(mcols, labels_bin):
                         col.metric(label, f"{int(pivot.loc['합계', label])}명")
 
-                    st.dataframe(pivot, use_container_width=True)
+                    st.dataframe(pivot, width='stretch')
             else:
                 st.info("이탈 타이밍 데이터가 없습니다.")
             st.divider()
@@ -1000,7 +1000,7 @@ with page_error_boundary():
                         text=alt.Text('비율:Q', format='.1f'),
                     )
                     st.altair_chart((bars + text_layer).properties(height=350),
-                                   use_container_width=True)
+                                   width='stretch')
                 else:
                     st.info("비교할 출결 데이터가 없습니다.")
             else:
@@ -1072,7 +1072,7 @@ with page_error_boundary():
                     "취업률 (3개월)(%)": st.column_config.NumberColumn(format="%.1f%%"),
                     "취업률 (6개월)(%)": st.column_config.NumberColumn(format="%.1f%%"),
                 },
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
             )
             st.caption("💡 특정 기수를 심층 분석하려면 사이드바에서 회차를 선택 후 '개별 기수 분석' 탭을 확인하세요.")

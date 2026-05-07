@@ -369,7 +369,7 @@ with page_error_boundary():
             "컬럼 수": col_total,
             "채움 양호(≥80%)": f"{good_cols}/{col_total}",
         })
-    st.dataframe(pd.DataFrame(overview), hide_index=True, use_container_width=True)
+    st.dataframe(pd.DataFrame(overview), hide_index=True, width='stretch')
     st.divider()
 
 
@@ -436,7 +436,7 @@ with page_error_boundary():
                     "예시값":     st.column_config.TextColumn("예시값", width="large"),
                 },
                 hide_index=True,
-                use_container_width=True,
+                width='stretch',
                 height=min(80 + len(rows) * 35, 550),
             )
 
@@ -445,7 +445,7 @@ with page_error_boundary():
             with st.expander("📋 데이터 미리보기 (최근 20건)"):
                 preview_df = load_table_preview(tbl_name)
                 if not preview_df.empty:
-                    st.dataframe(preview_df, use_container_width=True, hide_index=True)
+                    st.dataframe(preview_df, width='stretch', hide_index=True)
                 else:
                     st.caption("데이터 없음")
 
@@ -458,32 +458,32 @@ with page_error_boundary():
                 with c1:
                     st.markdown("*훈련 유형별*")
                     df = counts.get("market_type", pd.DataFrame())
-                    if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+                    if not df.empty: st.dataframe(df, hide_index=True, width='stretch')
                 with c2:
                     st.markdown("*연도별 개설 수*")
                     df = counts.get("market_year", pd.DataFrame())
-                    if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+                    if not df.empty: st.dataframe(df, hide_index=True, width='stretch')
                 with c3:
                     st.markdown("*지역별*")
                     df = counts.get("market_region", pd.DataFrame())
-                    if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+                    if not df.empty: st.dataframe(df, hide_index=True, width='stretch')
 
             elif tbl_name == "TB_COURSE_MASTER":
                 df = counts.get("course_year", pd.DataFrame())
                 st.markdown("*연도별 기수*")
-                if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+                if not df.empty: st.dataframe(df, hide_index=True, width='stretch')
                 else: st.caption("데이터 없음")
 
             elif tbl_name == "TB_ATTENDANCE_LOG":
                 df = counts.get("attend_status", pd.DataFrame())
                 st.markdown("*출결 상태별*")
-                if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+                if not df.empty: st.dataframe(df, hide_index=True, width='stretch')
                 else: st.caption("데이터 없음")
 
             elif tbl_name == "TB_TRAINEE_INFO":
                 df = counts.get("trainee_status", pd.DataFrame())
                 st.markdown("*훈련생 상태별*")
-                if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+                if not df.empty: st.dataframe(df, hide_index=True, width='stretch')
                 else: st.caption("데이터 없음")
 
             elif tbl_name == "TB_JOB_POSTING":
@@ -491,21 +491,21 @@ with page_error_boundary():
                 with c1:
                     st.markdown("*지역별*")
                     df = counts.get("job_region", pd.DataFrame())
-                    if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+                    if not df.empty: st.dataframe(df, hide_index=True, width='stretch')
                 with c2:
                     st.markdown("*월별 수집 건수*")
                     df = counts.get("job_year_month", pd.DataFrame())
-                    if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+                    if not df.empty: st.dataframe(df, hide_index=True, width='stretch')
 
             elif tbl_name == "TB_JOB_POSTING_KEYWORD":
                 st.markdown("*키워드별 매핑 건수*")
                 df = counts.get("job_keyword", pd.DataFrame())
-                if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+                if not df.empty: st.dataframe(df, hide_index=True, width='stretch')
                 else: st.caption("데이터 없음")
 
             elif tbl_name == "TB_MARKET_CACHE":
                 df = counts.get("cache_items", pd.DataFrame())
                 st.markdown("*캐시 항목 목록*")
-                if not df.empty: st.dataframe(df, hide_index=True, use_container_width=True)
+                if not df.empty: st.dataframe(df, hide_index=True, width='stretch')
                 else: st.warning("캐시가 비어 있습니다. market_etl.py를 실행하세요.")
 

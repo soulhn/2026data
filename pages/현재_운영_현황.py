@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-from datetime import datetime, timedelta
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import sys
 import os
 
@@ -257,7 +258,8 @@ with page_error_boundary():
                 lambda g: pd.Series({
                     '총건수': len(g),
                     '출석건수': g['DISPLAY_STATUS'].isin(['출석', '입실중', '지각']).sum(),
-                })
+                }),
+                include_groups=False,
             ).reset_index()
             degr_stats['출석률'] = (degr_stats['출석건수'] / degr_stats['총건수'] * 100).round(1)
             degr_stats['기수'] = degr_stats['TRPR_DEGR_KEY'].astype(str) + '회차'
@@ -267,7 +269,7 @@ with page_error_boundary():
                 color=alt.condition(alt.datum.출석률 < 80, alt.value('#e74c3c'), alt.value('#2ecc71')),
                 tooltip=['기수', '출석률'],
             ).properties(height=180)
-            st.altair_chart(bar, use_container_width=True)
+            st.altair_chart(bar, width='stretch')
         else:
             st.info("오늘 출결 데이터가 아직 수집되지 않았습니다.")
 
@@ -281,7 +283,8 @@ with page_error_boundary():
             lambda g: pd.Series({
                 'EXPEL_CNT': (g['TRNEE_STATUS'] == '제적').sum(),
                 'DROP_CNT':  (g['TRNEE_STATUS'] == '중도탈락').sum(),
-            })
+            }),
+            include_groups=False,
         ).reset_index()
         active_table = courses_df.merge(trainee_stats, on=['TRPR_ID', 'TRPR_DEGR'], how='left')
         for c in ['EXPEL_CNT', 'DROP_CNT']:
@@ -309,7 +312,7 @@ with page_error_boundary():
                 "잔여율":       st.column_config.ProgressColumn("잔여율", format="%.1f%%", min_value=0, max_value=100),
             },
             hide_index=True,
-            use_container_width=True,
+            width='stretch',
         )
 
 
@@ -361,7 +364,7 @@ with page_error_boundary():
                     names = df[df['ATEND_STATUS'] == '외출']['TRNEE_NM'].tolist()
                 return ", ".join(names) if names else "없음"
 
-            now_kst = datetime.utcnow() + timedelta(hours=9)
+            now_kst = datetime.now(ZoneInfo('Asia/Seoul'))
             report_text = f"""[{now_kst.strftime('%H시 %M분')} 기준]
 
     - 총인원: {total_cnt}명
@@ -403,7 +406,7 @@ with page_error_boundary():
                 rule = alt.Chart(pd.DataFrame({'y': [ATTENDANCE_TARGET]})).mark_rule(
                     strokeDash=[5, 5], color='red'
                 ).encode(y='y:Q')
-                st.altair_chart(line + rule, use_container_width=True)
+                st.altair_chart(line + rule, width='stretch')
             st.divider()
 
         # ── [4] 누적 출결 위험 지표 ──────────────────────────────────────
@@ -430,7 +433,7 @@ with page_error_boundary():
             ).reset_index()
             cumul = cumul.merge(active_students[['TRNEE_ID', 'TRNEE_NM']], on='TRNEE_ID', how='inner')
             # 표준 출석률: 매출_분석.py 기준 (중도탈락미출석 분모 제외, 조퇴·외출 포함, 패널티 적용)
-            _att_by_stu = full_this_logs.groupby('TRNEE_ID').apply(calc_attendance_rate).reset_index()
+            _att_by_stu = full_this_logs.groupby('TRNEE_ID').apply(calc_attendance_rate, include_groups=False).reset_index()
             _att_by_stu.columns = ['TRNEE_ID', '출석률(%)']
             cumul = cumul.merge(_att_by_stu, on='TRNEE_ID', how='left')
             cumul['출석률(%)'] = cumul['출석률(%)'].fillna(0.0)
@@ -457,7 +460,7 @@ with page_error_boundary():
                             '총_기록':   st.column_config.NumberColumn('총 기록일', format="%d일"),
                             '출석률(%)': st.column_config.ProgressColumn('출석률', min_value=0, max_value=100, format="%.1f%%"),
                         },
-                        use_container_width=True, hide_index=True,
+                        width='stretch', hide_index=True,
                     )
             else:
                 st.success("현재 출결 위험군이 없습니다. 👍")
@@ -494,7 +497,7 @@ with page_error_boundary():
                                 '초반 출석률', min_value=0, max_value=100, format="%.1f%%"
                             ),
                         },
-                        use_container_width=True, hide_index=True,
+                        width='stretch', hide_index=True,
                     )
                 else:
                     st.success(f"개강 초반({len(early_dates)}일) 위험군이 없습니다. 👍")
@@ -519,19 +522,19 @@ with page_error_boundary():
                 )
                 st.dataframe(
                     issue_list[['TRNEE_NM', 'IN_TIME', 'OUT_TIME', '상태_요약']],
-                    use_container_width=True, hide_index=True,
+                    width='stretch', hide_index=True,
                 )
             else:
                 st.success("특이사항 없음")
 
         with dt2:
             if not absent_students.empty:
-                st.dataframe(absent_students[['TRNEE_NM', 'TRNEE_STATUS']], use_container_width=True, hide_index=True)
+                st.dataframe(absent_students[['TRNEE_NM', 'TRNEE_STATUS']], width='stretch', hide_index=True)
             else:
                 st.success("전원 출석! 🎉")
 
         with dt3:
             st.dataframe(
                 df_monitor[['TRNEE_NM', 'IN_TIME', 'OUT_TIME', 'ATEND_STATUS']],
-                use_container_width=True, hide_index=True,
+                width='stretch', hide_index=True,
             )

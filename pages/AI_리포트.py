@@ -375,7 +375,7 @@ with page_error_boundary():
             )
             selected_degr = degr_list[selected_idx]
 
-        generate_btn = st.button("리포트 생성", type="primary", use_container_width=True)
+        generate_btn = st.button("리포트 생성", type="primary", width='stretch')
 
     if generate_btn:
         if report_type == "기수별 분석" and selected_degr is not None:

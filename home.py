@@ -94,7 +94,7 @@ def get_attendance_stats():
         present_days = max(0, len(present) - penalty // 3)
         return pd.Series({'ATT_RATE': round(avg_rate, 1), 'PRESENT_DAYS': present_days})
 
-    return att_df.groupby('TRPR_DEGR').apply(_cohort_stats).reset_index()
+    return att_df.groupby('TRPR_DEGR').apply(_cohort_stats, include_groups=False).reset_index()
 
 
 def _render_project_intro():
@@ -201,7 +201,7 @@ def render_dashboard():
     text = chart.mark_text(align="center", dy=-10, fontSize=13, fontWeight="bold").encode(
         text=alt.Text("label:N")
     )
-    st.altair_chart((chart + text), use_container_width=True)
+    st.altair_chart((chart + text), width='stretch')
     st.divider()
 
     # [Section 5] 차트와 상세 테이블
@@ -218,7 +218,7 @@ def render_dashboard():
             color=alt.value('#3182bd'),
             tooltip=['Year', '과정수'],
         ).properties(height=300)
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, width='stretch')
 
     with col_right:
         st.subheader("🏆 우수 성과 과정 (Top 5)")
@@ -234,7 +234,7 @@ def render_dashboard():
                 "FINI_CNT": st.column_config.NumberColumn("수료생", format="%d명"),
             },
             hide_index=True,
-            use_container_width=True,
+            width='stretch',
         )
 
     with st.sidebar:

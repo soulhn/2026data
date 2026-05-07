@@ -436,7 +436,8 @@ def _cache_hrd_stats():
             prop_cnt = (rev_df.groupby(['TRNEE_ID', 'period_num'])['status'].first() == '비례').sum()
             none_cnt = (rev_df.groupby(['TRNEE_ID', 'period_num'])['status'].first() == '미청구').sum()
             base_fee_total = rev_df.groupby(['TRNEE_ID', 'period_num']).apply(
-                lambda g: g.iloc[0]['training_days'] * DAILY_TRAINING_FEE
+                lambda g: g.iloc[0]['training_days'] * DAILY_TRAINING_FEE,
+                include_groups=False,
             ).sum()
             rev_results.append({
                 'TRPR_DEGR': int(row['TRPR_DEGR']),

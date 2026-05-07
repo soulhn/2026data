@@ -195,7 +195,7 @@ with page_error_boundary():
     for tbl_name, cols in SCHEMAS.items():
         with st.expander(tbl_name):
             df_schema = pd.DataFrame(cols, columns=["컬럼명", "타입", "설명"])
-            st.dataframe(df_schema, hide_index=True, use_container_width=True)
+            st.dataframe(df_schema, hide_index=True, width='stretch')
     st.divider()
 
     # ── 예제 쿼리 버튼 ──
@@ -205,7 +205,7 @@ with page_error_boundary():
         cols = st.columns(len(queries))
         for col, (label, sql) in zip(cols, queries):
             with col:
-                if st.button(label, use_container_width=True, key=f"ex_{level}_{label}"):
+                if st.button(label, width='stretch', key=f"ex_{level}_{label}"):
                     st.session_state["sql_input"] = sql
     st.divider()
 
@@ -235,7 +235,7 @@ with page_error_boundary():
                 result_df = load_data(final_sql)
                 elapsed = time.time() - t0
                 st.success(f"결과: **{len(result_df):,}행** · 실행 시간: **{elapsed:.2f}초**")
-                st.dataframe(result_df, use_container_width=True, hide_index=True)
+                st.dataframe(result_df, width='stretch', hide_index=True)
             except Exception as e:
                 st.error(f"쿼리 실행 오류: {e}")
     elif run_btn:

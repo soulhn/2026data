@@ -31,20 +31,20 @@ def render_ranking_table(stats_df, display_cols, format_dict, search_col, search
             neighbor = stats_df.iloc[max(0, idx-2):min(len(stats_df), idx+3)][display_cols].copy()
             st.dataframe(
                 neighbor.style.format(format_dict),
-                use_container_width=True, hide_index=True
+                width='stretch', hide_index=True
             )
         else:
             st.warning(f"검색 결과가 없습니다.")
     else:
         st.dataframe(
             stats_df.head(top_n)[display_cols].style.format(format_dict),
-            use_container_width=True, hide_index=True
+            width='stretch', hide_index=True
         )
 
     with st.expander(expander_title):
         st.dataframe(
             stats_df[display_cols].style.format(format_dict),
-            use_container_width=True, hide_index=True
+            width='stretch', hide_index=True
         )
 
 
@@ -414,7 +414,7 @@ with page_error_boundary():
             sel_grade = []
         sel_ncs = st.selectbox("NCS 코드", ncs_opts)
         search_kwd = st.text_input("🔍 과정명 검색")
-        submitted = st.form_submit_button("🔍 조회", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("🔍 조회", type="primary", width='stretch')
 
     if len(date_range) == 2:
         start_date, end_date = date_range
@@ -544,7 +544,7 @@ with page_error_boundary():
                 _tv = [m for m in _ym if str(m).endswith('-01')]
                 fig_cnt.update_xaxes(type='category', tickvals=_tv, ticktext=[m[:4] for m in _tv])
                 _vert_ytitle(fig_cnt, '개설 수')
-                st.plotly_chart(fig_cnt, use_container_width=True)
+                st.plotly_chart(fig_cnt, width='stretch')
         with col_trend2:
             if not recruit_trend.empty:
                 recruit_trend = recruit_trend.sort_values('YEAR_MONTH')
@@ -554,7 +554,7 @@ with page_error_boundary():
                 _tv2 = [m for m in _ym2 if str(m).endswith('-01')]
                 fig_rec.update_xaxes(type='category', tickvals=_tv2, ticktext=[m[:4] for m in _tv2])
                 _vert_ytitle(fig_rec, '평균 모집률 (%)')
-                st.plotly_chart(fig_rec, use_container_width=True)
+                st.plotly_chart(fig_rec, width='stretch')
         st.divider()
 
         # ── 지역별: 바차트 + Top5 시계열 ──
@@ -570,7 +570,7 @@ with page_error_boundary():
                     title='지역별 개설 수',
                 )
                 fig_reg_bar.update_layout(height=380, margin=dict(t=40, b=30), xaxis_title='개설 수', yaxis_title='')
-                st.plotly_chart(fig_reg_bar, use_container_width=True)
+                st.plotly_chart(fig_reg_bar, width='stretch')
         with col_r2:
             if not reg_cnt.empty:
                 top5_regions = reg_cnt.head(5)['지역'].tolist()
@@ -590,7 +590,7 @@ with page_error_boundary():
                     fig_reg.update_layout(hovermode='x unified', height=380)
                     fig_reg.update_xaxes(dtick='M12', tickformat='%Y')
                     _vert_ytitle(fig_reg, '개설 수')
-                    st.plotly_chart(fig_reg, use_container_width=True)
+                    st.plotly_chart(fig_reg, width='stretch')
         st.divider()
 
         # ── 기관 경쟁력 매트릭스 ──
@@ -615,11 +615,11 @@ with page_error_boundary():
                 fig_alt.add_vline(x=med_r, line_dash='dash', line_color='gray', line_width=1)
                 fig_alt.update_layout(height=480, coloraxis_showscale=False)
                 _vert_ytitle(fig_alt, '평균 만족도 (100점 환산)')
-                st.plotly_chart(fig_alt, use_container_width=True)
+                st.plotly_chart(fig_alt, width='stretch')
                 st.caption("📌 기준선: 중앙값 기준 — 우상단(고모집·고만족도), 좌하단(저모집·저만족도)")
                 with st.expander("📄 기관 상세 데이터 보기"):
                     show_inst = inst_alt[['기관명', '개설 수', '평균 모집률', '평균 만족도']].sort_values('평균 만족도', ascending=False)
-                    st.dataframe(show_inst, hide_index=True, use_container_width=True,
+                    st.dataframe(show_inst, hide_index=True, width='stretch',
                         column_config={
                             '개설 수': st.column_config.NumberColumn(format="%d개"),
                             '평균 모집률': st.column_config.NumberColumn(format="%.1f%%"),
@@ -673,7 +673,7 @@ with page_error_boundary():
                     height=chart_h,
                     margin=dict(r=10),
                 )
-                st.plotly_chart(fig_recruit, use_container_width=True)
+                st.plotly_chart(fig_recruit, width='stretch')
 
             with col_r:
                 supply_colors = ['#2980b9' if v else '#d5d8dc' for v in region_opp['기회']]
@@ -695,7 +695,7 @@ with page_error_boundary():
                     height=chart_h,
                     margin=dict(r=10),
                 )
-                st.plotly_chart(fig_supply, use_container_width=True)
+                st.plotly_chart(fig_supply, width='stretch')
 
             opp_regions = region_opp[region_opp['기회']].sort_values('평균모집률', ascending=False)
             if not opp_regions.empty:
@@ -771,7 +771,7 @@ with page_error_boundary():
                                   color='개수', color_continuous_scale='Blues',
                                   labels={'개수': '개설 수', '유형': ''})
                 fig_type.update_layout(height=300, margin=dict(t=10, b=30), coloraxis_showscale=False)
-                st.plotly_chart(fig_type, use_container_width=True)
+                st.plotly_chart(fig_type, width='stretch')
         with c2:
             st.subheader("📅 주말 vs 주중 개설 현황")
             if not type_wk.empty:
@@ -780,7 +780,7 @@ with page_error_boundary():
                 fig_wk = px.bar(wk_cnt, x='구분', y='CNT', color='구분', text='CNT',
                                 title="직장인 타겟(주말) 과정 수", labels={'CNT': '개수'})
                 _vert_ytitle(fig_wk, '개수')
-                st.plotly_chart(fig_wk, use_container_width=True)
+                st.plotly_chart(fig_wk, width='stretch')
         st.divider()
 
         # ── NCS별 모집 현황 ──
@@ -797,9 +797,9 @@ with page_error_boundary():
             fig.update_traces(texttemplate='%{x:.1f}%', textposition='outside')
             fig.update_yaxes(type='category')
             fig.update_layout(height=360, margin=dict(t=10, b=30), coloraxis_showscale=False)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             with st.expander("📄 상세 데이터 보기"):
-                st.dataframe(ncs_top, use_container_width=True, hide_index=True, column_config={
+                st.dataframe(ncs_top, width='stretch', hide_index=True, column_config={
                     "총 모집정원": st.column_config.NumberColumn(format="%d명"),
                     "총 신청인원": st.column_config.NumberColumn(format="%d명"),
                     "평균 모집률": st.column_config.NumberColumn(format="%.1f%%"),
@@ -817,7 +817,7 @@ with page_error_boundary():
                              color='빈도', color_continuous_scale='Blues')
             fig_kwd.update_layout(height=520, coloraxis_showscale=False, margin=dict(t=10, b=20))
             _vert_ytitle(fig_kwd, '키워드', margin_l=160, xshift=-120)
-            st.plotly_chart(fig_kwd, use_container_width=True)
+            st.plotly_chart(fig_kwd, width='stretch')
         else:
             st.info("키워드 데이터가 없습니다.")
 
@@ -836,7 +836,7 @@ with page_error_boundary():
                 orientation='v', x=1.01, y=1, font=dict(size=11)
             ))
             _vert_ytitle(fig_yr, '등장 비율 (%)')
-            st.plotly_chart(fig_yr, use_container_width=True)
+            st.plotly_chart(fig_yr, width='stretch')
         else:
             st.info("연도별 트렌드 분석에 필요한 데이터가 부족합니다 (2개 연도 이상 필요).")
 
@@ -851,7 +851,7 @@ with page_error_boundary():
                     '키워드': '키워드',
                     '빈도': st.column_config.NumberColumn('빈도 (샘플 8000건 기준)', format="%d"),
                 },
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
             )
 
