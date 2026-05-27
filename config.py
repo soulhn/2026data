@@ -93,7 +93,7 @@ TRNEE_TYPE_MAP = {
 }
 
 # ── AI 리포트 ──
-GEMINI_MODEL = "gemini-2.5-flash"
+OPENAI_MODEL = "gpt-5-mini"
 CACHE_TTL_AI_REPORT = 1800               # 30분
 AI_REPORT_MAX_TOKENS = 8192
 

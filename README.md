@@ -157,7 +157,7 @@ HRD_API_KEY="발급받은_인증키"
 HANWHA_COURSE_ID="관리할_내부_과정_ID"
 DATABASE_URL="postgresql://..."   # Supabase 연결 (없으면 SQLite 사용)
 SARAMIN_API_KEY="사람인_API_키"  # 채용공고 수집 (선택사항)
-GEMINI_API_KEY="Google_AI_키"    # AI 리포트 기능 (선택사항)
+OPENAI_API_KEY="OpenAI_API_키"   # AI 리포트 기능 (선택사항)
 ```
 
 ### 3. 데이터베이스 구축
@@ -237,7 +237,7 @@ Repository Secrets에 등록:
 - **Visualization:** Plotly & Altair 인터랙티브 차트 (히트맵, 히스토그램, 게이지 등)
 - **시장 분석:** 내부 과정 vs 시장 교차분석, 시계열 트렌드, 경쟁 심화도, 비용-성과 시뮬레이터, 자격증 분석 (scikit-learn)
 - **매출 분석:** 단위기간별 훈련비 청구 계산 (일훈련비 145,200원 기준), 기수별 매출 비교
-- **AI 리포트:** Gemini (gemini-2.5-flash) 기반 기수별 성과 리포트 자동 생성
+- **AI 리포트:** OpenAI (gpt-5-mini) 기반 기수별 성과 리포트 자동 생성
 - **채용 동향:** 사람인 API 기반 IT 채용공고 분석 (키워드 20개, 1일 단위 분할 수집, 다중 지역 지원, 진행중/종료 분리)
 - **위험 관리:** 누적 출결 위험 지표 (결석 3회+, 지각 5회+, 조퇴 5회+), 출결 추이 모니터링
 

@@ -7,13 +7,13 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import (
-    load_data, check_password, get_gemini_api_key,
+    load_data, check_password, get_openai_api_key,
     calc_attendance_rate_from_counts, calc_employment_rate_6, parse_empl_rate,
     is_completed, calculate_age_at_training, load_cache_json,
     page_error_boundary,
 )
 from config import (
-    CACHE_TTL_DEFAULT, GEMINI_MODEL, CACHE_TTL_AI_REPORT,
+    CACHE_TTL_DEFAULT, OPENAI_MODEL, CACHE_TTL_AI_REPORT,
     AI_REPORT_MAX_TOKENS, TRNEE_TYPE_MAP, RISK_ABSENT, RISK_LATE,
     RISK_EARLY_LEAVE, CacheKey,
 )
@@ -284,7 +284,7 @@ with page_error_boundary():
         return data
 
 
-    # ── Gemini API 호출 ──
+    # ── OpenAI API 호출 ──
 
     SYSTEM_PROMPT = """당신은 HRD-Net 직업훈련 과정 성과 분석 전문가입니다.
 제공된 데이터를 바탕으로 한국어 분석 리포트를 작성하세요.
@@ -328,27 +328,30 @@ with page_error_boundary():
 
     @st.cache_data(ttl=CACHE_TTL_AI_REPORT, show_spinner=False)
     def generate_report(data_json: str, report_type: str) -> str:
-        from google import genai
+        from openai import OpenAI
 
-        api_key = get_gemini_api_key()
-        client = genai.Client(api_key=api_key)
+        api_key = get_openai_api_key()
+        client = OpenAI(api_key=api_key)
 
         prompt = SYSTEM_PROMPT_OVERALL if report_type == "전체 종합" else SYSTEM_PROMPT
 
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=f"{prompt}\n\n분석 데이터:\n{data_json}",
-            config={"max_output_tokens": AI_REPORT_MAX_TOKENS},
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": f"분석 데이터:\n{data_json}"},
+            ],
+            max_completion_tokens=AI_REPORT_MAX_TOKENS,
         )
-        return response.text
+        return response.choices[0].message.content
 
 
     # ── UI ──
 
-    api_key = get_gemini_api_key()
+    api_key = get_openai_api_key()
     if not api_key:
         st.warning(
-            "GEMINI_API_KEY가 설정되지 않았습니다. "
+            "OPENAI_API_KEY가 설정되지 않았습니다. "
             "환경변수 또는 Streamlit secrets에 키를 추가해주세요."
         )
         st.stop()

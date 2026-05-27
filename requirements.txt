@@ -20,4 +20,4 @@ plotly
 altair
 scikit-learn
 pytest
-google-genai
+openai
