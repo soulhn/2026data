@@ -335,15 +335,13 @@ with page_error_boundary():
 
         prompt = SYSTEM_PROMPT_OVERALL if report_type == "전체 종합" else SYSTEM_PROMPT
 
-        response = client.chat.completions.create(
+        response = client.responses.create(
             model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": f"분석 데이터:\n{data_json}"},
-            ],
-            max_completion_tokens=AI_REPORT_MAX_TOKENS,
+            instructions=prompt,
+            input=f"분석 데이터:\n{data_json}",
+            max_output_tokens=AI_REPORT_MAX_TOKENS,
         )
-        return response.choices[0].message.content
+        return response.output_text
 
 
     # ── UI ──
