@@ -1,0 +1,20 @@
+name: Keepalive (Streamlit 휴면 방지)
+
+on:
+  schedule:
+    # 8시간 간격 - KST 06:00, 14:00, 22:00
+    - cron: '0 21 * * *'   # UTC 21:00 = KST 06:00
+    - cron: '0 5 * * *'    # UTC 05:00 = KST 14:00
+    - cron: '0 13 * * *'   # UTC 13:00 = KST 22:00
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Wake up Streamlit app
+        run: |
+          curl -sSf -A "github-actions-keepalive" \
+            https://playdata.streamlit.app/ \
+            -o /dev/null -w "HTTP %{http_code} in %{time_total}s\n"
