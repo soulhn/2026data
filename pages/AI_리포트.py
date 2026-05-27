@@ -18,11 +18,22 @@ from config import (
     RISK_EARLY_LEAVE, CacheKey,
 )
 
-st.set_page_config(page_title="AI 리포트", page_icon="🤖", layout="wide")
+st.set_page_config(
+    page_title="AI 리포트",
+    page_icon="🤖",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 check_password()
 with page_error_boundary():
     st.title("🤖 AI 리포트")
     st.markdown("AI가 훈련 과정 데이터를 분석하여 **성과 리포트**를 자동 생성합니다.")
+
+    st.info(
+        "👈 **왼쪽 사이드바**에서 리포트 유형과 기수를 선택한 뒤 "
+        "**[리포트 생성]** 버튼을 눌러주세요."
+    )
+    st.caption("사이드바가 보이지 않으면 좌측 상단의 **»** 아이콘으로 펼칠 수 있습니다.")
 
 
     # ── 데이터 수집 ──
