@@ -2,7 +2,6 @@
 전체 DB 테이블 초기화 및 마이그레이션 스크립트
 모든 테이블의 CREATE/ALTER를 한 곳에서 관리합니다.
 """
-import sqlite3
 from utils import get_connection, DB_FILE, is_pg, adapt_query
 
 
@@ -219,7 +218,10 @@ def init_all_tables():
         ('IDX_MARKET_TARGET',     'TB_MARKET_TREND', 'TRAIN_TARGET'),
         ('IDX_ATTEND_DEGR',   'TB_ATTENDANCE_LOG', 'TRPR_DEGR'),
         ('IDX_ATTEND_DATE',   'TB_ATTENDANCE_LOG', 'ATEND_DT'),
+        ('IDX_ATTEND_TRNEE',  'TB_ATTENDANCE_LOG', 'TRNEE_ID'),
+        ('IDX_TRAINEE_DEGR',  'TB_TRAINEE_INFO',   'TRPR_DEGR'),
         ('IDX_COURSE_END_DT', 'TB_COURSE_MASTER',  'TR_END_DT'),
+        ('IDX_COURSE_STA_DT', 'TB_COURSE_MASTER',  'TR_STA_DT'),
         ('IDX_JOB_JOB_CD',       'TB_JOB_POSTING', 'JOB_CD'),
         ('IDX_JOB_JOB_MID_CD',   'TB_JOB_POSTING', 'JOB_MID_CD'),
         ('IDX_JOB_LOC_CD',       'TB_JOB_POSTING', 'LOC_CD'),

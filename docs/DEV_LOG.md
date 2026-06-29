@@ -1,5 +1,21 @@
 # 개발 일지
 
+## 2026-06-30 — 페이지 로딩 성능 개선 (콜드 로드 절감)
+
+### 결정 사항
+- 느림의 원인은 "캐싱 부재"가 아니라 **콜드 로드**(첫 방문/TTL 만료/Streamlit Cloud 휴면 깨어남) 시 Supabase 쿼리 다중 왕복으로 진단. 거의 모든 로더는 이미 `@st.cache_data` 적용 상태.
+- `CACHE_TTL_DEFAULT` 600초(10분) → 1800초(30분). 내부 데이터는 ETL이 평일 매시간 갱신하므로 10분 캐시는 과도하게 짧아 콜드 로드가 잦았음.
+- `init_db.py`에 누락 인덱스 3종 추가: `TB_TRAINEE_INFO(TRPR_DEGR)`, `TB_ATTENDANCE_LOG(TRNEE_ID)`, `TB_COURSE_MASTER(TR_STA_DT)`. 운영 중인 Supabase에는 신규 init이 적용되지 않으므로 `sql/perf_indexes.sql`을 1회 수동 실행.
+- `DB_명세.py` 테이블별 COUNT 루프(7회 왕복) → 단일 `UNION ALL` 쿼리(1회). 실패 시 기존 루프로 폴백.
+
+### 보류 / 대안
+- **apply/iterrows 벡터화**: 대부분 수백 행짜리 작은 DataFrame이라 실제 비용이 작고, 출석률·매출 등 검증된 비즈니스 로직이라 회귀 위험이 커 보류.
+- **탭 lazy-load**: `st.tabs`는 모든 탭 본문을 매 rerun 실행 → 진짜 lazy-load하려면 radio 전환(UX 변경)이 필요. 회귀 위험 대비 이득이 TTL 상향으로 줄어 일괄 적용 보류, 필요 시 가장 무거운 페이지부터 개별 적용 검토.
+
+### 영향 범위
+- 수정: config.py, init_db.py, pages/DB_명세.py, docs/DEV_LOG.md
+- 신규: sql/perf_indexes.sql
+
 ## 2026-03-11 — 사람인 채용공고 API 통합
 
 ### 결정 사항

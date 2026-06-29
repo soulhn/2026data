@@ -13,7 +13,7 @@ RISK_LATE = 5                    # 지각 N회 이상
 RISK_EARLY_LEAVE = 5             # 조퇴 N회 이상
 
 # ── 캐시 TTL (초) ──
-CACHE_TTL_DEFAULT = 600          # 일반 페이지 (10분)
+CACHE_TTL_DEFAULT = 1800         # 일반 페이지 (30분 — 내부 데이터는 ETL이 평일 매시간 갱신하므로 10분은 과도하게 짧아 콜드 로드 빈발)
 CACHE_TTL_REALTIME = 300         # 실시간 출결 (5분)
 CACHE_TTL_API = 300              # 실시간 API 캐시 (운영 현황)
 CACHE_TTL_MARKET = 86400         # 시장 동향 (24시간 — ETL 주기와 동기화)

@@ -287,12 +287,23 @@ with page_error_boundary():
     @st.cache_data(ttl=CACHE_TTL_DEFAULT)
     def load_db_counts():
         s = {}
-        for tbl in SCHEMAS:
-            try:
-                df = load_data(f"SELECT COUNT(*) as CNT FROM {tbl}")
-                s[tbl] = int(df["CNT"].iloc[0]) if not df.empty else 0
-            except Exception:
-                s[tbl] = None
+        # 테이블별 COUNT를 단일 UNION ALL 쿼리로 묶어 왕복 횟수를 줄임 (콜드 로드 가속)
+        try:
+            union_sql = " UNION ALL ".join(
+                f"SELECT '{tbl}' AS TBL, COUNT(*) AS CNT FROM {tbl}" for tbl in SCHEMAS
+            )
+            df = load_data(union_sql)
+            counts = {r["TBL"]: int(r["CNT"]) for _, r in df.iterrows()}
+            for tbl in SCHEMAS:
+                s[tbl] = counts.get(tbl)
+        except Exception:
+            # 일부 테이블 부재 등으로 통합 쿼리 실패 시 테이블별 폴백
+            for tbl in SCHEMAS:
+                try:
+                    df = load_data(f"SELECT COUNT(*) as CNT FROM {tbl}")
+                    s[tbl] = int(df["CNT"].iloc[0]) if not df.empty else 0
+                except Exception:
+                    s[tbl] = None
 
         s["market_type"] = _load_cached_dist(CacheKey.DB_MARKET_TYPE, ['훈련유형', '건수'])
         if s["market_type"] is None:
