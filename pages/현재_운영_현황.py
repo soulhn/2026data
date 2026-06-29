@@ -7,7 +7,7 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, calc_attendance_rate, page_error_boundary
+from utils import check_password, calc_attendance_rate, page_error_boundary, is_completed
 from hrd_api import get_active_data_with_fallback, get_full_attendance_logs
 from config import (
     CACHE_TTL_API, LATE_CUTOFF_HHMM, CLASS_END_HHMM, ATTENDANCE_TARGET,
@@ -123,7 +123,11 @@ with page_error_boundary():
     # ── 개별 기수 데이터 준비 (탭2용) ────────────────────────────────────
     this_course = courses_df[courses_df['TRPR_DEGR'] == selected_degr].iloc[0]
     this_students_all = trainees_df[trainees_df['TRPR_DEGR'] == selected_degr].copy()
-    active_students = this_students_all[~this_students_all['TRNEE_STATUS'].isin(['중도탈락', '제적'])].copy()
+    # 재원 = 훈련중만. 수료·조기취업(is_completed)·중도탈락·제적은 모두 제외
+    _status = this_students_all['TRNEE_STATUS']
+    active_students = this_students_all[
+        ~(is_completed(_status) | _status.str.contains('중도탈락|제적', na=False))
+    ].copy()
     this_logs = logs_df[logs_df['TRPR_DEGR'] == selected_degr].copy()
 
     target_date = this_logs['ATEND_DT'].max() if not this_logs.empty else datetime.now().strftime('%Y-%m-%d')
@@ -277,29 +281,32 @@ with page_error_boundary():
 
         # ── [2] 현재 운영 중인 과정 현황 ─────────────────────────────────
         st.subheader("🚨 현재 운영 중인 과정 현황")
-        st.caption("수강 신청/개강 인원/제적/중도 탈락/현재 인원/잔여율 기준입니다.")
+        st.caption("수강 신청/개강 인원/제적/중도 탈락/수료·조기취업/현재 인원/잔여율 기준입니다.")
 
         trainee_stats = trainees_df.groupby(['TRPR_ID', 'TRPR_DEGR']).apply(
             lambda g: pd.Series({
-                'EXPEL_CNT': (g['TRNEE_STATUS'] == '제적').sum(),
-                'DROP_CNT':  (g['TRNEE_STATUS'] == '중도탈락').sum(),
+                'EXPEL_CNT': g['TRNEE_STATUS'].str.contains('제적', na=False).sum(),
+                'DROP_CNT':  g['TRNEE_STATUS'].str.contains('중도탈락', na=False).sum(),
+                'FINI_CNT':  is_completed(g['TRNEE_STATUS']).sum(),
             }),
             include_groups=False,
         ).reset_index()
         active_table = courses_df.merge(trainee_stats, on=['TRPR_ID', 'TRPR_DEGR'], how='left')
-        for c in ['EXPEL_CNT', 'DROP_CNT']:
+        for c in ['EXPEL_CNT', 'DROP_CNT', 'FINI_CNT']:
             active_table[c] = pd.to_numeric(active_table[c], errors='coerce').fillna(0).astype(int)
         active_table['TOT_PAR_MKS'] = pd.to_numeric(active_table['TOT_PAR_MKS'], errors='coerce').fillna(0)
         active_table['TOT_TRP_CNT'] = pd.to_numeric(active_table['TOT_TRP_CNT'], errors='coerce').fillna(0)
+        # 현재 인원 = 개강 인원 − 제적 − 중도탈락 − 수료·조기취업 (실제 훈련중 인원)
         active_table['CURRENT_CNT'] = (
-            active_table['TOT_PAR_MKS'] - active_table['EXPEL_CNT'] - active_table['DROP_CNT']
+            active_table['TOT_PAR_MKS'] - active_table['EXPEL_CNT']
+            - active_table['DROP_CNT'] - active_table['FINI_CNT']
         ).astype(int)
         active_table['잔여율'] = (
             active_table['CURRENT_CNT'] / active_table['TOT_PAR_MKS'].replace(0, pd.NA) * 100
         ).fillna(0)
         st.dataframe(
             active_table[['TRPR_DEGR', 'TRPR_NM', 'TR_END_DT', 'TOT_TRP_CNT', 'TOT_PAR_MKS',
-                           'EXPEL_CNT', 'DROP_CNT', 'CURRENT_CNT', '잔여율']],
+                           'EXPEL_CNT', 'DROP_CNT', 'FINI_CNT', 'CURRENT_CNT', '잔여율']],
             column_config={
                 "TRPR_DEGR":   "회차",
                 "TRPR_NM":     "과정명",
@@ -308,6 +315,7 @@ with page_error_boundary():
                 "TOT_PAR_MKS": st.column_config.NumberColumn("개강 인원", format="%d명"),
                 "EXPEL_CNT":   st.column_config.NumberColumn("제적", format="%d명"),
                 "DROP_CNT":    st.column_config.NumberColumn("중도 탈락", format="%d명"),
+                "FINI_CNT":    st.column_config.NumberColumn("수료·조기취업", format="%d명"),
                 "CURRENT_CNT": st.column_config.NumberColumn("현재 인원", format="%d명"),
                 "잔여율":       st.column_config.ProgressColumn("잔여율", format="%.1f%%", min_value=0, max_value=100),
             },
