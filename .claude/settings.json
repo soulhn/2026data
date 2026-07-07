@@ -17,7 +17,9 @@
       "Bash(git pull:*)",
       "Bash(pip install:*)",
       "Bash(gh:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(ruff check *)",
+      "Bash(git restore *)"
     ],
     "deny": [
       "Edit(.env)",
