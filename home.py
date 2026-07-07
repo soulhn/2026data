@@ -259,7 +259,8 @@ def render_dashboard():
         ])
         st.dataframe(comp_df, hide_index=True, width='stretch')
 
-    st.markdown("**KDT 성과평가 전국 순위** — 3년 연속 상위권 (모집 인원 기준)")
+    st.markdown("**KDT 전국 순위 (모집 인원 기준)** — 3년 연속 상위권")
+    st.caption("과정 단위 모집 인원 합 랭킹 — 2023년은 개강 분기(10~12월 개강 과정) 대상, 2024·2025년은 연간 대상 · 확정 시점 스냅샷 (이후 수집분으로 분모 ±1~2 변동 가능)")
     r1, r2, r3 = st.columns(3)
     with r1:
         st.metric("2023년 전국 순위", "10위 / 300개", "상위 3.3%", delta_color="off")
