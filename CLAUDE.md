@@ -144,7 +144,7 @@ saramin_etl.py (매일 09시)→                    ←    운영 현황: hrd_ap
 
 | 구분 | 공식 | 사용 위치 |
 |---|---|---|
-| **KPI 요약** | `FINI_CNT / TOT_PAR_MKS × 100` | `home.py` — HRD-Net 집계값 기준 |
+| **KPI 요약** | `Σ FINI_CNT / Σ TOT_PAR_MKS × 100` (전 기수 합산) | `home.py` — HRD-Net 집계값 기준, help에 기수 단순평균 병기 |
 | **개별 기수 상세** | `TRNEE_STATUS.str.contains('수료\|조기취업').sum() / 총원` | `종료과정_성과.py` — 훈련생 개별 상태 재집계 |
 
 두 값은 HRD-Net 데이터 수집 시점 차이로 미세하게 다를 수 있음. 둘 다 올바른 값.

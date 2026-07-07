@@ -6,13 +6,13 @@ from datetime import datetime
 from utils import (
     load_data, load_cache_json, check_password,
     calc_attendance_rate, NOT_ATTEND_STATUSES, _attendance_penalty,
-    calc_employment_rate_6,
+    calc_employment_rate_6, calc_recruit_rate,
 )
-from config import CACHE_TTL_DEFAULT, CACHE_TTL_REALTIME, CacheKey
+from config import CACHE_TTL_DEFAULT, CacheKey
 
 st.set_page_config(
-    page_title="HRD 교육성과 대시보드",
-    page_icon="🏠",
+    page_title="한화시스템 BEYOND SW캠프 성과 대시보드",
+    page_icon="🏆",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -97,10 +97,49 @@ def get_attendance_stats():
     return att_df.groupby('TRPR_DEGR').apply(_cohort_stats, include_groups=False).reset_index()
 
 
+@st.cache_data(ttl=CACHE_TTL_DEFAULT)
+def get_market_benchmark():
+    """전국 KDT 벤치마크(모집률·만족도)와 자사 만족도를 시장 데이터에서 집계.
+
+    - 모집률: 정원>0 과정 대상, 신청 0명 포함, 상한 100% 행 평균
+    - 만족도: STDG_SCOR>0 평균을 100점 환산
+    """
+    bench = {'kdt_cnt': 0, 'mkt_recruit': None, 'mkt_satis': None, 'our_satis': None}
+
+    df_kdt = load_data(
+        "SELECT TOT_FXNUM, REG_COURSE_MAN, STDG_SCOR FROM TB_MARKET_TREND "
+        "WHERE TRAIN_TARGET = ?",
+        params=['K-디지털 트레이닝'],
+    )
+    if not df_kdt.empty:
+        bench['kdt_cnt'] = len(df_kdt)
+        fx = pd.to_numeric(df_kdt['TOT_FXNUM'], errors='coerce')
+        df_fx = df_kdt[fx > 0]
+        if not df_fx.empty:
+            reg = pd.to_numeric(df_fx['REG_COURSE_MAN'], errors='coerce').fillna(0)
+            bench['mkt_recruit'] = calc_recruit_rate(
+                reg, pd.to_numeric(df_fx['TOT_FXNUM'], errors='coerce')).mean()
+        scor = pd.to_numeric(df_kdt['STDG_SCOR'], errors='coerce')
+        scor = scor[scor > 0]
+        if not scor.empty:
+            bench['mkt_satis'] = scor.mean() / 100
+
+    df_our = load_data(
+        "SELECT STDG_SCOR FROM TB_MARKET_TREND "
+        "WHERE TRPR_ID IN (SELECT DISTINCT TRPR_ID FROM TB_COURSE_MASTER)"
+    )
+    if not df_our.empty:
+        our = pd.to_numeric(df_our['STDG_SCOR'], errors='coerce')
+        our = our[our > 0]
+        if not our.empty:
+            bench['our_satis'] = our.mean() / 100
+    return bench
+
+
 def _render_project_intro():
-    st.markdown("## HRD 교육성과 분석 시스템")
+    st.markdown("## 한화시스템 BEYOND SW캠프 · 성과 분석 시스템")
     st.markdown("`Python` `Streamlit` `PostgreSQL` `GitHub Actions`")
-    st.caption("한화시스템 BEYOND SW캠프 | K-Digital Training B2G 교육사업 | 2023.07 ~ 현재")
+    st.caption("K-Digital Training B2G 교육사업 | 2023.10 ~ 2026.07 | 1기~25기 전 과정 종료")
     st.divider()
 
 
@@ -115,13 +154,20 @@ def render_dashboard():
         st.stop()
 
     # [헤더]
-    st.title("📊 HRD 교육성과 종합 대시보드")
-    st.markdown(f"**{datetime.now().strftime('%Y년 %m월 %d일')}** 기준 운영 현황입니다.")
+    st.title("🏆 한화시스템 BEYOND SW캠프 성과 대시보드")
+    st.markdown(
+        f"**1기~25기 전 과정 종료** (2023.10 ~ 2026.07) · "
+        f"데이터 기준일 **{datetime.now().strftime('%Y-%m-%d')}**"
+    )
     st.divider()
 
     # [Section 1] 핵심 지표 (KPI)
     total_courses = len(df)
-    total_trainees = df['TOT_PAR_MKS'].sum()
+    total_trainees = int(df['TOT_PAR_MKS'].sum())
+    total_fxnum = int(df['TOT_FXNUM'].sum())
+    total_fini = int(df['FINI_CNT'].sum())
+    recruit_rate = total_trainees / total_fxnum * 100 if total_fxnum else 0.0
+    completion_rate = total_fini / total_trainees * 100 if total_trainees else 0.0
     avg_rate_3 = df[df['상태'] == '종료']['EI_EMPL_RATE_3'].mean()
     avg_rate_6 = df[df['상태'] == '종료']['TOTAL_RATE_6'].mean()
     active_courses = len(df[df['상태'] == '진행중'])
@@ -130,18 +176,45 @@ def render_dashboard():
     df_ended = df[df['상태'] == '종료']
     avg_completion = df_ended['수료율'].mean()
     avg_att = att_stats['ATT_RATE'].mean() if not att_stats.empty else 0.0
+    bench = get_market_benchmark()
+    rev_cache = load_cache_json(CacheKey.REVENUE_ALL_TERMS)
 
     st.subheader("📊 핵심 성과 지표")
-    st.caption("종료된 전체 기수 기준 평균값입니다.")
+    st.caption("1기~25기 전체 기준 최종 수치입니다. 모집률·만족도의 증감 표시는 전국 KDT 평균 대비 격차입니다.")
     kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
-    kpi1.metric("총 운영 과정", f"{total_courses}개", delta=f"진행중 {active_courses}개")
-    kpi2.metric("누적 수강생", f"{total_trainees:,}명")
-    kpi3.metric("평균 출석률", f"{avg_att:.1f}%", help="결석/중도탈락미출석/100분의50미만출석 제외, 지각·조퇴·외출 3개 누적 시 1일 차감 (종료 기수)")
-    kpi4.metric("평균 수료율", f"{avg_completion:.1f}%", help="수료인원 / 수강인원 기준")
-    kpi5.metric("평균 취업률 (3개월)", f"{avg_rate_3:.1f}%" if pd.notna(
-        avg_rate_3) else "-", help="수료 후 3개월 고용보험 가입률 (EI_EMPL_RATE_3 기준, 집계 전 기수 제외)")
-    kpi6.metric("평균 취업률 (6개월)", f"{avg_rate_6:.1f}%" if pd.notna(
-        avg_rate_6) else "-", help="고용보험(EI_6) + HRD 자체 취업(HRD_6) 합산 (집계 전 기수 제외)")
+    status_note = f"진행중 {active_courses}개" if active_courses else "전 과정 종료"
+    kpi1.metric("운영 기수", f"{total_courses}개", delta=status_note, delta_color="off")
+    kpi2.metric("누적 수강생", f"{total_trainees:,}명",
+                delta=f"정원 {total_fxnum:,}명", delta_color="off")
+    if bench['mkt_recruit'] is not None:
+        kpi3.metric("모집률", f"{recruit_rate:.1f}%",
+                    delta=f"{recruit_rate - bench['mkt_recruit']:+.1f}%p",
+                    help=f"수강 인원 {total_trainees:,}명 / 정원 {total_fxnum:,}명 · 전국 KDT 평균 {bench['mkt_recruit']:.1f}% 대비")
+    else:
+        kpi3.metric("모집률", f"{recruit_rate:.1f}%",
+                    help=f"수강 인원 {total_trainees:,}명 / 정원 {total_fxnum:,}명")
+    if bench['our_satis'] is not None and bench['mkt_satis'] is not None:
+        kpi4.metric("만족도", f"{bench['our_satis']:.1f}점",
+                    delta=f"{bench['our_satis'] - bench['mkt_satis']:+.1f}점",
+                    help=f"HRD-Net 만족도 100점 환산 (기수 평균) · 전국 KDT 평균 {bench['mkt_satis']:.1f}점 대비")
+    else:
+        kpi4.metric("만족도", f"{bench['our_satis']:.1f}점" if bench['our_satis'] is not None else "-",
+                    help="HRD-Net 만족도 100점 환산 (기수 평균)")
+    kpi5.metric("수료율", f"{completion_rate:.1f}%",
+                help=f"수료 {total_fini:,}명 / 수강 {total_trainees:,}명 합산 기준 (기수 단순평균 {avg_completion:.1f}%)")
+    kpi6.metric("평균 출석률", f"{avg_att:.1f}%", help="결석/중도탈락미출석/100분의50미만출석 제외, 지각·조퇴·외출 3개 누적 시 1일 차감 (종료 기수)")
+
+    kpi7, kpi8, kpi9, _, _, _ = st.columns(6)
+    kpi7.metric("평균 취업률 (3개월)", f"{avg_rate_3:.1f}%" if pd.notna(
+        avg_rate_3) else "-", help="수료 후 3개월 고용보험 가입률 (EI_EMPL_RATE_3 기준, 집계 중인 기수 제외)")
+    kpi8.metric("평균 취업률 (6개월)", f"{avg_rate_6:.1f}%" if pd.notna(
+        avg_rate_6) else "-", help="고용보험(EI_6) + HRD 자체 취업(HRD_6) 합산 (집계 중인 기수 제외 — 수료 후 3~6개월 소요)")
+    if rev_cache:
+        _rev_df = pd.DataFrame(rev_cache)
+        if not _rev_df.empty and 'actual_fee' in _rev_df.columns:
+            _total_eok = int(_rev_df['actual_fee'].sum() / 1e7) / 10  # 억 단위 소수 첫째 자리 버림
+            kpi9.metric("누적 총 매출", f"{_total_eok}억+",
+                        help="단위기간별 청구 기준 실제 매출 합계 (상세: 매출 분석 페이지)")
     st.divider()
 
     # [Section 3] 기수 기록
@@ -163,7 +236,6 @@ def render_dashboard():
         best_att = att_stats.loc[att_stats['ATT_RATE'].idxmax()]
         s3c3.metric(
             "최고 출석률", f"{best_att['ATT_RATE']:.1f}%", f"{int(best_att['TRPR_DEGR'])}회차")
-    rev_cache = load_cache_json(CacheKey.REVENUE_ALL_TERMS)
     if rev_cache:
         rev_df = pd.DataFrame(rev_cache)
         if not rev_df.empty and 'actual_fee' in rev_df.columns:
@@ -174,9 +246,20 @@ def render_dashboard():
     st.divider()
 
     # [Section 4] 시장 포지셔닝
-    st.subheader("📍 전국 KDT 시장 포지셔닝")
-    st.caption("K-디지털 트레이닝 모집 인원 기준")
+    st.subheader("📍 전국 KDT 시장 비교")
+    if bench['kdt_cnt'] and bench['mkt_recruit'] is not None and bench['our_satis'] is not None:
+        st.caption(f"전국 K-디지털 트레이닝 {bench['kdt_cnt']:,}개 과정(시장 데이터 40만+ 건) 대비 본 과정 성과입니다.")
+        comp_df = pd.DataFrame([
+            {"지표": "모집률(%)", "본 과정": round(recruit_rate, 1),
+             "전국 KDT 평균": round(bench['mkt_recruit'], 1),
+             "격차": f"{recruit_rate - bench['mkt_recruit']:+.1f}%p"},
+            {"지표": "만족도(점)", "본 과정": round(bench['our_satis'], 1),
+             "전국 KDT 평균": round(bench['mkt_satis'], 1),
+             "격차": f"{bench['our_satis'] - bench['mkt_satis']:+.1f}점"},
+        ])
+        st.dataframe(comp_df, hide_index=True, width='stretch')
 
+    st.markdown("**KDT 성과평가 전국 순위** — 3년 연속 상위권 (모집 인원 기준)")
     r1, r2, r3 = st.columns(3)
     with r1:
         st.metric("2023년 전국 순위", "10위 / 300개", "상위 3.3%", delta_color="off")
@@ -208,15 +291,21 @@ def render_dashboard():
     col_left, col_right = st.columns([1, 1])
 
     with col_left:
-        st.subheader("📈 연도별 운영 규모")
-        df['Year'] = df['TR_STA_DT'].dt.year
-        year_counts = df.groupby(
-            'Year')['TRPR_NM'].count().reset_index(name='과정수')
-        chart = alt.Chart(year_counts).mark_bar().encode(
-            x=alt.X('Year:O', title='연도', axis=alt.Axis(labelAngle=0)),
-            y=alt.Y('과정수:Q', axis=alt.Axis(title=['운', '영', '과', '정', '수'], titleAngle=0)),
-            color=alt.value('#3182bd'),
-            tooltip=['Year', '과정수'],
+        st.subheader("📈 기수별 모집·수료 인원")
+        cohort_df = df.sort_values('TRPR_DEGR')[
+            ['TRPR_DEGR', 'TOT_PAR_MKS', 'FINI_CNT']].rename(
+            columns={'TOT_PAR_MKS': '모집 인원', 'FINI_CNT': '수료 인원'})
+        fold_df = cohort_df.melt('TRPR_DEGR', var_name='구분', value_name='인원')
+        chart = alt.Chart(fold_df).mark_bar().encode(
+            x=alt.X('TRPR_DEGR:O', title='기수', axis=alt.Axis(labelAngle=0)),
+            y=alt.Y('인원:Q', axis=alt.Axis(title=['인', '원'], titleAngle=0)),
+            color=alt.Color('구분:N',
+                            scale=alt.Scale(domain=['모집 인원', '수료 인원'],
+                                            range=['#3182bd', '#2ecc71']),
+                            legend=alt.Legend(title=None, orient='top')),
+            xOffset='구분:N',
+            tooltip=[alt.Tooltip('TRPR_DEGR:O', title='기수'), alt.Tooltip('구분:N'),
+                     alt.Tooltip('인원:Q', format=',')],
         ).properties(height=300)
         st.altair_chart(chart, width='stretch')
 
@@ -237,6 +326,28 @@ def render_dashboard():
             width='stretch',
         )
 
+    # [Section 6] 1기~25기 전체 성과
+    st.subheader("📋 기수별 전체 성과")
+    st.caption("취업률 공란은 집계 중입니다 (수료 후 3~6개월 소요).")
+    detail_df = df.sort_values('TRPR_DEGR').copy()
+    detail_df['기간'] = (detail_df['TR_STA_DT'].dt.strftime('%Y-%m-%d') + ' ~ '
+                       + detail_df['TR_END_DT'].dt.strftime('%Y-%m-%d'))
+    st.dataframe(
+        detail_df[['TRPR_DEGR', '기간', 'TOT_FXNUM', 'TOT_PAR_MKS', 'FINI_CNT', '수료율', 'TOTAL_RATE_6']],
+        column_config={
+            "TRPR_DEGR": "회차",
+            "기간": "기간",
+            "TOT_FXNUM": st.column_config.NumberColumn("정원", format="%d명"),
+            "TOT_PAR_MKS": st.column_config.NumberColumn("수강 인원", format="%d명"),
+            "FINI_CNT": st.column_config.NumberColumn("수료 인원", format="%d명"),
+            "수료율": st.column_config.ProgressColumn("수료율(%)", format="%.1f%%", min_value=0, max_value=100),
+            "TOTAL_RATE_6": st.column_config.ProgressColumn("취업률 (6개월)", format="%.1f%%", min_value=0, max_value=100),
+        },
+        hide_index=True,
+        width='stretch',
+        height=430,
+    )
+
     with st.sidebar:
         st.info("좌측 메뉴를 선택하여 상세 분석 페이지로 이동하세요.")
         st.markdown("""
@@ -256,7 +367,7 @@ def render_dashboard():
 
 pg = st.navigation({
     "개요": [
-        st.Page(render_dashboard, title="성과 대시보드", icon="🏠"),
+        st.Page(render_dashboard, title="한화시스템 BEYOND SW캠프 성과 대시보드", icon="🏠"),
     ],
     "성과 분석": [
         st.Page("pages/종료과정_성과.py", title="종료과정 성과", icon="📊"),
