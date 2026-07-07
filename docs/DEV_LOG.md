@@ -1,5 +1,20 @@
 # 개발 일지
 
+## 2026-07-08 — market_etl 전체 재수집 모드 (ETL_FULL_REFRESH)
+
+### 배경
+- `STDG_SCOR`(만족도)는 기수별 점수가 아니라 **수집 시점의 과정 누적 만족도 스냅샷** — 증분 윈도우(12개월, 훈련시작일 기준) 밖 행은 영구히 낡은 값으로 남음 (자사 1~15기: 2026-02-09 수집분 89.3 고정, 현행 API값 90.4)
+- 25기 만족도 조사 종료(2026-07-07) 후 전 기수 값 통일 필요 → 수동 전체 재수집 수단 부재
+
+### 결정 사항
+- `ETL_FULL_REFRESH=1` env로 `get_collect_range()`가 증분 대신 `ARCHIVE_START(2023-01-01)~오늘` 전체 수집
+- workflow_dispatch에 `full_refresh` boolean 입력 추가, `timeout-minutes` 60→180 (전체 43개월 수집 대비)
+- 스케줄 실행은 기존과 동일하게 증분 유지 (입력 미지정 시 빈 문자열)
+
+### 영향 범위
+- 수정: config.py, market_etl.py, .github/workflows/market_etl.yml, CLAUDE.md
+- 테스트: TestGetCollectRange 1개 추가 (212→213개)
+
 ## 2026-06-30 — 페이지 로딩 성능 개선 (콜드 로드 절감)
 
 ### 결정 사항

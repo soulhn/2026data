@@ -5,6 +5,11 @@ on:
     # UTC 12:00 = KST 21:00 (매일 저녁 9시)
     - cron: '0 12 * * *'
   workflow_dispatch:  # 수동 실행 버튼
+    inputs:
+      full_refresh:
+        description: '전체 재수집 (2023-01-01 ~ 현재, 증분 윈도우 무시)'
+        type: boolean
+        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -12,7 +17,7 @@ env:
 jobs:
   etl:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180  # 전체 재수집(43개월) 대비. 일일 증분(12개월)은 평소 13~28분
 
     steps:
       - uses: actions/checkout@v4
@@ -29,4 +34,5 @@ jobs:
         env:
           HRD_API_KEY: ${{ secrets.HRD_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ETL_FULL_REFRESH: ${{ inputs.full_refresh && '1' || '' }}
         run: python -u market_etl.py

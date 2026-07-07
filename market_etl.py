@@ -1,5 +1,3 @@
-import sqlite3
-import requests
 import os
 import math
 import json
@@ -8,9 +6,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-from utils import get_connection, DB_FILE, safe_float, safe_int, get_retry_session, adapt_query, is_pg
+from utils import get_connection, safe_float, safe_int, get_retry_session, adapt_query, is_pg
 from init_db import init_all_tables
-from config import ETL_ARCHIVE_START, ETL_REFRESH_MONTHS, ETL_PAGE_SIZE, ETL_MAX_WORKERS, ETL_BATCH_SIZE, ETL_BATCH_PAGE_SIZE, CacheKey
+from config import ETL_ARCHIVE_START, ETL_REFRESH_MONTHS, ETL_PAGE_SIZE, ETL_MAX_WORKERS, ETL_BATCH_SIZE, ETL_BATCH_PAGE_SIZE, ETL_FULL_REFRESH, CacheKey
 
 import logging
 import time
@@ -32,6 +30,7 @@ ARCHIVE_START = ETL_ARCHIVE_START
 REFRESH_MONTHS = ETL_REFRESH_MONTHS
 PAGE_SIZE  = ETL_PAGE_SIZE
 MAX_WORKERS= ETL_MAX_WORKERS
+FULL_REFRESH = ETL_FULL_REFRESH
 
 BASE_URL = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_1.jsp"
 
@@ -65,6 +64,12 @@ def week_shards(start: dt.date, end: dt.date):
 def get_collect_range():
     """DB 상태를 확인하여 수집 범위를 결정합니다."""
     today = dt.date.today()
+
+    if FULL_REFRESH:
+        # 수동 전체 재수집: 증분 윈도우 밖 행(만족도 등 스냅샷 컬럼)까지 최신값으로 갱신
+        logger.info(f"[모드] 수동 전체 재수집 - ETL_FULL_REFRESH=1 ({ARCHIVE_START} ~ {today})")
+        return ARCHIVE_START, today
+
     refresh_start = today - dt.timedelta(days=REFRESH_MONTHS * 30)
 
     conn = get_connection()

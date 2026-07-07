@@ -218,6 +218,7 @@ Fix: Correct completion rate calculation (수료율 계산 오류 수정)
 - `HANWHA_COURSE_ID` — 내부 관리 대상 과정 ID (GitHub Actions + Streamlit secrets 양쪽 등록 필요)
 - `DATABASE_URL` — PostgreSQL 연결 문자열 (없으면 SQLite 폴백)
 - `SARAMIN_API_KEY` — 사람인 채용공고 API 키 (GitHub Actions + Streamlit secrets 등록)
+- `ETL_FULL_REFRESH` — `=1`이면 market_etl이 증분(12개월) 대신 2023-01-01부터 전체 재수집. GitHub Actions 수동 실행의 `full_refresh` 입력으로 전달 (`gh workflow run market_etl.yml -f full_refresh=true`)
 
 ## Claude Code 구조 관리
 

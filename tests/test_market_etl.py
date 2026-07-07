@@ -136,3 +136,12 @@ class TestNormalizeStdgScor:
 
     def test_boundary_above_100(self):
         assert _normalize_stdg_scor(100.1) == 100.1
+
+
+class TestGetCollectRange:
+    def test_full_refresh_env_collects_from_archive_start(self, monkeypatch):
+        import market_etl
+        monkeypatch.setattr(market_etl, "FULL_REFRESH", True)
+        start, end = market_etl.get_collect_range()
+        assert start == market_etl.ARCHIVE_START
+        assert end == dt.date.today()
