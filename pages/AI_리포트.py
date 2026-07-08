@@ -10,7 +10,7 @@ from utils import (
     load_data, check_password, get_openai_api_key,
     calc_attendance_rate_from_counts, calc_employment_rate_6, parse_empl_rate,
     is_completed, calculate_age_at_training, load_cache_json,
-    page_error_boundary,
+    page_error_boundary, mask_name_columns,
 )
 from config import (
     CACHE_TTL_DEFAULT, OPENAI_MODEL, CACHE_TTL_AI_REPORT,
@@ -50,11 +50,12 @@ with page_error_boundary():
 
     @st.cache_data(ttl=CACHE_TTL_DEFAULT)
     def get_cohort_trainees(degr):
-        return load_data(
+        # 실명 마스킹: 표시뿐 아니라 외부 AI API로 전송되는 프롬프트에도 마스킹된 이름만 포함
+        return mask_name_columns(load_data(
             "SELECT TRNEE_ID, TRNEE_NM, TRNEE_STATUS, TRNEE_TYPE, BIRTH_DATE "
             "FROM TB_TRAINEE_INFO WHERE TRPR_DEGR = ?",
             params=[degr],
-        )
+        ))
 
 
     @st.cache_data(ttl=CACHE_TTL_DEFAULT)

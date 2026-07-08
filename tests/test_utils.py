@@ -17,6 +17,8 @@ from utils import (
     is_completed,
     calc_recruit_rate,
     get_billing_periods,
+    mask_name,
+    mask_name_columns,
 )
 
 
@@ -395,3 +397,48 @@ class TestGetBillingPeriods:
         """미래 기간 → '예정'"""
         periods = get_billing_periods("2099-01-01", "2099-03-31")
         assert all(p["status"] == "예정" for p in periods)
+
+
+class TestMaskName:
+    def test_three_chars(self):
+        assert mask_name('홍길동') == '홍*동'
+
+    def test_two_chars(self):
+        assert mask_name('김수') == '김*'
+
+    def test_four_chars(self):
+        assert mask_name('남궁민수') == '남**수'
+
+    def test_none_passthrough(self):
+        assert mask_name(None) is None
+
+    def test_nan_passthrough(self):
+        result = mask_name(float('nan'))
+        assert isinstance(result, float) and pd.isna(result)
+
+    def test_empty_string(self):
+        assert mask_name('') == ''
+
+    def test_single_char(self):
+        assert mask_name('김') == '김'
+
+
+class TestMaskNameColumns:
+    def test_masks_trnee_nm(self):
+        df = pd.DataFrame({'TRNEE_NM': ['홍길동', '김수'], 'CNT': [1, 2]})
+        out = mask_name_columns(df)
+        assert out['TRNEE_NM'].tolist() == ['홍*동', '김*']
+
+    def test_original_untouched(self):
+        df = pd.DataFrame({'TRNEE_NM': ['홍길동']})
+        mask_name_columns(df)
+        assert df['TRNEE_NM'].tolist() == ['홍길동']
+
+    def test_no_name_column_returns_original(self):
+        df = pd.DataFrame({'CNT': [1]})
+        assert mask_name_columns(df) is df
+
+    def test_none_and_empty_df(self):
+        assert mask_name_columns(None) is None
+        empty = pd.DataFrame()
+        assert mask_name_columns(empty) is empty

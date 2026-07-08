@@ -7,7 +7,7 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, calc_attendance_rate, page_error_boundary, is_completed
+from utils import check_password, calc_attendance_rate, page_error_boundary, is_completed, mask_name_columns
 from hrd_api import get_active_data_with_fallback, get_full_attendance_logs
 from config import (
     CACHE_TTL_API, LATE_CUTOFF_HHMM, CLASS_END_HHMM, ATTENDANCE_TARGET,
@@ -22,12 +22,14 @@ with page_error_boundary():
 
     @st.cache_data(ttl=CACHE_TTL_API)
     def get_active_data():
-        return get_active_data_with_fallback()
+        courses, trainees, logs, source = get_active_data_with_fallback()
+        # 개인정보 보호: 실명은 로드 직후 마스킹 (표시·집계 전 원천 차단)
+        return courses, mask_name_columns(trainees), mask_name_columns(logs), source
 
 
     @st.cache_data(ttl=CACHE_TTL_API)
     def _cached_full_logs(courses_df, api_logs_df):
-        return get_full_attendance_logs(courses_df, api_logs_df)
+        return mask_name_columns(get_full_attendance_logs(courses_df, api_logs_df))
 
 
     try:

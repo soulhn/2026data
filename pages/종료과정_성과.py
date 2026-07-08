@@ -10,7 +10,7 @@ from utils import (
     load_data, load_cache_json, calculate_age_at_training, safe_float,
     check_password, calc_attendance_rate_from_counts, calc_employment_rate_6,
     parse_empl_rate, is_completed, parse_time_to_minutes, NOT_ATTEND_STATUSES,
-    page_error_boundary,
+    page_error_boundary, mask_name_columns,
 )
 from config import CACHE_TTL_DEFAULT, CacheKey, EMPL_CODE_MAP, RISK_ABSENT, TRNEE_TYPE_MAP
 
@@ -40,11 +40,11 @@ with page_error_boundary():
             "EI_EMPL_RATE_3, EI_EMPL_RATE_6, HRD_EMPL_RATE_6 "
             "FROM TB_COURSE_MASTER WHERE TRPR_DEGR = ?", params=[degr]
         )
-        trainee_df = load_data(
+        trainee_df = mask_name_columns(load_data(
             "SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, TRNEE_NM, TRNEE_STATUS, "
             "TRNEE_TYPE, BIRTH_DATE, TOTAL_DAYS, OFLHD_CNT, VCATN_CNT "
             "FROM TB_TRAINEE_INFO WHERE TRPR_DEGR = ?", params=[degr]
-        )
+        ))
         if not course_df.empty and not trainee_df.empty:
             trainee_df['TRNEE_TYPE'] = trainee_df['TRNEE_TYPE'].map(TRNEE_TYPE_MAP).fillna(trainee_df['TRNEE_TYPE'])
             start_date = course_df.iloc[0]['TR_STA_DT']
@@ -104,7 +104,7 @@ with page_error_boundary():
 
     @st.cache_data(ttl=CACHE_TTL_DEFAULT)
     def get_full_attendance_with_status(degr):
-        return load_data(
+        return mask_name_columns(load_data(
             "SELECT a.TRNEE_ID, a.ATEND_DT, a.ATEND_STATUS, "
             "t.TRNEE_STATUS, t.TRNEE_NM "
             "FROM TB_ATTENDANCE_LOG a "
@@ -112,7 +112,7 @@ with page_error_boundary():
             "WHERE a.TRPR_DEGR = ? "
             "ORDER BY a.TRNEE_ID, a.ATEND_DT",
             params=[degr],
-        )
+        ))
 
 
     @st.cache_data(ttl=CACHE_TTL_DEFAULT)

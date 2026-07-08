@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
-import datetime
 import sys
 import os
 
@@ -10,9 +8,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import (
     load_data, check_password, get_billing_periods, calc_revenue,
     NOT_ATTEND_STATUSES, _attendance_penalty, load_cache_json,
-    page_error_boundary,
+    page_error_boundary, mask_name_columns,
 )
-from config import CACHE_TTL_DEFAULT, DAILY_TRAINING_FEE, REVENUE_FULL_THRESHOLD, CacheKey
+from config import CACHE_TTL_DEFAULT, DAILY_TRAINING_FEE, CacheKey
 
 st.set_page_config(page_title="매출 분석", page_icon="💰", layout="wide")
 check_password()
@@ -45,12 +43,12 @@ with page_error_boundary():
             "WHERE TRPR_ID = ? AND TRPR_DEGR = ?",
             params=[trpr_id, trpr_degr],
         )
-        trainee_df = load_data(
+        trainee_df = mask_name_columns(load_data(
             "SELECT TRNEE_ID, TRNEE_NM "
             "FROM TB_TRAINEE_INFO "
             "WHERE TRPR_ID = ? AND TRPR_DEGR = ?",
             params=[trpr_id, trpr_degr],
-        )
+        ))
         if not att_df.empty and not trainee_df.empty:
             att_df = att_df.merge(trainee_df[['TRNEE_ID', 'TRNEE_NM']], on='TRNEE_ID', how='left')
         elif not att_df.empty:
@@ -132,9 +130,6 @@ with page_error_boundary():
             )
             if rev_df.empty:
                 continue
-            base_fee = sum(
-                p['training_days_total'] for p in _enrich_periods(rev_df, periods)
-            )
             _p_raw = rev_df.groupby('period_num')['fee'].sum()
             actual_fee = int(((_p_raw // 10) * 10).sum())
             n_students = rev_df['TRNEE_ID'].nunique()

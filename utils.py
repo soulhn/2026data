@@ -94,7 +94,7 @@ def page_error_boundary():
 def _get_pg_pool():
     """PG 읽기 전용 커넥션을 캐싱하여 반환 (Streamlit 환경에서만 캐싱)."""
     try:
-        import streamlit as st
+        import streamlit  # noqa: F401 — 스트림릿 가용성 프로브 (없으면 except로 폴백)
         return _get_pg_pool_cached()
     except Exception:
         # Streamlit 없는 환경 (ETL, 테스트 등) → 일반 커넥션
@@ -349,6 +349,34 @@ def calc_recruit_rate(reg_col, fxnum_col):
 def is_completed(status):
     """수료 판정: '수료' 또는 '조기취업' 포함 여부 (정확일치 금지)"""
     return status.str.contains('수료|조기취업', na=False)
+
+
+def mask_name(name):
+    """개인정보 보호용 실명 마스킹: 홍길동→홍*동, 김수→김*, 남궁민수→남**수"""
+    if name is None or (isinstance(name, float) and pd.isna(name)):
+        return name
+    s = str(name).strip()
+    if len(s) < 2:
+        return s
+    if len(s) == 2:
+        return s[0] + '*'
+    return s[0] + '*' * (len(s) - 2) + s[-1]
+
+
+def mask_name_columns(df, columns=('TRNEE_NM',)):
+    """DataFrame 사본의 실명 컬럼을 마스킹해 반환 (표시·AI 전송·다운로드 공통).
+
+    DB 원본은 건드리지 않는 표시 계층 마스킹. 해당 컬럼이 없으면 원본 그대로 반환.
+    """
+    if df is None or getattr(df, 'empty', True):
+        return df
+    hit = [c for c in columns if c in df.columns]
+    if not hit:
+        return df
+    df = df.copy()
+    for c in hit:
+        df[c] = df[c].map(mask_name)
+    return df
 
 
 def clean_time(time_str):

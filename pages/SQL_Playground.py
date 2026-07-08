@@ -6,7 +6,7 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, load_data, is_pg, DB_FILE, page_error_boundary
+from utils import check_password, load_data, is_pg, DB_FILE, page_error_boundary, mask_name_columns
 
 st.set_page_config(page_title="SQL Playground", page_icon="🔍", layout="wide")
 check_password()
@@ -232,7 +232,8 @@ with page_error_boundary():
                 st.caption("ℹ️ LIMIT 100이 자동으로 추가되었습니다.")
             try:
                 t0 = time.time()
-                result_df = load_data(final_sql)
+                # 실명 컬럼(TRNEE_NM)은 결과 표시 전 마스킹 (별칭 조회는 미적용 한계 있음)
+                result_df = mask_name_columns(load_data(final_sql))
                 elapsed = time.time() - t0
                 st.success(f"결과: **{len(result_df):,}행** · 실행 시간: **{elapsed:.2f}초**")
                 st.dataframe(result_df, width='stretch', hide_index=True)
