@@ -245,7 +245,6 @@ Fix: Correct completion rate calculation (수료율 계산 오류 수정)
 
 | 경로 | 내용 |
 |---|---|
-| `docs/PRD.md` | 기획 문서 |
 | `docs/GLOSSARY.md` | UI 용어 사전 |
 | `docs/DEV_LOG.md` | 개발 일지 (의사결정·삽질 기록) |
 | `docs/api/` | 외부 API 명세 (hrd_net.md, saramin.md) |
