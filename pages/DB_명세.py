@@ -103,7 +103,7 @@ with page_error_boundary():
             ],
         },
         "TB_MARKET_TREND": {
-            "설명": "시장 동향. HRD-Net API에서 수집한 전국 KDT 과정 정보 (30만건+).",
+            "설명": "시장 동향. HRD-Net API에서 수집한 전국 KDT 과정 정보 (누적, 매일 증가).",
             "PK": "(TRPR_ID, TRPR_DEGR)",
             "columns": [
                 ("TRPR_ID",          "TEXT",      "훈련과정 ID"),
