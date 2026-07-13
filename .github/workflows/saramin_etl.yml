@@ -1,9 +1,9 @@
-name: Saramin ETL (매일 오전)
+name: Saramin ETL (매일 새벽)
 
 on:
   schedule:
-    # UTC 00:00 = KST 09:00 (매일 오전 9시)
-    - cron: '0 0 * * *'
+    # UTC 19:43 = KST 04:43 (매일 새벽) — 정각·정시를 피해 러너 대기열 지연 최소화
+    - cron: '43 19 * * *'
   workflow_dispatch:  # 수동 실행 버튼
 
 env:

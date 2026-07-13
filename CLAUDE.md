@@ -29,7 +29,7 @@ HRD-Net 공공데이터 기반 훈련 과정 성과 분석 대시보드 (Streaml
 [GitHub Actions]                [Supabase]              [Streamlit Cloud]
 hrd_etl.py (평일 매시간)  →   PostgreSQL DB    ←    대시보드 (읽기 전용)
 market_etl.py (매일 21시) →                    ←    https://playdata.streamlit.app
-saramin_etl.py (매일 09시)→                    ←    운영 현황: hrd_api.py로 API 직접 호출
+saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_api.py로 API 직접 호출
                                                      (60초 캐시, 실패 시 DB 폴백)
 ```
 
@@ -42,7 +42,7 @@ saramin_etl.py (매일 09시)→                    ←    운영 현황: hrd_ap
 ### ETL 자동화
 - `hrd_etl.yml` — 평일 KST 09:00~18:00 매시간
 - `market_etl.yml` — 매일 KST 21:00
-- `saramin_etl.yml` — 매일 KST 09:00 (사람인 채용공고)
+- `saramin_etl.yml` — 매일 KST 04:43 (사람인 채용공고, 정각 회피로 지연 최소화)
 
 ### 사람인 ETL 수집 전략 (`saramin_etl.py`)
 
