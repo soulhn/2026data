@@ -2,19 +2,50 @@ name: Keepalive (Streamlit 휴면 방지)
 
 on:
   schedule:
-    # 8시간 간격 - KST 06:00, 14:00, 22:00
-    - cron: '0 21 * * *'   # UTC 21:00 = KST 06:00
-    - cron: '0 5 * * *'    # UTC 05:00 = KST 14:00
-    - cron: '0 13 * * *'   # UTC 13:00 = KST 22:00
+    # 6시간 간격 — 휴면 기준 12시간, GitHub 스케줄 지연(최대 ~3시간 관측) 감안한 여유
+    # UTC 21:23/03:23/09:23/15:23 = KST 06:23/12:23/18:23/00:23 (정각 회피로 지연 최소화)
+    - cron: '23 21,3,9,15 * * *'
   workflow_dispatch:
 
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 10
     steps:
-      - name: Wake up Streamlit app
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
         run: |
-          curl -sSf -A "github-actions-keepalive" \
-            https://playdata.streamlit.app/ \
-            -o /dev/null -w "HTTP %{http_code} in %{time_total}s\n"
+          pip install playwright
+          playwright install chromium --with-deps
+
+      # 단순 curl/HTTP GET은 정적 셸만 받고 Python 앱을 깨우지 못해 방문으로 집계되지 않음
+      # (기존 방식은 303 리다이렉트에서 멈춰 앱에 닿지도 않았음) → 실제 브라우저로 방문해야 함
+      - name: Visit app with headless browser (wake if asleep)
+        run: |
+          python - <<'EOF'
+          from playwright.sync_api import sync_playwright
+
+          URL = "https://playdata.streamlit.app/"
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page()
+              page.goto(URL, wait_until="domcontentloaded", timeout=60_000)
+              page.wait_for_timeout(5_000)
+
+              # 잠들어 있으면 호스트 페이지에 깨우기 버튼이 뜸
+              wake = page.get_by_role("button", name="Yes, get this app back up!")
+              if wake.count() > 0:
+                  print("App asleep — clicking wake-up button")
+                  wake.click()
+
+              # 실제 앱은 iframe(~/+/) 안에서 렌더링 — 이게 뜨면 Python 기동 + WebSocket 연결 완료
+              app = page.frame_locator('iframe[title="streamlitApp"]')
+              app.locator('[data-testid="stAppViewContainer"]').wait_for(timeout=180_000)
+              print(f"OK: app is awake — title={page.title()!r}")
+              browser.close()
+          EOF
