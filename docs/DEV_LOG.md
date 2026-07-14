@@ -1,5 +1,19 @@
 # 개발 일지
 
+## 2026-07-14 — 앱 전체 Segfault 원인 규명: pyarrow 24.0.0 고정
+
+### 배경
+- 7/14 오전부터 데이터 페이지 브라우징 시 앱 프로세스가 Segmentation fault로 사망 — 클라우드 로그 `201 Segmentation fault ... streamlit`. 부팅·비밀번호 게이트까지는 정상이라 keepalive(게이트만 방문)로는 탐지되지 않았고, 사람이 데이터 페이지를 열 때만 죽어 "Error running app" 반복
+- 원인: **pyarrow 25.0.0(7/10 릴리즈)의 SIGSEGV 버그**(bundled mimalloc, Streamlit 메인테이너 lukasmasuch 진단, 포럼 다발 보고). `st.dataframe` 직렬화 경로에서 발생. pyarrow는 requirements.txt에 없는 streamlit 간접 의존성이라 7/13 이후 환경 재빌드부터 유입 — 7/14 직접 의존성 전체 핀 고정에서도 누락됐던 지점
+- 로컬 재현: pyarrow 25.0.0에서 매출 분석 로딩 중 서버 exit 139(SIGSEGV) 재현 → 24.0.0으로 다운그레이드 후 데이터 페이지 5종 + 동시 세션 3개 모두 정상
+
+### 결정 사항
+- requirements.txt에 `pyarrow==24.0.0` 명시 고정 (참고 주석 포함). streamlit 1.59.2+ 업그레이드 시 재검토
+- 교훈: 간접 의존성도 네이티브 라이브러리(pyarrow 등)는 핀 대상 — "직접 의존성만 고정"의 사각지대
+
+### 영향 범위
+- requirements.txt, docs/DEV_LOG.md
+
 ## 2026-07-14 — 홈 화면 정적 스냅샷 전환 (DB 조회 제거)
 
 ### 배경
