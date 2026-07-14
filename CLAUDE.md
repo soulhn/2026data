@@ -7,8 +7,9 @@ streamlit run home.py           # 앱 실행 (port 8501)
 python -m pytest tests/ -v      # 전체 테스트
 python init_db.py               # DB 스키마 초기화 (최초 1회)
 python hrd_etl.py               # 내부 과정/출결 ETL (수동 실행)
-python market_etl.py            # 시장 동향 ETL (30만+ records)
+python market_etl.py            # 시장 동향 ETL (40만+ records)
 python saramin_etl.py           # 채용공고 ETL (사람인 API, 일일 500회 제한)
+python build_home_snapshot.py   # 홈 확정 스냅샷 재생성 (취업률 확정 시 1회)
 ```
 
 ## ⚠️ 한글 코드포인트 규칙 (CRITICAL)
@@ -32,6 +33,12 @@ market_etl.py (매일 21시) →                    ←    https://playdata.stre
 saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_api.py로 API 직접 호출
                                                      (60초 캐시, 실패 시 DB 폴백)
 ```
+
+### 홈 화면 = 확정 스냅샷 (2026-07 전환)
+- `home.py`는 DB를 조회하지 않음 — 커밋된 `data/home_snapshot.json`(확정 스냅샷)만 렌더
+- 갱신: `python build_home_snapshot.py` → 테스트 → 커밋 (취업률 확정 시 1회 예정, 상세 배경은 docs/DEV_LOG.md 2026-07-14)
+- 벤치마크(60.5·85.7·90.3)·누적 매출 헤드라인(104.1억)은 원장 확정값 고정(`LEDGER_*` 상수) — 시장 데이터 증가에 따른 재계산 드리프트 방지
+- 상세 페이지(pages/)는 기존대로 DB 동적 조회
 
 ### DB 이중 지원 (SQLite / PostgreSQL)
 - `DATABASE_URL` 환경변수 있으면 → PostgreSQL (Supabase), 없으면 → SQLite (로컬)
@@ -61,6 +68,7 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 
 ## 주의사항
 
+- **홈 수치는 스냅샷 고정**: DB를 갱신해도 홈 화면에는 반영되지 않음 → `build_home_snapshot.py` 재실행 후 `data/home_snapshot.json` 커밋 필요
 - **adapt_query() 필수**: 모든 SQL 쿼리는 `adapt_query()` 통과 → PG 호환. 직접 `pd.read_sql()` 대신 `load_data()` 사용 권장
 - **날짜 형식**: `TB_MARKET_TREND.TR_STA_DT` = `YYYY-MM-DD`. WHERE 절에 `strftime('%Y-%m-%d')` 사용 (`YYYYMMDD` 사용 시 데이터 누락)
 - **PG COUNT**: `COUNT(*) AS cnt` 별칭 필수 (`RealDictCursor`에서 `row[0]` 불가)

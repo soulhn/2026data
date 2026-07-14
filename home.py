@@ -1,14 +1,10 @@
 import json
+from pathlib import Path
+
 import streamlit as st
 import pandas as pd
 import altair as alt
-from datetime import datetime
-from utils import (
-    load_data, load_cache_json, check_password,
-    calc_attendance_rate, NOT_ATTEND_STATUSES, _attendance_penalty,
-    calc_employment_rate_6, calc_recruit_rate,
-)
-from config import CACHE_TTL_DEFAULT, CacheKey
+from utils import check_password
 
 st.set_page_config(
     page_title="한화시스템 BEYOND SW캠프 성과 대시보드",
@@ -17,123 +13,27 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-
-@st.cache_data(ttl=CACHE_TTL_DEFAULT)
-def get_dashboard_data():
-    df_course = load_data("""
-        SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT,
-               TOT_FXNUM, TOT_PAR_MKS, TOT_TRP_CNT, FINI_CNT,
-               EI_EMPL_RATE_3, EI_EMPL_RATE_6, HRD_EMPL_RATE_6
-        FROM TB_COURSE_MASTER ORDER BY TR_STA_DT DESC
-    """)
-    df_course['TR_STA_DT'] = pd.to_datetime(df_course['TR_STA_DT'])
-    df_course['TR_END_DT'] = pd.to_datetime(df_course['TR_END_DT'])
-    for col in ['TOT_FXNUM', 'TOT_PAR_MKS']:
-        df_course[col] = pd.to_numeric(
-            df_course[col], errors='coerce').fillna(0)
-    # 취업률: NaN 유지 (상태코드 'A'=개설예정 'B'=집계중 'C'=미실시 'D'=수료자없음 → 0과 구분)
-    for col in ['EI_EMPL_RATE_3', 'EI_EMPL_RATE_6', 'HRD_EMPL_RATE_6']:
-        df_course[col] = pd.to_numeric(df_course[col], errors='coerce')
-    # 6개월 총 취업률 = EI_6 + HRD_6 합산 (특수코드/둘다결측 → NA)
-    df_course['TOTAL_RATE_6'] = df_course.apply(
-        lambda r: calc_employment_rate_6(r['EI_EMPL_RATE_6'], r['HRD_EMPL_RATE_6']), axis=1
-    )
-    df_course['FINI_CNT'] = pd.to_numeric(
-        df_course['FINI_CNT'], errors='coerce').fillna(0)
-    df_course['TOT_TRP_CNT'] = pd.to_numeric(
-        df_course['TOT_TRP_CNT'], errors='coerce').fillna(0)
-    df_course['수료율'] = (df_course['FINI_CNT'] /
-                        df_course['TOT_PAR_MKS'].replace(0, pd.NA) * 100).fillna(0)
-    today = pd.Timestamp(datetime.now().date())
-    df_course['상태'] = df_course['TR_END_DT'].apply(
-        lambda x: '진행중' if x >= today else '종료')
-    return df_course
+SNAPSHOT_PATH = Path(__file__).parent / "data" / "home_snapshot.json"
 
 
-@st.cache_data(ttl=CACHE_TTL_DEFAULT)
-def get_attendance_stats():
-    """종료된 기수별 출결 통계 집계.
+@st.cache_data
+def load_snapshot():
+    """확정 스냅샷(data/home_snapshot.json) 로드.
 
-    ETL 사전 집계 캐시(TB_MARKET_CACHE.attendance_stats) 우선 사용,
-    캐시 미적중 시 기존 로직으로 fallback.
+    1기~25기 전 과정 종료(2026-07-03)로 홈 수치는 확정 상태 — DB 조회 없이
+    커밋된 스냅샷만 읽는다. 갱신(취업률 확정 등)은 `python build_home_snapshot.py`
+    재실행 후 커밋으로 반영한다.
     """
-    # 캐시 조회
-    try:
-        cache_df = load_data(
-            "SELECT CACHE_DATA FROM TB_MARKET_CACHE WHERE CACHE_KEY = ?",
-            params=[CacheKey.ATTENDANCE_STATS],
-        )
-        if not cache_df.empty and cache_df['CACHE_DATA'].iloc[0]:
-            rows = json.loads(cache_df['CACHE_DATA'].iloc[0])
-            if rows:
-                return pd.DataFrame(rows)
-    except Exception:
-        pass
-
-    # fallback: 기존 로직
-    today_str = datetime.now().strftime('%Y-%m-%d')
-    att_df = load_data(
-        "SELECT a.TRPR_DEGR, a.TRNEE_ID, a.ATEND_STATUS, a.ATEND_DT "
-        "FROM TB_ATTENDANCE_LOG a "
-        "INNER JOIN TB_COURSE_MASTER c ON a.TRPR_ID = c.TRPR_ID AND a.TRPR_DEGR = c.TRPR_DEGR "
-        "WHERE c.TR_END_DT < ?",
-        params=[today_str],
-    )
-    if att_df.empty:
-        return pd.DataFrame(columns=['TRPR_DEGR', 'ATT_RATE', 'PRESENT_DAYS'])
-    att_df['ATEND_DT'] = pd.to_datetime(att_df['ATEND_DT'], errors='coerce').dt.date
-
-    def _cohort_stats(grp):
-        student_rates = [
-            calc_attendance_rate(s_grp, raw=True)
-            for _, s_grp in grp.groupby('TRNEE_ID')
-        ]
-        avg_rate = sum(student_rates) / len(student_rates) if student_rates else 0.0
-        present = grp[~grp['ATEND_STATUS'].isin(NOT_ATTEND_STATUSES)]
-        penalty = int(present['ATEND_STATUS'].apply(_attendance_penalty).sum())
-        present_days = max(0, len(present) - penalty // 3)
-        return pd.Series({'ATT_RATE': round(avg_rate, 1), 'PRESENT_DAYS': present_days})
-
-    return att_df.groupby('TRPR_DEGR').apply(_cohort_stats, include_groups=False).reset_index()
-
-
-@st.cache_data(ttl=CACHE_TTL_DEFAULT)
-def get_market_benchmark():
-    """전국 KDT 벤치마크(모집률·만족도)와 자사 만족도를 시장 데이터에서 집계.
-
-    - 모집률: 정원>0 과정 대상, 신청 0명 포함, 상한 100% 행 평균
-    - 만족도: STDG_SCOR>0 평균을 100점 환산
-    """
-    bench = {'kdt_cnt': 0, 'mkt_recruit': None, 'mkt_satis': None, 'our_satis': None}
-
-    df_kdt = load_data(
-        "SELECT TOT_FXNUM, REG_COURSE_MAN, STDG_SCOR FROM TB_MARKET_TREND "
-        "WHERE TRAIN_TARGET = ?",
-        params=['K-디지털 트레이닝'],
-    )
-    if not df_kdt.empty:
-        bench['kdt_cnt'] = len(df_kdt)
-        fx = pd.to_numeric(df_kdt['TOT_FXNUM'], errors='coerce')
-        df_fx = df_kdt[fx > 0]
-        if not df_fx.empty:
-            reg = pd.to_numeric(df_fx['REG_COURSE_MAN'], errors='coerce').fillna(0)
-            bench['mkt_recruit'] = calc_recruit_rate(
-                reg, pd.to_numeric(df_fx['TOT_FXNUM'], errors='coerce')).mean()
-        scor = pd.to_numeric(df_kdt['STDG_SCOR'], errors='coerce')
-        scor = scor[scor > 0]
-        if not scor.empty:
-            bench['mkt_satis'] = scor.mean() / 100
-
-    df_our = load_data(
-        "SELECT STDG_SCOR FROM TB_MARKET_TREND "
-        "WHERE TRPR_ID IN (SELECT DISTINCT TRPR_ID FROM TB_COURSE_MASTER)"
-    )
-    if not df_our.empty:
-        our = pd.to_numeric(df_our['STDG_SCOR'], errors='coerce')
-        our = our[our > 0]
-        if not our.empty:
-            bench['our_satis'] = our.mean() / 100
-    return bench
+    with open(SNAPSHOT_PATH, encoding='utf-8') as f:
+        snap = json.load(f)
+    df = pd.DataFrame(snap['courses'])
+    df['TR_STA_DT'] = pd.to_datetime(df['TR_STA_DT'])
+    df['TR_END_DT'] = pd.to_datetime(df['TR_END_DT'])
+    # 취업률: null 유지 (HRD-Net 집계중 기수 → 0과 구분)
+    for col in ('EI_EMPL_RATE_3', 'TOTAL_RATE_6'):
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    att_stats = pd.DataFrame(snap['attendance'])
+    return snap, df, att_stats
 
 
 def _render_project_intro():
@@ -148,16 +48,16 @@ def render_dashboard():
     check_password()
 
     try:
-        df = get_dashboard_data()
+        snap, df, att_stats = load_snapshot()
     except Exception as e:
-        st.error(f"데이터를 불러오는 중 오류가 발생했습니다. utils.py와 DB를 확인해주세요.\n{e}")
+        st.error(f"확정 스냅샷을 불러오지 못했습니다. data/home_snapshot.json을 확인해주세요.\n{e}")
         st.stop()
 
     # [헤더]
     st.title("🏆 한화시스템 BEYOND SW캠프 성과 대시보드")
     st.markdown(
         f"**1기~25기 전 과정 종료** (2023.10 ~ 2026.07) · "
-        f"데이터 기준일 **{datetime.now().strftime('%Y-%m-%d')}**"
+        f"데이터 기준일 **{snap['generated_at']}**"
     )
     st.divider()
 
@@ -172,12 +72,11 @@ def render_dashboard():
     avg_rate_6 = df[df['상태'] == '종료']['TOTAL_RATE_6'].mean()
     active_courses = len(df[df['상태'] == '진행중'])
 
-    att_stats = get_attendance_stats()
     df_ended = df[df['상태'] == '종료']
     avg_completion = df_ended['수료율'].mean()
     avg_att = att_stats['ATT_RATE'].mean() if not att_stats.empty else 0.0
-    bench = get_market_benchmark()
-    rev_cache = load_cache_json(CacheKey.REVENUE_ALL_TERMS)
+    bench = snap['benchmark']
+    rev_cache = snap['revenue']
 
     st.subheader("📊 핵심 성과 지표")
     st.caption("1기~25기 전체 기준 최종 수치입니다. 모집률·만족도의 증감 표시는 전국 KDT 평균 대비 격차입니다.")
@@ -209,12 +108,9 @@ def render_dashboard():
         avg_rate_3) else "-", help="수료 후 3개월 고용보험 가입률 (EI_EMPL_RATE_3 기준, 집계 중인 기수 제외)")
     kpi8.metric("평균 취업률 (6개월)", f"{avg_rate_6:.1f}%" if pd.notna(
         avg_rate_6) else "-", help="고용보험(EI_6) + HRD 자체 취업(HRD_6) 합산 (집계 중인 기수 제외 — 수료 후 3~6개월 소요)")
-    if rev_cache:
-        _rev_df = pd.DataFrame(rev_cache)
-        if not _rev_df.empty and 'actual_fee' in _rev_df.columns:
-            _total_eok = int(_rev_df['actual_fee'].sum() / 1e7) / 10  # 억 단위 소수 첫째 자리 버림
-            kpi9.metric("누적 총 매출", f"{_total_eok}억+",
-                        help="단위기간별 청구 기준 실제 매출 합계 (상세: 매출 분석 페이지)")
+    # 누적 매출: 확정 스냅샷의 원장 고정 헤드라인 (캐시 재계산 드리프트와 무관하게 확정 표기 유지)
+    kpi9.metric("누적 총 매출", f"{snap['kpi_revenue_eok']}억",
+                help="단위기간별 청구 기준 실제 매출 합계 (상세: 매출 분석 페이지)")
     st.divider()
 
     # [Section 3] 기수 기록
