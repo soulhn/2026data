@@ -268,7 +268,7 @@ pg = st.navigation({
     ],
     "성과 분석": [
         st.Page("pages/종료과정_성과.py", title="종료과정 성과", icon="📊"),
-        st.Page("pages/현재_운영_현황.py", title="현재 운영 현황", icon="📋"),
+        st.Page("pages/현재_운영_현황.py", title="AI캠퍼스 운영 현황", icon="📋"),
         st.Page("pages/매출_분석.py", title="매출 분석", icon="💰"),
     ],
     "외부 동향": [

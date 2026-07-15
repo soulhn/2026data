@@ -6,11 +6,13 @@ import pandas as pd
 import pytest
 
 from hrd_api import (
+    fetch_all_institutions,
     fetch_attendance_month,
     fetch_course_list,
     fetch_trainee_roster,
     fetch_active_data_realtime,
     get_active_data_with_fallback,
+    get_institutions,
 )
 
 
@@ -216,7 +218,8 @@ class TestFallback:
         assert source == "DB"
         mock_db.assert_called_once()
 
-    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"})
+    # clear=True 필수: 실제 .env의 ENCORE_* 가 새어들어오면 기관 쌍이 늘어 결과가 달라짐
+    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
     @patch("hrd_api.fetch_active_data_realtime")
     @patch("hrd_api._get_active_data_from_db")
     def test_fallback_on_api_failure(self, mock_db, mock_api):
@@ -228,7 +231,7 @@ class TestFallback:
         assert source == "DB"
         mock_db.assert_called_once()
 
-    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"})
+    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
     @patch("hrd_api.fetch_active_data_realtime")
     def test_api_success(self, mock_api):
         mock_api.return_value = (
@@ -241,6 +244,56 @@ class TestFallback:
 
         assert source == "API"
         assert len(c) == 1
+
+
+# ── 운영기관 다중 지원 ────────────────────────────────────────────────
+
+
+class TestInstitutions:
+    """명부/출결 API는 인증키 소속 기관의 과정만 허용 → (키, 과정ID) 쌍으로 관리."""
+
+    @patch.dict("os.environ", {
+        "HRD_API_KEY": "hkey", "HANWHA_COURSE_ID": "hcid",
+        "ENCORE_API_KEY": "ekey", "ENCORE_COURSE_IDS": "e1, e2",
+    }, clear=True)
+    def test_pairs_key_bound_to_own_courses(self):
+        assert get_institutions() == [("hkey", "hcid"), ("ekey", "e1"), ("ekey", "e2")]
+
+    @patch.dict("os.environ", {"ENCORE_API_KEY": "ekey", "ENCORE_COURSE_IDS": ""}, clear=True)
+    def test_key_without_course_ids_yields_no_pairs(self):
+        assert get_institutions() == []
+
+    @patch.dict("os.environ", {"ENCORE_COURSE_IDS": "e1"}, clear=True)
+    def test_course_ids_without_key_yields_no_pairs(self):
+        assert get_institutions() == []
+
+    @patch("hrd_api.fetch_active_data_realtime")
+    def test_partial_failure_keeps_surviving_course(self, mock_api):
+        """한 과정이 죽어도 나머지는 살아야 한다."""
+        ok = (
+            pd.DataFrame({"TRPR_ID": ["B"], "TRPR_DEGR": [1]}),
+            pd.DataFrame({"TRPR_ID": ["B"], "TRNEE_ID": ["T1"]}),
+            pd.DataFrame({"TRPR_ID": ["B"], "ATEND_DT": ["20260715"]}),
+        )
+        mock_api.side_effect = [Exception("과정 A 조회 실패"), ok]
+
+        courses, trainees, logs = fetch_all_institutions([("k", "A"), ("k", "B")])
+
+        assert courses["TRPR_ID"].tolist() == ["B"]
+        assert len(logs) == 1
+
+    @patch("hrd_api.fetch_active_data_realtime")
+    def test_all_failed_raises_for_db_fallback(self, mock_api):
+        mock_api.side_effect = Exception("API timeout")
+        with pytest.raises(RuntimeError):
+            fetch_all_institutions([("k", "A"), ("k", "B")])
+
+    def test_empty_result_keeps_columns(self):
+        """과정이 하나도 없어도 컬럼은 유지 — 페이지가 컬럼명으로 필터하므로."""
+        courses, trainees, logs = fetch_all_institutions([])
+        assert "TRPR_ID" in courses.columns
+        assert "TRNEE_STATUS" in trainees.columns
+        assert "ATEND_DT" in logs.columns
 
 
 # ── 컬럼 호환성 ───────────────────────────────────────────────────────

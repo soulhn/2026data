@@ -22,6 +22,49 @@ logger = logging.getLogger(__name__)
 BASE_URL_COURSE = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_3.jsp"
 BASE_URL_DETAIL = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_4.jsp"
 
+COURSE_COLUMNS = ["TRPR_ID", "TRPR_DEGR", "TRPR_NM", "TR_STA_DT", "TR_END_DT",
+                  "TOT_FXNUM", "TOT_PAR_MKS", "TOT_TRP_CNT"]
+ROSTER_COLUMNS = ["TRPR_ID", "TRPR_DEGR", "TRNEE_ID", "TRNEE_NM", "TRNEE_STATUS"]
+ATTEND_COLUMNS = ["TRPR_ID", "TRPR_DEGR", "TRNEE_ID", "ATEND_DT", "IN_TIME",
+                  "OUT_TIME", "ATEND_STATUS", "COLLECTED_AT"]
+
+
+# ── 운영기관 설정 ──────────────────────────────────────────────────────
+
+
+def _get_secret(name):
+    """환경변수 우선, 없으면 Streamlit secrets에서 조회."""
+    val = os.getenv(name)
+    if val:
+        return val
+    try:
+        import streamlit as st
+        return st.secrets.get(name)
+    except Exception:
+        return None
+
+
+def get_institutions():
+    """운영기관별 (인증키, 과정ID) 쌍 목록.
+
+    명부/출결 API는 인증키가 소속 기관의 과정만 조회하도록 막혀 있어
+    (`요청하신 훈련기관에서 운영하는 과정만 조회가 가능합니다`)
+    기관마다 키와 과정 ID를 짝지어야 한다. 과정 목록 API는 이 제약이 없다.
+    """
+    pairs = []
+    hanwha_key = _get_secret("HRD_API_KEY")
+    hanwha_course = _get_secret("HANWHA_COURSE_ID")
+    if hanwha_key and hanwha_course:
+        pairs.append((hanwha_key, hanwha_course))
+
+    encore_key = _get_secret("ENCORE_API_KEY")
+    if encore_key:
+        for cid in (_get_secret("ENCORE_COURSE_IDS") or "").split(","):
+            cid = cid.strip()
+            if cid:
+                pairs.append((encore_key, cid))
+    return pairs
+
 
 # ── 개별 API 함수 ──────────────────────────────────────────────────────
 
@@ -71,7 +114,7 @@ def fetch_course_list(session, api_key, course_id):
             "TOT_PAR_MKS": c.get("totParMks"),
             "TOT_TRP_CNT": c.get("totTrpCnt"),
         })
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows, columns=COURSE_COLUMNS)
     if not df.empty:
         df = df.sort_values("TRPR_DEGR", ascending=False).reset_index(drop=True)
     return df
@@ -88,7 +131,7 @@ def fetch_trainee_roster(session, api_key, course_id, trpr_degr):
     }, timeout=config.API_TIMEOUT)
     raw_json = res.json().get("returnJSON")
     if not raw_json:
-        return pd.DataFrame(columns=["TRPR_ID", "TRPR_DEGR", "TRNEE_ID", "TRNEE_NM", "TRNEE_STATUS"])
+        return pd.DataFrame(columns=ROSTER_COLUMNS)
     roster_data = json.loads(raw_json)
     trne_list = roster_data if isinstance(roster_data, list) else roster_data.get("trneList", [])
     if not isinstance(trne_list, list):
@@ -105,7 +148,7 @@ def fetch_trainee_roster(session, api_key, course_id, trpr_degr):
             "TRNEE_NM": t.get("trneeCstmrNm"),
             "TRNEE_STATUS": t.get("trneeSttusNm"),
         })
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=ROSTER_COLUMNS)
 
 
 def fetch_attendance_month(session, api_key, course_id, trpr_degr, yyyymm):
@@ -121,10 +164,7 @@ def fetch_attendance_month(session, api_key, course_id, trpr_degr, yyyymm):
     }, timeout=config.API_TIMEOUT)
     raw_json = res.json().get("returnJSON")
     if not raw_json:
-        return pd.DataFrame(columns=[
-            "TRPR_ID", "TRPR_DEGR", "TRNEE_ID", "ATEND_DT",
-            "IN_TIME", "OUT_TIME", "ATEND_STATUS", "COLLECTED_AT",
-        ])
+        return pd.DataFrame(columns=ATTEND_COLUMNS)
     atab_data = json.loads(raw_json)
     atab_list = atab_data if isinstance(atab_data, list) else atab_data.get("atabList", [])
     if not isinstance(atab_list, list):
@@ -145,7 +185,7 @@ def fetch_attendance_month(session, api_key, course_id, trpr_degr, yyyymm):
             "ATEND_STATUS": log.get("atendSttusNm"),
             "COLLECTED_AT": now_str,
         })
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=ATTEND_COLUMNS)
 
 
 # ── 오케스트레이터 ─────────────────────────────────────────────────────
@@ -181,10 +221,44 @@ def fetch_active_data_realtime(api_key, course_id):
     roster_dfs = [f.result() for f in futures_roster]
     attend_dfs = [f.result() for f in futures_attend]
 
-    trainees_df = pd.concat(roster_dfs, ignore_index=True) if roster_dfs else pd.DataFrame()
-    logs_df = pd.concat(attend_dfs, ignore_index=True) if attend_dfs else pd.DataFrame()
+    trainees_df = pd.concat(roster_dfs, ignore_index=True) if roster_dfs else pd.DataFrame(columns=ROSTER_COLUMNS)
+    logs_df = pd.concat(attend_dfs, ignore_index=True) if attend_dfs else pd.DataFrame(columns=ATTEND_COLUMNS)
 
     return courses_df, trainees_df, logs_df
+
+
+def fetch_all_institutions(pairs):
+    """기관별 (인증키, 과정ID) 쌍을 순회하며 실시간 데이터를 병합.
+
+    한 과정이 실패해도 나머지는 살린다. 전부 실패해야 예외 → DB 폴백.
+
+    Raises:
+        RuntimeError: 모든 쌍이 실패한 경우.
+    """
+    courses, trainees, logs = [], [], []
+    failures = []
+    for api_key, course_id in pairs:
+        try:
+            c_df, t_df, l_df = fetch_active_data_realtime(api_key, course_id)
+        except Exception as e:
+            logger.warning(f"과정({course_id}) 실시간 조회 실패, 건너뜀: {e}")
+            failures.append(course_id)
+            continue
+        for src, dst in ((c_df, courses), (t_df, trainees), (l_df, logs)):
+            if not src.empty:
+                dst.append(src)
+
+    if failures and len(failures) == len(pairs):
+        raise RuntimeError(f"모든 과정 조회 실패: {failures}")
+
+    def _merge(frames, columns):
+        return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=columns)
+
+    return (
+        _merge(courses, COURSE_COLUMNS),
+        _merge(trainees, ROSTER_COLUMNS),
+        _merge(logs, ATTEND_COLUMNS),
+    )
 
 
 # ── 누적 데이터 병합 ───────────────────────────────────────────────────
@@ -262,28 +336,14 @@ def get_active_data_with_fallback():
         (courses_df, trainees_df, logs_df, source)
         source: "API" 또는 "DB"
     """
-    api_key = os.getenv("HRD_API_KEY")
-    course_id = os.getenv("HANWHA_COURSE_ID")
-    if not api_key:
-        try:
-            import streamlit as st
-            api_key = st.secrets.get("HRD_API_KEY")
-        except Exception:
-            pass
-    if not course_id:
-        try:
-            import streamlit as st
-            course_id = st.secrets.get("HANWHA_COURSE_ID")
-        except Exception:
-            pass
-
-    if not api_key or not course_id:
+    pairs = get_institutions()
+    if not pairs:
         logger.info("API 키/과정 ID 없음 → DB 폴백")
         c, t, l = _get_active_data_from_db()
         return c, t, l, "DB"
 
     try:
-        courses_df, trainees_df, logs_df = fetch_active_data_realtime(api_key, course_id)
+        courses_df, trainees_df, logs_df = fetch_all_institutions(pairs)
         if courses_df.empty:
             return None, None, None, "API"
         return courses_df, trainees_df, logs_df, "API"

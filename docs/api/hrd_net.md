@@ -71,6 +71,15 @@
 | `srchTrprDegr` | 필수 | 훈련과정 회차 |
 | `srchTorgId` | 선택 | 훈련기관 ID |
 
+### ⚠️ 기관 소유권 제약 (2026-07-15 실측)
+
+이 API는 **인증키 소속 훈련기관이 운영하는 과정만** 조회 가능.
+타 기관 과정 조회 시: `{"errorMsg":"요청하신 훈련기관에서 운영하는 과정만 조회가 가능합니다."}`
+
+- API 2(훈련일정 상세, `_3.jsp`)는 이 검사가 **없음** — 어떤 키로든 타 기관 과정 목록 조회 가능. 따라서 "과정 목록은 나오는데 명부/출결만 0건"이면 키-기관 불일치를 의심할 것
+- `srchTorgId`에 기관번호(`instIno`)를 명시해도 우회 불가
+- 대응: 기관마다 (인증키, 과정ID) 쌍 관리 — `hrd_api.get_institutions()`
+
 ### 주요 응답 필드 (훈련생 목록 `trneList`)
 `CSTMR_ID`, `CSTMR_NM`, `STTUS_NM`(상태), `TRANEE_TRACSE_SE`(유형), `ATEND_CNT`(출석), `ABSENT_CNT`(결석), `VCATN_CNT`(휴가), `OFLHD_CNT`(공가), `TRANING_DE_CNT`(훈련일수)
 

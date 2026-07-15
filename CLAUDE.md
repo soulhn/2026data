@@ -222,8 +222,10 @@ Fix: Correct completion rate calculation (수료율 계산 오류 수정)
 
 ## 환경 변수
 
-- `HRD_API_KEY` — HRD-Net API 인증키 (GitHub Actions + Streamlit secrets 양쪽 등록 시 운영 현황 실시간 API 활성화)
-- `HANWHA_COURSE_ID` — 내부 관리 대상 과정 ID (GitHub Actions + Streamlit secrets 양쪽 등록 필요)
+- `HRD_API_KEY` — HRD-Net API 인증키, 한화(플레이데이터) 기관 소속 (GitHub Actions + Streamlit secrets 양쪽 등록 시 운영 현황 실시간 API 활성화)
+- `HANWHA_COURSE_ID` — 한화 관리 대상 과정 ID (GitHub Actions + Streamlit secrets 양쪽 등록 필요)
+- `ENCORE_API_KEY` — 엔코아 자체 운영기관 HRD-Net 인증키 (Streamlit secrets 등록). **명부/출결 API는 인증키 소속 기관의 과정만 조회 가능** → 기관마다 키·과정 쌍 필요 (`hrd_api.get_institutions()`)
+- `ENCORE_COURSE_IDS` — 엔코아 과정 ID 목록, 콤마 구분 (예: `AIG...382,AIG...396`)
 - `DATABASE_URL` — PostgreSQL 연결 문자열 (없으면 SQLite 폴백)
 - `SARAMIN_API_KEY` — 사람인 채용공고 API 키 (GitHub Actions + Streamlit secrets 등록)
 - `ETL_FULL_REFRESH` — `=1`이면 market_etl이 증분(12개월) 대신 2023-01-01부터 전체 재수집. GitHub Actions 수동 실행의 `full_refresh` 입력으로 전달 (`gh workflow run market_etl.yml -f full_refresh=true`)

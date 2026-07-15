@@ -8,16 +8,16 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import check_password, calc_attendance_rate, page_error_boundary, is_completed, mask_name_columns
-from hrd_api import get_active_data_with_fallback, get_full_attendance_logs
+from hrd_api import get_active_data_with_fallback, get_full_attendance_logs, get_institutions
 from config import (
     CACHE_TTL_API, LATE_CUTOFF_HHMM, CLASS_END_HHMM, ATTENDANCE_TARGET,
     RISK_ABSENT, RISK_LATE, RISK_EARLY_LEAVE, RECENT_TREND_DAYS,
 )
 
-st.set_page_config(page_title="운영 현황", page_icon="📋", layout="wide")
+st.set_page_config(page_title="AI캠퍼스 운영 현황", page_icon="📋", layout="wide")
 check_password()
 with page_error_boundary():
-    st.title("📋 운영 현황")
+    st.title("📋 AI캠퍼스 운영 현황")
 
 
     @st.cache_data(ttl=CACHE_TTL_API)
@@ -48,33 +48,25 @@ with page_error_boundary():
         st.write(f"서버 datetime.now(): `{datetime.now().isoformat()}`")
         st.write(f"서버 current_month: `{datetime.now().strftime('%Y%m')}`")
         st.write(f"data_source: `{data_source}`")
-        # 환경변수 / secrets 존재 여부
-        api_key_env = bool(os.getenv("HRD_API_KEY"))
-        course_id_env = bool(os.getenv("HANWHA_COURSE_ID"))
-        api_key_secret = False
-        course_id_secret = False
-        try:
-            api_key_secret = bool(st.secrets.get("HRD_API_KEY"))
-            course_id_secret = bool(st.secrets.get("HANWHA_COURSE_ID"))
-        except Exception:
-            pass
-        st.write(f"HRD_API_KEY: env={api_key_env}, secret={api_key_secret}")
-        st.write(f"HANWHA_COURSE_ID: env={course_id_env}, secret={course_id_secret}")
+        # 등록된 운영기관 (인증키, 과정ID) 쌍 — 키 값은 노출하지 않음
+        pairs = get_institutions()
+        st.write(f"등록된 (기관키, 과정ID) 쌍: {len(pairs)}개")
+        for _, _cid in pairs:
+            st.write(f"- 과정 `{_cid}`")
         # API 직접 호출 테스트
         if st.button("API 호출 테스트"):
             from hrd_api import fetch_active_data_realtime
-            api_key = os.getenv("HRD_API_KEY") or (st.secrets.get("HRD_API_KEY") if hasattr(st, "secrets") else None)
-            course_id = os.getenv("HANWHA_COURSE_ID") or (st.secrets.get("HANWHA_COURSE_ID") if hasattr(st, "secrets") else None)
-            if not api_key or not course_id:
+            if not pairs:
                 st.error("키/ID가 없어 호출 불가")
-            else:
+            for _key, _cid in pairs:
                 try:
-                    cdf, tdf, ldf = fetch_active_data_realtime(api_key, course_id)
-                    st.success(f"성공: courses={len(cdf)}, trainees={len(tdf)}, logs={len(ldf)}")
+                    cdf, tdf, ldf = fetch_active_data_realtime(_key, _cid)
+                    msg = f"`{_cid}` 성공: courses={len(cdf)}, trainees={len(tdf)}, logs={len(ldf)}"
                     if not ldf.empty:
-                        st.write(f"logs ATEND_DT 최대: {ldf['ATEND_DT'].max()}")
+                        msg += f", ATEND_DT 최대={ldf['ATEND_DT'].max()}"
+                    st.success(msg)
                 except Exception as e:
-                    st.error(f"실패: {type(e).__name__}: {e}")
+                    st.error(f"`{_cid}` 실패: {type(e).__name__}: {e}")
         if courses_df is not None and not courses_df.empty:
             st.write(f"활성 기수 수: {len(courses_df)}")
             st.write(f"기수 목록: {sorted(courses_df['TRPR_DEGR'].unique().tolist())}")
@@ -107,13 +99,48 @@ with page_error_boundary():
         return current_status
 
 
-    # ── 사이드바 (개별 기수 선택) ──────────────────────────────────────────
+    # ── 사이드바 (과정 → 개별 기수 선택) ──────────────────────────────────
+    # 과정을 먼저 좁히는 이유: 과정마다 1회차·2회차가 따로 존재해 기수 번호만으로는
+    # 서로 다른 과정의 기수가 한 덩어리로 합쳐진다.
     with st.sidebar:
         st.header("🎯 관리 대상 선택")
+        _course_names = (
+            courses_df.drop_duplicates(subset=['TRPR_ID'])
+            .set_index('TRPR_ID')['TRPR_NM'].to_dict()
+        )
+        _course_ids = list(_course_names)
+        # 기본값 = 출결이 가장 최근에 찍힌 과정. 개강 전 과정이 먼저 잡히면
+        # 첫 화면이 빈 출결로 보이므로 실제 운영 중인 과정을 앞세운다.
+        _default_idx = 0
+        if not logs_df.empty:
+            _latest_id = logs_df.groupby('TRPR_ID')['ATEND_DT'].max().idxmax()
+            if _latest_id in _course_ids:
+                _default_idx = _course_ids.index(_latest_id)
+        selected_course_id = st.selectbox(
+            "관리할 과정 선택",
+            _course_ids,
+            index=_default_idx,
+            format_func=lambda x: _course_names[x],
+        )
+
+    # 선택 과정으로 전체 데이터를 좁힌다 → 이후 로직은 기수 번호만으로 안전
+    courses_df = courses_df[courses_df['TRPR_ID'] == selected_course_id].copy()
+    trainees_df = trainees_df[trainees_df['TRPR_ID'] == selected_course_id].copy()
+    logs_df = logs_df[logs_df['TRPR_ID'] == selected_course_id].copy()
+
+    with st.sidebar:
+        _degrs = list(courses_df['TRPR_DEGR'].unique())
+        # 과정과 같은 이유로 기본값은 출결이 가장 최근에 찍힌 기수 (개강 예정 기수 회피)
+        _degr_idx = 0
+        if not logs_df.empty:
+            _latest_degr = logs_df.groupby('TRPR_DEGR')['ATEND_DT'].max().idxmax()
+            if _latest_degr in _degrs:
+                _degr_idx = _degrs.index(_latest_degr)
         selected_degr = st.selectbox(
             "관리할 회차(기수) 선택",
-            courses_df['TRPR_DEGR'].unique(),
-            format_func=lambda x: f"{x}회차 ({courses_df[courses_df['TRPR_DEGR']==x]['TRPR_NM'].iloc[0]})",
+            _degrs,
+            index=_degr_idx,
+            format_func=lambda x: f"{x}회차",
         )
         st.divider()
         if st.button("🔄 실시간 갱신"):

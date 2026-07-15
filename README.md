@@ -153,6 +153,8 @@ pip install -r requirements.txt
 ```ini
 HRD_API_KEY="발급받은_인증키"
 HANWHA_COURSE_ID="관리할_내부_과정_ID"
+ENCORE_API_KEY="엔코아_기관_인증키"        # AI캠퍼스 운영 현황 (기관별 키 필수)
+ENCORE_COURSE_IDS="과정ID1,과정ID2"       # 엔코아 과정 ID (콤마 구분)
 DATABASE_URL="postgresql://..."   # Supabase 연결 (없으면 SQLite 사용)
 SARAMIN_API_KEY="사람인_API_키"  # 채용공고 수집 (선택사항)
 OPENAI_API_KEY="OpenAI_API_키"   # AI 리포트 기능 (선택사항)
@@ -188,6 +190,8 @@ Secrets 설정:
 DATABASE_URL = "postgresql://..."
 HRD_API_KEY = "HRD-Net_API_키"
 HANWHA_COURSE_ID = "관리_대상_과정_ID"
+ENCORE_API_KEY = "엔코아_기관_인증키"
+ENCORE_COURSE_IDS = "과정ID1,과정ID2"
 
 [passwords]
 admin = "비밀번호"
