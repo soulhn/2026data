@@ -65,6 +65,12 @@ SARAMIN_KEYWORDS = [
 DAILY_TRAINING_FEE = 145_200        # 일 훈련비 단가 (원)
 REVENUE_FULL_THRESHOLD = 0.80       # 전액 청구 최소 출석률
 
+# ── 과정 축약명 (운영 현황 사이드바 표시용, 내부 호칭) ──
+COURSE_SHORT_NAMES = {
+    "AIG20260000578382": "MLE",   # [엔코아] LLM 지식 그래프 기반 신뢰형 GraphRAG … 머신러닝 엔지니어 양성 과정
+    "AIG20260000578396": "AIO",   # [엔코아] 멀티 에이전트 워크플로우 기반 AI 오케스트레이션 … 개발자 양성 과정
+}
+
 # ── 취업률 특수값 코드 매핑 ──
 # EI_EMPL_RATE_3 / EI_EMPL_RATE_6 / HRD_EMPL_RATE_6 (TB_COURSE_MASTER TEXT 컬럼)
 EMPL_CODE_MAP = {

@@ -12,6 +12,7 @@ from hrd_api import get_active_data_with_fallback, get_full_attendance_logs, get
 from config import (
     CACHE_TTL_API, LATE_CUTOFF_HHMM, CLASS_END_HHMM, ATTENDANCE_TARGET,
     RISK_ABSENT, RISK_LATE, RISK_EARLY_LEAVE, RECENT_TREND_DAYS,
+    COURSE_SHORT_NAMES,
 )
 
 st.set_page_config(page_title="AI캠퍼스 운영 현황", page_icon="📋", layout="wide")
@@ -120,7 +121,7 @@ with page_error_boundary():
             "관리할 과정 선택",
             _course_ids,
             index=_default_idx,
-            format_func=lambda x: _course_names[x],
+            format_func=lambda x: COURSE_SHORT_NAMES.get(x, _course_names[x]),
         )
 
     # 선택 과정으로 전체 데이터를 좁힌다 → 이후 로직은 기수 번호만으로 안전
