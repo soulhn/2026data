@@ -42,7 +42,7 @@ class TestFetchCourseList:
                 "trprDegr": "5",
                 "trprNm": "데이터 분석 5기",
                 "trStaDt": "2026-01-15",
-                "trEndDt": "2026-07-15",
+                "trEndDt": "2099-12-31",
                 "totFxnum": "30",
                 "totParMks": "28",
                 "totTrpCnt": "35",

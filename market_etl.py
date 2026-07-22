@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from utils import get_connection, safe_float, safe_int, get_retry_session, adapt_query, is_pg
 from init_db import init_all_tables
-from config import ETL_ARCHIVE_START, ETL_REFRESH_MONTHS, ETL_PAGE_SIZE, ETL_MAX_WORKERS, ETL_BATCH_SIZE, ETL_BATCH_PAGE_SIZE, ETL_FULL_REFRESH, CacheKey
+from config import ETL_ARCHIVE_START, ETL_REFRESH_MONTHS, ETL_PAGE_SIZE, ETL_MAX_WORKERS, ETL_BATCH_SIZE, ETL_BATCH_PAGE_SIZE, ETL_FUTURE_DAYS, ETL_FULL_REFRESH, CacheKey
 
 import logging
 import time
@@ -30,6 +30,7 @@ ARCHIVE_START = ETL_ARCHIVE_START
 REFRESH_MONTHS = ETL_REFRESH_MONTHS
 PAGE_SIZE  = ETL_PAGE_SIZE
 MAX_WORKERS= ETL_MAX_WORKERS
+FUTURE_DAYS = ETL_FUTURE_DAYS
 FULL_REFRESH = ETL_FULL_REFRESH
 
 BASE_URL = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_1.jsp"
@@ -64,11 +65,13 @@ def week_shards(start: dt.date, end: dt.date):
 def get_collect_range():
     """DB 상태를 확인하여 수집 범위를 결정합니다."""
     today = dt.date.today()
+    # 종료일을 미래로 확장 → 모집 중(개강 예정) 과정 포함 (개강 현황 탭 데이터 소스)
+    end = today + dt.timedelta(days=FUTURE_DAYS)
 
     if FULL_REFRESH:
         # 수동 전체 재수집: 증분 윈도우 밖 행(만족도 등 스냅샷 컬럼)까지 최신값으로 갱신
-        logger.info(f"[모드] 수동 전체 재수집 - ETL_FULL_REFRESH=1 ({ARCHIVE_START} ~ {today})")
-        return ARCHIVE_START, today
+        logger.info(f"[모드] 수동 전체 재수집 - ETL_FULL_REFRESH=1 ({ARCHIVE_START} ~ {end})")
+        return ARCHIVE_START, end
 
     refresh_start = today - dt.timedelta(days=REFRESH_MONTHS * 30)
 
@@ -88,20 +91,20 @@ def get_collect_range():
     if count == 0:
         # 첫 실행: 전체 수집
         start = ARCHIVE_START
-        logger.info(f"[모드] 첫 실행 - 전체 수집 ({start} ~ {today})")
+        logger.info(f"[모드] 첫 실행 - 전체 수집 ({start} ~ {end})")
     else:
         # 아카이브 기준 연도 데이터가 없으면 전체 재수집 (Supabase 누락 데이터 복구)
         has_archive = min_dt_str and min_dt_str[:4] <= str(ARCHIVE_START.year)
         if not has_archive:
             start = ARCHIVE_START
-            logger.info(f"[모드] 아카이브 보완 - 전체 수집 ({start} ~ {today})")
+            logger.info(f"[모드] 아카이브 보완 - 전체 수집 ({start} ~ {end})")
             logger.info(f"DB 최초 데이터: {min_dt_str}, 기준: {ARCHIVE_START}")
         else:
             start = refresh_start
-            logger.info(f"[모드] 증분 수집 - 최근 {REFRESH_MONTHS}개월 ({start} ~ {today})")
+            logger.info(f"[모드] 증분 수집 - 최근 {REFRESH_MONTHS}개월 ({start} ~ {end})")
         logger.info(f"DB 기존 데이터: {count:,}건")
 
-    return start, today
+    return start, end
 
 def _normalize_stdg_scor(val):
     """API 스케일 변경 대응: 100점 스케일(≤100) → 10000점 스케일로 통일."""

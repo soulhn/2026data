@@ -361,6 +361,46 @@ def load_region_opp(where, params):
 
 
 # ==========================================
+# 0-C. 개강 현황 탭 로더
+# ==========================================
+
+# 상태별 (WHERE 조건, 기준일 파라미터 수, 정렬) — 고정 dict라 SQL 조립 안전
+SCHEDULE_STATUS = {
+    '개강 예정': ("TR_STA_DT > ?", 1, "TR_STA_DT ASC"),
+    '진행 중': ("TR_STA_DT <= ? AND TR_END_DT >= ?", 2, "TR_END_DT ASC"),
+    '종료': ("TR_END_DT < ?", 1, "TR_STA_DT DESC"),
+}
+SCHEDULE_LIST_LIMIT = 1000
+
+
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
+def load_schedule_kpi(where, params, today, this_month):
+    """개강 현황 탭: 상태별 과정 수 + 개강 예정 평균 모집률."""
+    return _sql_query(f"""
+        SELECT SUM(CASE WHEN TR_STA_DT > ? THEN 1 ELSE 0 END) as UPCOMING_CNT,
+               SUM(CASE WHEN YEAR_MONTH = ? THEN 1 ELSE 0 END) as THIS_MONTH_CNT,
+               SUM(CASE WHEN TR_STA_DT <= ? AND TR_END_DT >= ? THEN 1 ELSE 0 END) as ONGOING_CNT,
+               AVG(CASE WHEN TR_STA_DT > ? AND TOT_FXNUM > 0
+                   THEN CAST(REG_COURSE_MAN AS REAL) / TOT_FXNUM * 100 END) as UPCOMING_RECRUIT
+        FROM TB_MARKET_TREND {where}
+    """, params=[today, this_month, today, today, today] + list(params))
+
+
+@st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
+def load_schedule_courses(where, params, status, today, limit):
+    """개강 현황 탭: 상태별 과정 목록 (개강·종강 일정, 정원, 신청인원)."""
+    cond, n_today, order = SCHEDULE_STATUS[status]
+    return _sql_query(f"""
+        SELECT TRPR_NM, TRAINST_NM, REGION, TRAIN_TARGET,
+               TR_STA_DT, TR_END_DT, TOT_FXNUM, REG_COURSE_MAN
+        FROM TB_MARKET_TREND {where}
+          {"AND" if where else "WHERE"} {cond}
+        ORDER BY {order}
+        LIMIT ?
+    """, params=list(params) + [today] * n_today + [limit])
+
+
+# ==========================================
 # 1. 설정 및 데이터 로드
 # ==========================================
 st.set_page_config(page_title="시장 분석 & 기회 발굴", page_icon="📈", layout="wide")
@@ -522,7 +562,7 @@ with page_error_boundary():
     # 3.2 탭 구성
     tabs = st.tabs([
         "📊 시장 개요 & 사업 기회", "🏆 순위 & 유형",
-        "☁️ 키워드 분석",
+        "📅 개강 현황", "☁️ 키워드 분석",
     ])
 
     # ─────────────────────────────────────────
@@ -806,9 +846,83 @@ with page_error_boundary():
                 })
 
     # ─────────────────────────────────────────
-    # [Tab 2] ☁️ 키워드 분석
+    # [Tab 2] 📅 개강 현황
     # ─────────────────────────────────────────
     with tabs[2]:
+        st.subheader("📅 타 기관 과정 개강 현황")
+        st.caption("사이드바 필터가 동일하게 적용됩니다. 조회 기간을 좁히면 해당 기간 개강 과정만 표시됩니다.")
+
+        _today_d = datetime.now().strftime('%Y-%m-%d')
+        sched_kpi = load_schedule_kpi(where, params, _today_d, _this_month)
+
+        up_cnt = 0
+        if not sched_kpi.empty:
+            _row = sched_kpi.iloc[0]
+            up_cnt = int(_row['UPCOMING_CNT'] or 0)
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("개강 예정 과정", f"{up_cnt:,}개")
+            k2.metric("이번 달 개강", f"{int(_row['THIS_MONTH_CNT'] or 0):,}개")
+            k3.metric("진행 중 과정", f"{int(_row['ONGOING_CNT'] or 0):,}개")
+            _up_rec = _row['UPCOMING_RECRUIT']
+            k4.metric("개강 예정 평균 모집률", f"{_up_rec:.1f}%" if pd.notna(_up_rec) else "-")
+
+        if up_cnt == 0:
+            st.info("개강 예정 과정 데이터가 아직 없습니다. 시장 ETL(매일 21시)이 미래 개강 과정을 수집한 뒤부터 반영됩니다.")
+        st.divider()
+
+        # ── 월별 개강 예정 수 ──
+        st.subheader("월별 개강 예정 과정 수")
+        _monthly_all = load_monthly_counts(where, params)
+        _upcoming_monthly = pd.DataFrame()
+        if not _monthly_all.empty:
+            _upcoming_monthly = _monthly_all.rename(columns={'COUNT': '개강 수'})
+            _upcoming_monthly = _upcoming_monthly[_upcoming_monthly['YEAR_MONTH'] >= _this_month].sort_values('YEAR_MONTH')
+        if not _upcoming_monthly.empty:
+            fig_up = px.bar(_upcoming_monthly, x='YEAR_MONTH', y='개강 수', text_auto=True)
+            fig_up.update_xaxes(type='category', title='')
+            fig_up.update_layout(height=300, margin=dict(t=10, b=30))
+            _vert_ytitle(fig_up, '개강 수')
+            st.plotly_chart(fig_up, width='stretch')
+        else:
+            st.info("이번 달 이후 개강하는 과정이 없습니다.")
+        st.divider()
+
+        # ── 상태별 과정 목록 ──
+        st.subheader("과정별 개강·종강 일정")
+        sel_status = st.radio("과정 상태", list(SCHEDULE_STATUS), horizontal=True, key="sched_status")
+        _order_label = {'개강 예정': "개강일 빠른 순", '진행 중': "종강일 빠른 순", '종료': "개강일 최신 순"}
+        sched_df = load_schedule_courses(where, params, sel_status, _today_d, SCHEDULE_LIST_LIMIT)
+        if not sched_df.empty:
+            sched_df['모집률(%)'] = calc_recruit_rate(sched_df['REG_COURSE_MAN'], sched_df['TOT_FXNUM'])
+            if sel_status == '개강 예정':
+                _days = (pd.to_datetime(sched_df['TR_STA_DT'], errors='coerce') - pd.Timestamp(_today_d)).dt.days
+                sched_df['개강까지'] = _days.apply(lambda d: f"D-{int(d)}" if pd.notna(d) else '-')
+            show_sched = sched_df.rename(columns={
+                'TRPR_NM': '과정명', 'TRAINST_NM': '기관명', 'REGION': '지역',
+                'TRAIN_TARGET': '훈련 유형', 'TR_STA_DT': '개강일', 'TR_END_DT': '종강일',
+                'TOT_FXNUM': '정원', 'REG_COURSE_MAN': '신청인원',
+            })
+            _cols = ['과정명', '기관명', '지역', '훈련 유형', '개강일', '종강일', '정원', '신청인원', '모집률(%)']
+            if '개강까지' in show_sched.columns:
+                _cols = ['개강까지'] + _cols
+            st.dataframe(
+                show_sched[_cols], hide_index=True, width='stretch', height=560,
+                column_config={
+                    '정원': st.column_config.NumberColumn(format="%d명"),
+                    '신청인원': st.column_config.NumberColumn(format="%d명"),
+                    '모집률(%)': st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
+                })
+            _cap = f"{_order_label[sel_status]} 정렬 · {len(show_sched):,}건 표시"
+            if len(show_sched) >= SCHEDULE_LIST_LIMIT:
+                _cap += f" (최대 {SCHEDULE_LIST_LIMIT:,}건 — 사이드바 필터로 범위를 좁혀보세요)"
+            st.caption(_cap)
+        else:
+            st.info(f"'{sel_status}' 상태의 과정이 없습니다.")
+
+    # ─────────────────────────────────────────
+    # [Tab 3] ☁️ 키워드 분석
+    # ─────────────────────────────────────────
+    with tabs[3]:
         # §1: 키워드 빈도 Top 25
         st.subheader("🔥 과정명 트렌드 키워드 Top 25")
         st.caption("훈련과정명에서 자주 등장하는 키워드 빈도입니다.")

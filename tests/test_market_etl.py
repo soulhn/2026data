@@ -144,4 +144,5 @@ class TestGetCollectRange:
         monkeypatch.setattr(market_etl, "FULL_REFRESH", True)
         start, end = market_etl.get_collect_range()
         assert start == market_etl.ARCHIVE_START
-        assert end == dt.date.today()
+        # 종료일 = 오늘 + FUTURE_DAYS (모집 중·개강 예정 과정 포함)
+        assert end == dt.date.today() + dt.timedelta(days=market_etl.FUTURE_DAYS)

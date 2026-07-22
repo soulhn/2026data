@@ -32,6 +32,7 @@ ETL_BATCH_SIZE = 1000
 ETL_UPDATE_CUTOFF_DAYS = 7      # 종료 후 N일 초과 → 출결 수집 스킵
 ETL_FULL_SKIP_MONTHS = 7        # 종료 후 N개월 초과 → API 호출 완전 스킵 (취업률 6개월 확정 이후)
 ETL_BATCH_PAGE_SIZE = 100
+ETL_FUTURE_DAYS = 90            # market_etl 미래 수집 일수 — 모집 중(개강 예정) 과정 포함
 ETL_FULL_REFRESH = os.environ.get("ETL_FULL_REFRESH", "") == "1"  # =1이면 market_etl 증분 무시, ARCHIVE_START부터 전체 재수집
 
 # ── 시장 동향 분석 ──
