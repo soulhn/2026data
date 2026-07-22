@@ -908,9 +908,11 @@ with page_error_boundary():
             st.dataframe(
                 show_sched[_cols], hide_index=True, width='stretch', height=560,
                 column_config={
+                    '과정명': st.column_config.TextColumn(width='large'),
+                    '기관명': st.column_config.TextColumn(width='medium'),
                     '정원': st.column_config.NumberColumn(format="%d명"),
                     '신청인원': st.column_config.NumberColumn(format="%d명"),
-                    '모집률(%)': st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
+                    '모집률(%)': st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100, width='medium'),
                 })
             _cap = f"{_order_label[sel_status]} 정렬 · {len(show_sched):,}건 표시"
             if len(show_sched) >= SCHEDULE_LIST_LIMIT:
