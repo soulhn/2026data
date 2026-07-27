@@ -91,17 +91,21 @@ def page_error_boundary():
         st.info("다른 페이지를 이용하거나 잠시 후 다시 시도해주세요.")
 
 
-def _get_pg_pool():
-    """PG 읽기 전용 커넥션을 캐싱하여 반환 (Streamlit 환경에서만 캐싱)."""
+def _get_pg_pool(recreate=False):
+    """PG 읽기 전용 커넥션을 캐싱하여 반환 (Streamlit 환경에서만 캐싱).
+
+    recreate=True면 캐시를 비우고 새 커넥션 생성 — Supabase가 유휴 커넥션을
+    끊으면 캐시된 커넥션이 죽은 채 남으므로 (connection already closed) 필요.
+    """
     try:
         import streamlit  # noqa: F401 — 스트림릿 가용성 프로브 (없으면 except로 폴백)
-        return _get_pg_pool_cached()
+        return _get_pg_pool_cached(recreate)
     except Exception:
         # Streamlit 없는 환경 (ETL, 테스트 등) → 일반 커넥션
         return None
 
 
-def _get_pg_pool_cached():
+def _get_pg_pool_cached(recreate=False):
     """@st.cache_resource 로 PG 커넥션 재사용."""
     import streamlit as st
 
@@ -112,6 +116,8 @@ def _get_pg_pool_cached():
         conn.autocommit = True
         return conn
 
+    if recreate:
+        _create.clear()
     return _create()
 
 
@@ -134,14 +140,26 @@ def load_data(query, params=None):
     """SQL 쿼리를 받아 Pandas DataFrame으로 반환합니다.
     PG 읽기 시 캐싱된 커넥션을 사용하여 TCP 연결 오버헤드를 줄입니다."""
     pool_conn = _get_pg_pool() if is_pg() else None
+    if pool_conn is not None and getattr(pool_conn, 'closed', 0):
+        # 캐시된 커넥션이 이미 닫혀 있으면 (유휴 종료 등) 새로 생성
+        pool_conn = _get_pg_pool(recreate=True)
     if pool_conn is not None:
         try:
             df = pd.read_sql(adapt_query(query), pool_conn, params=params)
             df.columns = [c.upper() for c in df.columns]
             return df
-        except pd.errors.DatabaseError:
-            # 커넥션이 끊어진 경우 폴백
-            pass
+        except Exception:
+            # closed 플래그 없이 서버 측에서 끊어진 커넥션은 실행 시점에야 실패
+            # (InterfaceError는 pd.errors.DatabaseError로 래핑되지 않음)
+            # → 풀 재생성 후 1회 재시도. 진짜 SQL 오류라면 아래 폴백에서 다시 발생.
+            pool_conn = _get_pg_pool(recreate=True)
+            if pool_conn is not None:
+                try:
+                    df = pd.read_sql(adapt_query(query), pool_conn, params=params)
+                    df.columns = [c.upper() for c in df.columns]
+                    return df
+                except Exception:
+                    pass
     conn = get_connection()
     try:
         df = pd.read_sql(adapt_query(query), conn, params=params)
