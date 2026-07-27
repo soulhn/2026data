@@ -905,15 +905,21 @@ with page_error_boundary():
             _cols = ['과정명', '기관명', '지역', '훈련 유형', '개강일', '종강일', '정원', '신청인원', '모집률(%)']
             if '개강까지' in show_sched.columns:
                 _cols = ['개강까지'] + _cols
-            st.dataframe(
-                show_sched[_cols], hide_index=True, width='stretch', height=560,
-                column_config={
-                    '과정명': st.column_config.TextColumn(width='large'),
-                    '기관명': st.column_config.TextColumn(width='medium'),
-                    '정원': st.column_config.NumberColumn(format="%d명"),
-                    '신청인원': st.column_config.NumberColumn(format="%d명"),
-                    '모집률(%)': st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100, width='medium'),
-                })
+            # height=560 고정 시 전체화면에서도 560px에 머물러 하단이 빈 공간으로 남음
+            # → 인라인 높이는 컨테이너로 고정하고 표는 stretch로 채움
+            # 스페이서: 호버 툴바(전체화면 버튼)가 표 위쪽에 뜨는데,
+            # 표가 컨테이너 첫 요소면 컨테이너 overflow에 잘려 안 보임
+            with st.container(height=600):
+                st.markdown("<div style='height:2px'></div>", unsafe_allow_html=True)
+                st.dataframe(
+                    show_sched[_cols], hide_index=True, width='stretch', height='stretch',
+                    column_config={
+                        '과정명': st.column_config.TextColumn(width='large'),
+                        '기관명': st.column_config.TextColumn(width='medium'),
+                        '정원': st.column_config.NumberColumn(format="%d명"),
+                        '신청인원': st.column_config.NumberColumn(format="%d명"),
+                        '모집률(%)': st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100, width='medium'),
+                    })
             _cap = f"{_order_label[sel_status]} 정렬 · {len(show_sched):,}건 표시"
             if len(show_sched) >= SCHEDULE_LIST_LIMIT:
                 _cap += f" (최대 {SCHEDULE_LIST_LIMIT:,}건 — 사이드바 필터로 범위를 좁혀보세요)"
