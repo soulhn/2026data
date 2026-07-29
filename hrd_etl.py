@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 import requests
 
 from utils import (
-    get_connection, get_retry_session, adapt_query, is_pg, load_data,
+    get_connection, get_retry_session, adapt_query, is_pg,
     calc_attendance_rate, NOT_ATTEND_STATUSES, _attendance_penalty,
     get_billing_periods, calc_revenue, clean_time,
 )
