@@ -1,4 +1,3 @@
-import sqlite3
 import json
 import logging
 import os
@@ -84,7 +83,7 @@ def run_etl():
         logger.error("HRD_API_KEY 또는 HANWHA_COURSE_ID 환경변수가 설정되지 않았습니다.")
         return
     init_all_tables()
-    conn = get_connection(timeout=30, row_factory=sqlite3.Row)  # PG에서는 RealDictCursor로 자동 변환
+    conn = get_connection(timeout=30, dict_rows=True)  # 컬럼명 접근용 RealDictCursor
     cursor = conn.cursor()
     session = get_retry_session()
     logger.info(f"[ETL Start] 과정ID({COURSE_ID}) 데이터 수집 시작...")

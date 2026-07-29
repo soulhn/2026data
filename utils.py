@@ -1,5 +1,4 @@
 # utils.py
-import sqlite3
 import hmac
 import json
 import re
@@ -125,8 +124,10 @@ def _get_pg_pool_cached(recreate=False):
     return _create()
 
 
-def get_connection(timeout=5, row_factory=None):
-    """PostgreSQL 연결 객체를 반환합니다. DATABASE_URL이 없으면 즉시 예외."""
+def get_connection(timeout=5, dict_rows=False):
+    """PostgreSQL 연결 객체를 반환합니다. DATABASE_URL이 없으면 즉시 예외.
+
+    dict_rows=True면 컬럼명으로 접근 가능한 RealDictCursor를 사용합니다."""
     if not is_pg():
         raise DatabaseNotConfiguredError(
             "DATABASE_URL 환경변수 또는 st.secrets 설정이 필요합니다. "
@@ -137,7 +138,7 @@ def get_connection(timeout=5, row_factory=None):
     import psycopg2.extras
     conn = psycopg2.connect(get_database_url(), connect_timeout=timeout)
     conn.autocommit = False
-    if row_factory == sqlite3.Row:
+    if dict_rows:
         conn.cursor_factory = psycopg2.extras.RealDictCursor
     return conn
 
