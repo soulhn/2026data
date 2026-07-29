@@ -102,7 +102,7 @@ saramin_etl.py (매일 09시)       →               ← 운영 현황: hrd_api
  ┃ ┣ 📜 SQL_Playground.py       # [공통] SELECT 전용 SQL 쿼리 실행 (예제 쿼리 제공)
  ┃ ┣ 📜 AI_리포트.py             # [AI] Gemini 기반 기수별 성과 리포트 자동 생성
  ┃ ┗ 📜 용어_사전.py             # [공통] GLOSSARY.md 기반 UI 용어 사전 조회
- ┣ 📂 tests                     # pytest 테스트 (213개)
+ ┣ 📂 tests                     # pytest 테스트 (216개)
  ┃ ┣ 📜 conftest.py              # 테스트 전용 인메모리 SQLite fixture
  ┃ ┣ 📜 test_utils.py            # adapt_query, safe_float, safe_int, calculate_age
  ┃ ┣ 📜 test_config.py           # 상수 타입/범위 검증
@@ -238,7 +238,7 @@ Repository Secrets에 등록:
 - **Smart Update:** 종료 과정 중복 수집 방지, 증분 수집 지원
 - **Robustness:** 자동 재시도(Retry), 배치 실패 시 row-by-row 폴백, ETL Summary 리포트
 - **Performance:** `@st.cache_data`, ETL 사전 집계 캐시(`TB_MARKET_CACHE`), Pagination, Sampling, DB 인덱스 10개로 대시보드 최적화
-- **Testing:** pytest 213개 테스트 (유틸리티, DB 초기화, ETL 함수, 매출 청구 계산, 사람인 ETL, 설정 검증) — push/PR마다 GitHub Actions 자동 실행
+- **Testing:** pytest 216개 테스트 (유틸리티, DB 초기화, ETL 함수, 매출 청구 계산, 사람인 ETL, 설정 검증) — push/PR마다 GitHub Actions 자동 실행
 - **Visualization:** Plotly & Altair 인터랙티브 차트 (히트맵, 히스토그램, 게이지 등)
 - **시장 분석:** 내부 과정 vs 시장 교차분석, 시계열 트렌드, 경쟁 심화도, 비용-성과 시뮬레이터, 자격증 분석 (scikit-learn)
 - **매출 분석:** 단위기간별 훈련비 청구 계산 (일훈련비 145,200원 기준), 기수별 매출 비교

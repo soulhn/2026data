@@ -13,13 +13,42 @@ from utils import (
     get_billing_periods, calc_revenue, clean_time,
 )
 from init_db import init_all_tables
-from config import ETL_BATCH_PAGE_SIZE, ETL_UPDATE_CUTOFF_DAYS, ETL_FULL_SKIP_MONTHS, CacheKey
+from config import (
+    ETL_BATCH_PAGE_SIZE, ETL_UPDATE_CUTOFF_DAYS, ETL_FULL_SKIP_MONTHS,
+    ETL_FAILED_ROW_SAMPLE, CacheKey,
+)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
     level=logging.INFO,
 )
+
+
+def _brief_error(err):
+    """DB 오류의 첫 줄만 반환.
+
+    PG는 NOT NULL 위반 등에서 `DETAIL: Failing row contains (...)`로 행 전체를 덧붙이는데,
+    명부 행에는 훈련생 이름·생년월일이 들어 있어 그대로 로그에 남으면 개인정보가 유출된다.
+    원인 파악에 필요한 컬럼명·제약조건은 첫 줄에 있으므로 나머지는 버린다."""
+    first = str(err).strip().splitlines()
+    return first[0].strip() if first else err.__class__.__name__
+
+
+def _row_shape(row):
+    """실패 행의 값 대신 형태(타입·문자열 길이·None 여부)만 요약.
+
+    NOT NULL 위반·길이 초과·타입 불일치가 실제 실패 원인이므로, 값 없이 형태만으로도
+    _brief_error가 알려주는 컬럼명과 대조해 원인을 특정할 수 있다."""
+    parts = []
+    for v in row:
+        if v is None:
+            parts.append("None")
+        elif isinstance(v, str):
+            parts.append(f"str({len(v)})")
+        else:
+            parts.append(type(v).__name__)
+    return "[" + ", ".join(parts) + "]"
 
 
 def batch_execute(cursor, sql, data_list):
@@ -44,11 +73,11 @@ def batch_execute(cursor, sql, data_list):
             cursor.executemany(resolved_sql, data_list)
         return len(data_list), 0
     except Exception as e:
-        logger.warning(f"[batch_execute] 배치 실패, row-by-row 폴백: {e}")
+        logger.warning(f"[batch_execute] 배치 실패, row-by-row 폴백: {_brief_error(e)}")
         if pg:
             cursor.execute("ROLLBACK TO SAVEPOINT batch_sp")  # 트랜잭션 복구
         success, errors = 0, 0
-        for row in data_list:
+        for idx, row in enumerate(data_list):
             try:
                 if pg:
                     cursor.execute("SAVEPOINT row_sp")
@@ -56,10 +85,20 @@ def batch_execute(cursor, sql, data_list):
                 if pg:
                     cursor.execute("RELEASE SAVEPOINT row_sp")
                 success += 1
-            except Exception:
+            except Exception as row_err:
                 if pg:
                     cursor.execute("ROLLBACK TO SAVEPOINT row_sp")  # 나쁜 행만 버림
+                if errors < ETL_FAILED_ROW_SAMPLE:
+                    logger.warning(
+                        f"[batch_execute] 행 {idx} 실패: {_brief_error(row_err)} "
+                        f"| 형태 {_row_shape(row)}"
+                    )
                 errors += 1
+        if errors > ETL_FAILED_ROW_SAMPLE:
+            logger.warning(
+                f"[batch_execute] 실패 {errors}건 중 앞 {ETL_FAILED_ROW_SAMPLE}건만 기록 "
+                f"(나머지 {errors - ETL_FAILED_ROW_SAMPLE}건 생략)"
+            )
         return success, errors
 
 load_dotenv()

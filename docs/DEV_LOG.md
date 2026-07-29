@@ -9,7 +9,18 @@
 - **영향**: 호출부 3곳(`hrd_etl.py` 명부·명부보정·출결)이 모두 회차 단위 `conn.commit()` 안에 있어, 배치 1건 실패 시 **그 회차 데이터가 통째로 소실**되고 로그에는 `[ETL Summary] 실패: N건`만 남는 조용한 손실. UPSERT라 PK 충돌은 무해하고, 실제 유발 원인은 NOT NULL 위반·컬럼 길이 초과·타입 캐스팅 실패
 - **해결**: 배치를 `SAVEPOINT batch_sp`로 감싸 실패 시 `ROLLBACK TO`로 트랜잭션 복구, 폴백 중 나쁜 행도 `SAVEPOINT row_sp`로 격리. `get_connection()`이 ETL 경로에서 `autocommit=False`라 SAVEPOINT 전제는 이미 충족
 - **검증**: PG 트랜잭션 의미론(문 실패 → aborted, `ROLLBACK TO`로만 복구)을 흉내내는 `FakePgCursor`로 회귀 테스트 3개 추가. 실제 PG 없이도 검증되며, **수정 전 코드에서 `(0, 3)` 전량 소실 → 수정 후 `(2, 1)` 복구**를 확인
-- **미해결(별건)**: 폴백이 실패 행을 카운트만 하고 어떤 행이었는지 남기지 않음 — 반복 실패 시 원인 추적이 어려움
+
+### ①-2 실패 행 진단 로깅 (후속, 같은 날 처리)
+- 폴백이 실제로 동작하게 됐으므로 실패 행의 원인 추적 수단이 필요해짐 — 기존에는 카운트만 남았음
+- **개인정보 문제를 함께 발견**: 명부 행에는 `trnee_nm`(이름)·`lifyeaMd`(생년월일)가 들어간다. 그런데 PG는 NOT NULL 위반 시 `DETAIL: Failing row contains (...)`로 **행 전체를 오류 메시지에 덧붙인다.** 즉 기존 배치 실패 warning(`logger.warning(f"...: {e}")`)만으로도 이미 훈련생 이름·생년월일이 GitHub Actions 로그에 남을 수 있었다 (Actions 로그는 보존·열람 가능)
+- **결정 — 값 대신 형태를 남긴다**:
+  - `_brief_error()` — 오류의 **첫 줄만** 사용. 컬럼명·제약조건은 첫 줄에 있고, 값이 담긴 `DETAIL`/`HINT` 줄은 버린다. 기존 배치 warning에도 적용해 **이전부터 있던 유출 경로까지 차단**
+  - `_row_shape()` — 값 대신 타입·문자열 길이·None 여부만 요약 (`[str(11), int, None, str(3)]`). 실제 실패 원인이 NOT NULL 위반·길이 초과·타입 불일치이므로, `_brief_error`가 알려주는 컬럼명과 대조하면 값 없이도 원인 특정이 가능
+  - 행 인덱스를 함께 남겨 원본 API 응답과 대조 가능
+  - `ETL_FAILED_ROW_SAMPLE = 3` — 앞 3건만 남기고 나머지는 건수만 보고 (한 배치가 통째로 깨질 때 로그 폭주 방지)
+- **실제 출력**: `[batch_execute] 행 1 실패: null value in column "trnee_nm" violates not-null constraint | 형태 [str(11), int, None, str(3), str(8)]`
+- **검증**: 진단 정보 존재·샘플 상한·**개인정보 미노출** 3개 테스트 추가. 유출 테스트는 `_brief_error`를 무력화하면 로그에 이름·생년월일이 그대로 찍히며 실패하는 것을 확인
+- **트레이드오프**: 값을 못 보므로 "어느 훈련생인지"는 행 인덱스로 원본 응답을 되짚어야 한다. CI 로그에 개인정보를 남기지 않는 쪽을 우선했다
 
 ### ② `sqlite3.Row` 센티널 → `dict_rows` 플래그
 - `get_connection(row_factory=sqlite3.Row)`가 "dict 형태 행을 달라"는 매직 토큰으로 쓰여, SQLite가 테스트 전용이 된 뒤에도 `utils.py`·`hrd_etl.py`가 `import sqlite3`를 유지하게 만들었음
@@ -25,8 +36,8 @@
 - 1줄짜리지만 **①②의 선결 조건**이었음 — `PostToolUse` 훅이 `.py` 편집 후 `ruff F401`을 돌려 `exit 2`로 차단하므로, 이게 남아 있으면 `hrd_etl.py`를 건드리는 모든 작업이 막힌다
 
 ### 영향 범위
-- 수정: `hrd_etl.py`, `utils.py`, `pages/채용_동향.py`, `tests/test_hrd_etl.py`
-- 테스트: 210 → **213개** (`TestBatchExecutePostgres` 3개 추가)
+- 수정: `hrd_etl.py`, `utils.py`, `config.py`, `pages/채용_동향.py`, `tests/test_hrd_etl.py`
+- 테스트: 210 → **216개** (`TestBatchExecutePostgres` 3개 + `TestBatchExecuteFailureLogging` 3개)
 
 ---
 

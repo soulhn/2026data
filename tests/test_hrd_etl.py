@@ -1,7 +1,9 @@
 """hrd_etl.py 유틸리티 함수 + batch_execute 테스트"""
+import logging
 import sqlite3
 import hrd_etl
 from hrd_etl import get_month_list, batch_execute
+from config import ETL_FAILED_ROW_SAMPLE
 from utils import clean_time
 
 
@@ -97,13 +99,22 @@ class FakePgCursor:
     - `ROLLBACK TO SAVEPOINT` 만 aborted를 해제하고, 해당 시점 이후 삽입을 되돌린다
     """
 
-    def __init__(self, bad_rows=()):
+    def __init__(self, bad_rows=(), detail_row=None):
         self.bad = {repr(r) for r in bad_rows}
+        self.detail_row = detail_row  # PG가 DETAIL 줄에 덧붙이는 원본 행 (개인정보 유출 재현용)
         self.aborted = False
         self.rows = []          # 커밋 가능한 상태로 남은 행
         self.stmts = []         # 발행된 제어문 기록
         self._marks = {}        # savepoint 이름 → 당시 rows 길이
         self._pending = []      # mogrify로 예약된 배치 행
+
+    def _fail(self, suffix=""):
+        """PG 스타일 다중 줄 오류 — 첫 줄은 원인, DETAIL 줄은 행 전체를 노출한다."""
+        msg = f'null value in column "trnee_nm" violates not-null constraint{suffix}'
+        if self.detail_row is not None:
+            values = ", ".join("null" if v is None else str(v) for v in self.detail_row)
+            msg += f"\nDETAIL:  Failing row contains ({values})."
+        return RuntimeError(msg)
 
     def mogrify(self, sql, args=None):
         self._pending.append(args)
@@ -135,14 +146,14 @@ class FakePgCursor:
         if params is not None:                      # row-by-row 폴백
             if repr(params) in self.bad:
                 self.aborted = True
-                raise RuntimeError("null value violates not-null constraint")
+                raise self._fail()
             self.rows.append(params)
             return
 
         batch, self._pending = self._pending, []    # execute_batch가 이어붙인 문
         if any(repr(r) in self.bad for r in batch):
             self.aborted = True
-            raise RuntimeError("null value violates not-null constraint (batch)")
+            raise self._fail(" (batch)")
         self.rows.extend(batch)
 
 
@@ -179,3 +190,49 @@ class TestBatchExecutePostgres:
         cursor = FakePgCursor()
         assert batch_execute(cursor, "INSERT INTO t VALUES (?)", []) == (0, 0)
         assert cursor.stmts == []
+
+
+class TestBatchExecuteFailureLogging:
+    """폴백 실패 행의 진단 정보는 남기되, 개인정보는 로그에 남기지 않는지 검증."""
+
+    def test_logs_row_index_and_shape(self, monkeypatch, caplog):
+        monkeypatch.setattr(hrd_etl, "is_pg", lambda: True)
+        bad = ("AIG123", 2, None, "홍길동")
+        cursor = FakePgCursor(bad_rows=[bad])
+
+        with caplog.at_level(logging.WARNING, logger="hrd_etl"):
+            batch_execute(cursor, "INSERT INTO t VALUES (?, ?, ?, ?)",
+                          [("AIG123", 1, "x", "김철수"), bad])
+
+        row_log = [r for r in caplog.messages if "행 1 실패" in r]
+        assert len(row_log) == 1, caplog.messages
+        assert "not-null" in row_log[0]                       # 원인
+        assert "[str(6), int, None, str(3)]" in row_log[0]    # 형태 요약
+
+    def test_does_not_leak_personal_data(self, monkeypatch, caplog):
+        """실패 행의 이름·생년월일이 로그에 노출되면 안 된다 (GitHub Actions 로그 유출 방지)."""
+        monkeypatch.setattr(hrd_etl, "is_pg", lambda: True)
+        bad = ("AIG123", 1, "홍길동", "19900101")
+        cursor = FakePgCursor(bad_rows=[bad], detail_row=bad)
+
+        with caplog.at_level(logging.WARNING, logger="hrd_etl"):
+            batch_execute(cursor, "INSERT INTO t VALUES (?, ?, ?, ?)", [bad])
+
+        joined = "\n".join(caplog.messages)
+        assert "홍길동" not in joined      # 이름
+        assert "19900101" not in joined   # 생년월일
+        assert "Failing row contains" not in joined  # PG DETAIL 줄 자체가 제거돼야 함
+        assert "not-null" in joined       # 진단 정보는 남아야 함
+
+    def test_caps_sample_and_reports_remainder(self, monkeypatch, caplog):
+        monkeypatch.setattr(hrd_etl, "is_pg", lambda: True)
+        rows = [(f"bad{i}",) for i in range(6)]
+        cursor = FakePgCursor(bad_rows=rows)
+
+        with caplog.at_level(logging.WARNING, logger="hrd_etl"):
+            s, e = batch_execute(cursor, "INSERT INTO t VALUES (?)", rows)
+
+        assert (s, e) == (0, 6)
+        sampled = [r for r in caplog.messages if "실패:" in r]
+        assert len(sampled) == ETL_FAILED_ROW_SAMPLE
+        assert any(f"나머지 {6 - ETL_FAILED_ROW_SAMPLE}건 생략" in r for r in caplog.messages)
