@@ -9,7 +9,7 @@ import datetime as dt
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from utils import check_password, is_pg, load_data, load_cache_json, page_error_boundary
+from utils import check_password, load_data, load_cache_json, page_error_boundary
 from config import CACHE_TTL_SARAMIN, CacheKey
 
 with page_error_boundary():
@@ -149,10 +149,7 @@ with page_error_boundary():
 
             @st.cache_data(ttl=CACHE_TTL_SARAMIN)
             def get_expired_monthly():
-                if is_pg():
-                    month_expr = "TO_CHAR(EXPIRATION_DT::date, 'YYYY-MM')"
-                else:
-                    month_expr = "SUBSTR(EXPIRATION_DT, 1, 7)"
+                month_expr = "TO_CHAR(EXPIRATION_DT::date, 'YYYY-MM')"
                 return load_data(f"""
                     SELECT {month_expr} AS YEAR_MONTH, COUNT(*) AS CNT
                     FROM TB_JOB_POSTING
@@ -204,10 +201,7 @@ with page_error_boundary():
 
             @st.cache_data(ttl=CACHE_TTL_SARAMIN)
             def get_posting_duration():
-                if is_pg():
-                    dur_expr = "(EXPIRATION_DT::date - POSTING_DT::date)"
-                else:
-                    dur_expr = "(JULIANDAY(EXPIRATION_DT) - JULIANDAY(POSTING_DT))"
+                dur_expr = "(EXPIRATION_DT::date - POSTING_DT::date)"
                 return load_data(f"""
                     SELECT JOB_MID_NM, AVG({dur_expr}) AS AVG_DAYS
                     FROM TB_JOB_POSTING
