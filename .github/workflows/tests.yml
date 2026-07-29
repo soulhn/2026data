@@ -1,0 +1,37 @@
+name: Tests (pytest)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:  # 수동 실행 버튼
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'  # ETL 워크플로 3종과 동일 — CI 통과 = ETL 런타임에서도 통과
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # DATABASE_URL 의도적 미주입 — CI에는 .env가 없어 is_pg()가 False가 되고
+      # 테스트는 conftest의 인메모리 SQLite로 실행된다 (프로덕션 DB 접속 없음).
+      # 주입하면 ETL 테스트가 psycopg2 경로로 새어 executemany 검증이 무력화된다.
+      - name: Run tests
+        run: python -m pytest tests/ -q
