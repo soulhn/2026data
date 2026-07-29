@@ -88,3 +88,94 @@ class TestBatchExecute:
         rows = conn.execute("SELECT a FROM t ORDER BY a").fetchall()
         assert [r[0] for r in rows] == ['a', 'b', 'c']
         conn.close()
+
+
+class FakePgCursor:
+    """PG 트랜잭션 의미론을 흉내내는 커서.
+
+    - 문이 하나라도 실패하면 aborted 상태가 되어 이후 모든 문이 실패한다
+    - `ROLLBACK TO SAVEPOINT` 만 aborted를 해제하고, 해당 시점 이후 삽입을 되돌린다
+    """
+
+    def __init__(self, bad_rows=()):
+        self.bad = {repr(r) for r in bad_rows}
+        self.aborted = False
+        self.rows = []          # 커밋 가능한 상태로 남은 행
+        self.stmts = []         # 발행된 제어문 기록
+        self._marks = {}        # savepoint 이름 → 당시 rows 길이
+        self._pending = []      # mogrify로 예약된 배치 행
+
+    def mogrify(self, sql, args=None):
+        self._pending.append(args)
+        return repr(args).encode()
+
+    def execute(self, sql, params=None):
+        if isinstance(sql, bytes):
+            sql = sql.decode()
+        text = sql.strip()
+        upper = text.upper()
+
+        if upper.startswith("ROLLBACK TO SAVEPOINT"):
+            name = text.split()[-1]
+            self.rows = self.rows[: self._marks[name]]
+            self.aborted = False
+            self.stmts.append(f"ROLLBACK TO {name}")
+            return
+        if self.aborted:
+            raise RuntimeError("current transaction is aborted (InFailedSqlTransaction)")
+        if upper.startswith("RELEASE SAVEPOINT"):
+            self.stmts.append(f"RELEASE {text.split()[-1]}")
+            return
+        if upper.startswith("SAVEPOINT"):
+            name = text.split()[-1]
+            self._marks[name] = len(self.rows)
+            self.stmts.append(f"SAVEPOINT {name}")
+            return
+
+        if params is not None:                      # row-by-row 폴백
+            if repr(params) in self.bad:
+                self.aborted = True
+                raise RuntimeError("null value violates not-null constraint")
+            self.rows.append(params)
+            return
+
+        batch, self._pending = self._pending, []    # execute_batch가 이어붙인 문
+        if any(repr(r) in self.bad for r in batch):
+            self.aborted = True
+            raise RuntimeError("null value violates not-null constraint (batch)")
+        self.rows.extend(batch)
+
+
+class TestBatchExecutePostgres:
+    """PG 경로: 배치 실패 후에도 정상 행이 살아남는지 (SAVEPOINT 격리) 검증."""
+
+    def test_batch_failure_recovers_good_rows(self, monkeypatch):
+        monkeypatch.setattr(hrd_etl, "is_pg", lambda: True)
+        cursor = FakePgCursor(bad_rows=[("bad",)])
+        data = [("a",), ("bad",), ("c",)]
+
+        s, e = batch_execute(cursor, "INSERT INTO t VALUES (?)", data)
+
+        # SAVEPOINT 없이는 배치 실패 후 폴백이 전량 실패해 (0, 3)이 된다
+        assert (s, e) == (2, 1)
+        assert cursor.rows == [("a",), ("c",)]
+        assert not cursor.aborted
+        assert "ROLLBACK TO batch_sp" in cursor.stmts       # 배치 실패 복구
+        assert "ROLLBACK TO row_sp" in cursor.stmts         # 나쁜 행만 격리
+
+    def test_batch_success_releases_savepoint(self, monkeypatch):
+        monkeypatch.setattr(hrd_etl, "is_pg", lambda: True)
+        cursor = FakePgCursor()
+        data = [("a",), ("b",)]
+
+        s, e = batch_execute(cursor, "INSERT INTO t VALUES (?)", data)
+
+        assert (s, e) == (2, 0)
+        assert cursor.rows == data
+        assert cursor.stmts == ["SAVEPOINT batch_sp", "RELEASE batch_sp"]
+
+    def test_empty_list_issues_no_savepoint(self, monkeypatch):
+        monkeypatch.setattr(hrd_etl, "is_pg", lambda: True)
+        cursor = FakePgCursor()
+        assert batch_execute(cursor, "INSERT INTO t VALUES (?)", []) == (0, 0)
+        assert cursor.stmts == []

@@ -25,25 +25,41 @@ logging.basicConfig(
 
 def batch_execute(cursor, sql, data_list):
     """PG: execute_batch로 네트워크 왕복 최소화, SQLite: executemany.
-    배치 실패 시 row-by-row 폴백. (success, errors) 반환."""
+    배치 실패 시 row-by-row 폴백. (success, errors) 반환.
+
+    PG는 문 하나가 실패하면 트랜잭션 전체가 aborted 상태가 되어 이후 execute가 모두
+    InFailedSqlTransaction으로 죽는다. SAVEPOINT로 감싸 배치 실패를 되돌린 뒤 폴백하고,
+    폴백 중 나쁜 행도 행 단위 SAVEPOINT로 격리해야 나머지 행을 살릴 수 있다."""
     if not data_list:
         return 0, 0
-    resolved_sql = adapt_query(sql) if is_pg() else sql
+    pg = is_pg()
+    resolved_sql = adapt_query(sql) if pg else sql
+    if pg:
+        cursor.execute("SAVEPOINT batch_sp")
     try:
-        if is_pg():
+        if pg:
             from psycopg2.extras import execute_batch
             execute_batch(cursor, resolved_sql, data_list, page_size=ETL_BATCH_PAGE_SIZE)
+            cursor.execute("RELEASE SAVEPOINT batch_sp")
         else:
             cursor.executemany(resolved_sql, data_list)
         return len(data_list), 0
     except Exception as e:
         logger.warning(f"[batch_execute] 배치 실패, row-by-row 폴백: {e}")
+        if pg:
+            cursor.execute("ROLLBACK TO SAVEPOINT batch_sp")  # 트랜잭션 복구
         success, errors = 0, 0
         for row in data_list:
             try:
+                if pg:
+                    cursor.execute("SAVEPOINT row_sp")
                 cursor.execute(resolved_sql, row)
+                if pg:
+                    cursor.execute("RELEASE SAVEPOINT row_sp")
                 success += 1
             except Exception:
+                if pg:
+                    cursor.execute("ROLLBACK TO SAVEPOINT row_sp")  # 나쁜 행만 버림
                 errors += 1
         return success, errors
 
