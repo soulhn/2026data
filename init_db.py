@@ -236,10 +236,9 @@ def init_all_tables():
         try:
             if is_pg():
                 conn.commit()
-                cursor.execute(f'CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({col})')
+            cursor.execute(f'CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({col})')
+            if is_pg():
                 conn.commit()
-            else:
-                cursor.execute(f'CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({col})')
         except Exception:
             if is_pg():
                 conn.rollback()

@@ -428,15 +428,14 @@ def compute_and_cache_aggregations():
 
     today_str = dt.date.today().isoformat()
 
-    # 만료 판정: EXPIRATION_DT < 오늘 OR ACTIVE = 0
+    # 만료 판정: EXPIRATION_DT < 오늘 OR ACTIVE = 0 — 엔진 무관 동일 문법
+    expired_cond = f"(EXPIRATION_DT < '{today_str}' OR ACTIVE = 0)"
+    active_cond = f"((EXPIRATION_DT IS NULL OR EXPIRATION_DT >= '{today_str}') AND ACTIVE = 1)"
+    # 날짜 연산·포맷만 엔진별로 다름
     if is_pg():
-        expired_cond = f"(EXPIRATION_DT < '{today_str}' OR ACTIVE = 0)"
-        active_cond = f"((EXPIRATION_DT IS NULL OR EXPIRATION_DT >= '{today_str}') AND ACTIVE = 1)"
         duration_expr = "(EXPIRATION_DT::date - POSTING_DT::date)"
         exp_month_expr = "TO_CHAR(EXPIRATION_DT::date, 'YYYY-MM')"
     else:
-        expired_cond = f"(EXPIRATION_DT < '{today_str}' OR ACTIVE = 0)"
-        active_cond = f"((EXPIRATION_DT IS NULL OR EXPIRATION_DT >= '{today_str}') AND ACTIVE = 1)"
         duration_expr = "(JULIANDAY(EXPIRATION_DT) - JULIANDAY(POSTING_DT))"
         exp_month_expr = "SUBSTR(EXPIRATION_DT, 1, 7)"
 
