@@ -58,8 +58,11 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 - 상한 초과 시 `executor.shutdown(wait=False, cancel_futures=True)`로 즉시 반환.
   **`with ThreadPoolExecutor` 사용 금지** — `shutdown(wait=True)`라 상한을 넘겨도 끝까지 기다림
 - `get_active_data_with_fallback()` source 3종: `"API"` / `"DB"`(키 미설정) / `"DB_FALLBACK"`(API 실패)
-- **`hrd_etl.py`는 `HANWHA_COURSE_ID` 하나만 수집** → 엔코아 등 타 기관 과정은 DB에 없음.
-  DB 폴백이 비었을 때 "운영 중인 과정 없음"으로 표시하면 거짓 안내가 되므로 `DB_FALLBACK`을 구분할 것
+- **운영 현황은 응답 속도를 위해 실시간 API를 주 경로로 삼는다 (의도된 설계).** DB 폴백은
+  보조 수단이며, `hrd_etl.py`가 `HANWHA_COURSE_ID` 하나만 수집하므로 엔코아 등 타 기관 과정은
+  DB에 없다 — **폴백이 비는 것은 정상**이고, ETL 확장으로 메울 대상이 아니다
+- 따라서 폴백이 비었을 때 "운영 중인 과정 없음"으로 표시하면 거짓 안내가 된다.
+  `DB_FALLBACK`·`realtime_error`를 구분해 "실시간 조회 실패"임을 명확히 알릴 것
 
 ### ETL 자동화
 - `hrd_etl.yml` — 평일 KST 09:00~18:00 매시간
