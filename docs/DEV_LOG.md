@@ -1,5 +1,35 @@
 # 개발 일지
 
+## 2026-07-29 — 폴백 제거 후속 정리 4건
+
+폴백 제거 작업에서 "남긴 것"으로 분류했던 4건을 순차 처리. 하나는 실제 버그였고 나머지는 정리.
+
+### ① `batch_execute` 폴백이 PG에서 무력했던 문제 (실제 버그)
+- **증상**: PG는 문 하나가 실패하면 트랜잭션 전체가 aborted 되어 이후 `execute`가 전부 `InFailedSqlTransaction`으로 죽는다. row-by-row 폴백이 **한 행도 건지지 못하고 전량 실패**
+- **영향**: 호출부 3곳(`hrd_etl.py` 명부·명부보정·출결)이 모두 회차 단위 `conn.commit()` 안에 있어, 배치 1건 실패 시 **그 회차 데이터가 통째로 소실**되고 로그에는 `[ETL Summary] 실패: N건`만 남는 조용한 손실. UPSERT라 PK 충돌은 무해하고, 실제 유발 원인은 NOT NULL 위반·컬럼 길이 초과·타입 캐스팅 실패
+- **해결**: 배치를 `SAVEPOINT batch_sp`로 감싸 실패 시 `ROLLBACK TO`로 트랜잭션 복구, 폴백 중 나쁜 행도 `SAVEPOINT row_sp`로 격리. `get_connection()`이 ETL 경로에서 `autocommit=False`라 SAVEPOINT 전제는 이미 충족
+- **검증**: PG 트랜잭션 의미론(문 실패 → aborted, `ROLLBACK TO`로만 복구)을 흉내내는 `FakePgCursor`로 회귀 테스트 3개 추가. 실제 PG 없이도 검증되며, **수정 전 코드에서 `(0, 3)` 전량 소실 → 수정 후 `(2, 1)` 복구**를 확인
+- **미해결(별건)**: 폴백이 실패 행을 카운트만 하고 어떤 행이었는지 남기지 않음 — 반복 실패 시 원인 추적이 어려움
+
+### ② `sqlite3.Row` 센티널 → `dict_rows` 플래그
+- `get_connection(row_factory=sqlite3.Row)`가 "dict 형태 행을 달라"는 매직 토큰으로 쓰여, SQLite가 테스트 전용이 된 뒤에도 `utils.py`·`hrd_etl.py`가 `import sqlite3`를 유지하게 만들었음
+- `dict_rows=True`로 교체 (호출부는 `hrd_etl.py:71` 1곳뿐). **프로덕션 코드에서 sqlite3 의존 완전 제거 — 이제 `tests/`에만 남음**
+- 폴백 제거 당시엔 `run_etl` 커버리지 0을 이유로 보류했으나, 호출부가 1곳이고 conftest가 `lambda **kwargs`로 받아 테스트도 안 깨지므로 진행. 실제 PG 연결로 `dict_rows=True` → `RealDictRow`, 미지정 → `tuple` 확인
+
+### ③ `pages/채용_동향.py` 도달 불가 분기 제거
+- fail-fast 도입으로 `load_data()`가 성공하려면 `is_pg()`가 반드시 True → `SUBSTR`/`JULIANDAY` else 가지는 **논리적으로 도달 불가**임이 증명됨 (이전엔 "아마 안 쓰임" 수준)
+- **`saramin_etl.py`의 같은 모양 분기는 유지** — `test_saramin_etl.py`가 `saramin_etl.is_pg`를 False로 패치해 그 else를 실제 실행한다. 테스트가 있는 쪽은 남기고 없는 쪽만 지우는 역설적 구조
+- `AppTest`로 페이지 렌더 확인(예외 0건, 차트 9개) + PG 표현식 직접 실행 검증
+
+### ④ `hrd_etl.py`의 미사용 `load_data` import
+- 1줄짜리지만 **①②의 선결 조건**이었음 — `PostToolUse` 훅이 `.py` 편집 후 `ruff F401`을 돌려 `exit 2`로 차단하므로, 이게 남아 있으면 `hrd_etl.py`를 건드리는 모든 작업이 막힌다
+
+### 영향 범위
+- 수정: `hrd_etl.py`, `utils.py`, `pages/채용_동향.py`, `tests/test_hrd_etl.py`
+- 테스트: 210 → **213개** (`TestBatchExecutePostgres` 3개 추가)
+
+---
+
 ## 2026-07-29 — SQLite 런타임 폴백 제거(fail-fast) + pytest CI 도입
 
 ### 배경
@@ -19,10 +49,7 @@
 - `.devcontainer/` 및 유물 `.db` 3개 삭제
 
 ### 남긴 것 / 후속
-- `hrd_etl.py:71`의 `row_factory=sqlite3.Row` 센티널(`utils.py:131`과 쌍) — PG에서 `RealDictCursor`를 얻는 통로. 문자열 플래그로 바꾸는 건 순수 미관 리팩터이고 `run_etl` 커버리지가 0이라 보류
-- `pages/채용_동향.py`의 `JULIANDAY`/`SUBSTR` else 가지 — 도달 불가 데드코드지만 `pages/` 테스트 커버리지 0이라 안전망 없음. 별건
-- **`batch_execute` 폴백이 실패한 배치를 롤백하지 않음** — PG(`autocommit=False`)에서 배치 실패 시 트랜잭션이 aborted 되어 폴백의 모든 `cursor.execute`가 `InFailedSqlTransaction`으로 실패 → 폴백이 사실상 무력. 별건으로 조사 필요
-- `hrd_etl.py:12`의 `load_data` 미사용 import (이번 변경 이전부터 존재) — 별건
+후속 4건은 같은 날 순차 처리 완료 — 아래 "2026-07-29 — 폴백 제거 후속 정리 4건" 참조.
 - `.claude/settings.json` PreToolUse(Bash) 훅은 **확인 프롬프트로 전환 완료** — 기존 "`DATABASE_URL` 있으면 ETL 차단(exit 2)"은 SQLite 폴백을 전제하던 로직이라, 폴백 제거 후엔 있으면 훅이 막고 없으면 코드가 죽어 ETL이 영구 실행 불가가 됨. `DATABASE_URL` 검사 조건을 빼고 `permissionDecision: "ask"`로 변경 (완전 삭제는 비권장 — `permissions.allow`에 `Bash(python:*)`가 있어 마찰 없이 프로덕션에 쓰게 됨)
 
 ### 영향 범위
