@@ -42,7 +42,7 @@ saramin_etl.py (매일 09시)       →               ← 운영 현황: hrd_api
                                                     (60초 캐시, 실패 시 DB 폴백)
 ```
 
-- **DB:** Supabase (PostgreSQL) / 로컬 개발 시 SQLite 자동 폴백
+- **DB:** Supabase (PostgreSQL) — 로컬·CI·배포 전 환경 동일 (`DATABASE_URL` 필수)
 - **ETL 자동화:** GitHub Actions (cron 스케줄)
 - **대시보드:** Streamlit Cloud 배포
 
@@ -102,8 +102,8 @@ saramin_etl.py (매일 09시)       →               ← 운영 현황: hrd_api
  ┃ ┣ 📜 SQL_Playground.py       # [공통] SELECT 전용 SQL 쿼리 실행 (예제 쿼리 제공)
  ┃ ┣ 📜 AI_리포트.py             # [AI] Gemini 기반 기수별 성과 리포트 자동 생성
  ┃ ┗ 📜 용어_사전.py             # [공통] GLOSSARY.md 기반 UI 용어 사전 조회
- ┣ 📂 tests                     # pytest 테스트 (209개)
- ┃ ┣ 📜 conftest.py              # 인메모리 SQLite fixture
+ ┣ 📂 tests                     # pytest 테스트 (210개)
+ ┃ ┣ 📜 conftest.py              # 테스트 전용 인메모리 SQLite fixture
  ┃ ┣ 📜 test_utils.py            # adapt_query, safe_float, safe_int, calculate_age
  ┃ ┣ 📜 test_config.py           # 상수 타입/범위 검증
  ┃ ┣ 📜 test_init_db.py          # 테이블 생성, 멱등성, 인덱스
@@ -155,12 +155,15 @@ HRD_API_KEY="발급받은_인증키"
 HANWHA_COURSE_ID="관리할_내부_과정_ID"
 ENCORE_API_KEY="엔코아_기관_인증키"        # AI캠퍼스 운영 현황 (기관별 키 필수)
 ENCORE_COURSE_IDS="과정ID1,과정ID2"       # 엔코아 과정 ID (콤마 구분)
-DATABASE_URL="postgresql://..."   # Supabase 연결 (없으면 SQLite 사용)
+DATABASE_URL="postgresql://..."   # Supabase 연결 (필수 — 미설정 시 DB 접근 시점에 즉시 에러)
 SARAMIN_API_KEY="사람인_API_키"  # 채용공고 수집 (선택사항)
 OPENAI_API_KEY="OpenAI_API_키"   # AI 리포트 기능 (선택사항)
 ```
 
 ### 3. 데이터베이스 구축
+
+> `DATABASE_URL` 없이는 실행할 수 없습니다. 아래 스크립트와 대시보드 모두 DB 접근 시점에
+> `DatabaseNotConfiguredError`로 즉시 중단됩니다 (SQLite 폴백 없음).
 
 ```bash
 # 테이블 생성
@@ -230,12 +233,12 @@ Repository Secrets에 등록:
 
 ## 기술적 특징
 
-- **DB 이중 지원:** `DATABASE_URL` 환경변수 유무로 PostgreSQL/SQLite 자동 전환
+- **DB 단일화:** PostgreSQL(Supabase) 단일 소스. `DATABASE_URL` 미설정 시 조용한 폴백 없이 즉시 실패(fail-fast). 테스트만 인메모리 SQLite 사용 (`adapt_query()`가 쿼리 호환 담당)
 - **ETL 자동화:** GitHub Actions cron으로 무인 데이터 갱신
 - **Smart Update:** 종료 과정 중복 수집 방지, 증분 수집 지원
 - **Robustness:** 자동 재시도(Retry), 배치 실패 시 row-by-row 폴백, ETL Summary 리포트
 - **Performance:** `@st.cache_data`, ETL 사전 집계 캐시(`TB_MARKET_CACHE`), Pagination, Sampling, DB 인덱스 10개로 대시보드 최적화
-- **Testing:** pytest 209개 테스트 (유틸리티, DB 초기화, ETL 함수, 매출 청구 계산, 사람인 ETL, 설정 검증)
+- **Testing:** pytest 210개 테스트 (유틸리티, DB 초기화, ETL 함수, 매출 청구 계산, 사람인 ETL, 설정 검증) — push/PR마다 GitHub Actions 자동 실행
 - **Visualization:** Plotly & Altair 인터랙티브 차트 (히트맵, 히스토그램, 게이지 등)
 - **시장 분석:** 내부 과정 vs 시장 교차분석, 시계열 트렌드, 경쟁 심화도, 비용-성과 시뮬레이터, 자격증 분석 (scikit-learn)
 - **매출 분석:** 단위기간별 훈련비 청구 계산 (일훈련비 145,200원 기준), 기수별 매출 비교

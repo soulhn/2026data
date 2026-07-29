@@ -1,5 +1,38 @@
 # 개발 일지
 
+## 2026-07-29 — SQLite 런타임 폴백 제거(fail-fast) + pytest CI 도입
+
+### 배경
+- "DB 이중화·도커가 여전히 필요한가" 점검에서 출발. **도커는 애초에 없었음** — `Dockerfile`/`docker-compose.yml`은 402개 커밋 전체 히스토리에 존재한 적이 없고, `.devcontainer/`만 2026-03-31 이후 4개월 방치 상태였음 (Python 3.11 고정으로 CI 3.12·로컬 3.14.2와 불일치, 존재한 적 없는 `packages.txt` 참조, `/root` 마운트가 non-root 이미지에서 무효). 커밋 타임존이 5월 말 `+0000`(컨테이너) → 6월 이후 `+0900`(로컬 Mac)으로 바뀐 뒤 돌아가지 않음
+- **DB 이중화는 "런타임 폴백"으로는 위험, "테스트용"으로는 필요**한 상태였음
+  - `utils.DB_FILE = "hrd_analysis.db"`는 디스크에 존재하지 않는 파일. `DATABASE_URL`이 누락되면 `get_connection()`이 빈 SQLite를 새로 만들고 이후 모든 쿼리가 `no such table`로 실패 → **화면만 비는 조용한 실패**. Streamlit secrets 오타·만료 시 "DB 설정 없음"이 아니라 "데이터 없는 대시보드"로 보임
+  - 프로덕션 경로는 전부 PG (`.env`·Streamlit secrets·ETL 워크플로 3개 모두 `DATABASE_URL` 주입) → SQLite로 도는 실사용 경로 0개. 루트의 `hrd_data.db`/`hrd_training.db`/`market.db`는 0바이트·코드 참조 0건 유물
+  - 반면 테스트는 SQLite에 실제로 의존 (`conftest.py` 인메모리 fixture, 210개가 인프라 0으로 1초에 실행). 전면 제거는 PG testcontainer(=도커)나 대량 mock을 요구해 비용 대비 이득 없음
+
+### 결정 사항
+- **`get_connection()`에서만 fail-fast** — `DatabaseNotConfiguredError`. `get_database_url()`이나 `is_pg()`에 넣으면 `adapt_query()`의 SQLite 패스스루가 죽어 `TestAdaptQuery` 4개 + 모든 fixture가 붕괴
+- **`is_pg()`·`adapt_query()`·ETL의 `execute_batch` vs `executemany` 분기·init_db의 PG 전용 commit/rollback 33곳은 유지** — 테스트 호환 계층
+- `page_error_boundary()`에 전용 분기 추가 — 설정 오류를 "잠시 후 다시 시도"로 오안내하지 않음. `st.error`를 데이터 계층에 넣지 않은 이유는 `utils.py`를 헤드리스 ETL 3종이 import하기 때문
+- `DB_FILE` 상수 및 참조 3곳(`init_db`, `SQL_Playground`, `DB_명세`) 제거, 연결 라벨 PostgreSQL 고정
+- **선결 조건으로 드러난 테스트 버그**: `tests/test_hrd_etl.py`가 `utils.is_pg`만 패치하는데 `hrd_etl.py:12`가 `from utils import is_pg`로 값 바인딩 → `hrd_etl.is_pg`가 True로 남아 `execute_batch`가 sqlite3 커서에 호출되고 `AttributeError` → 폴백으로 **우연히 통과**. `cursor.executemany` 경로는 한 번도 커버된 적 없었음. `DATABASE_URL`이 없는 CI에서는 진짜 `executemany`를 타면서 SQLite의 비원자적 부분 삽입 때문에 `test_fallback_on_error`가 `(0, 3)`을 반환해 실패 (실측: 로컬 210 passed / `DATABASE_URL=` 209 passed 1 failed). `hrd_etl` 모듈 패치 + 선점 행 방식으로 결정화
+- **CI에 `DATABASE_URL` 미주입** — 주입하면 위 버그가 다시 가려진 채 초록불이 되고 프로덕션 접속 문자열이 러너에 노출됨. `.env`가 CI에 없어 자동으로 SQLite 모드가 되므로 주입할 이유도 없음
+- `.devcontainer/` 및 유물 `.db` 3개 삭제
+
+### 남긴 것 / 후속
+- `hrd_etl.py:71`의 `row_factory=sqlite3.Row` 센티널(`utils.py:131`과 쌍) — PG에서 `RealDictCursor`를 얻는 통로. 문자열 플래그로 바꾸는 건 순수 미관 리팩터이고 `run_etl` 커버리지가 0이라 보류
+- `pages/채용_동향.py`의 `JULIANDAY`/`SUBSTR` else 가지 — 도달 불가 데드코드지만 `pages/` 테스트 커버리지 0이라 안전망 없음. 별건
+- **`batch_execute` 폴백이 실패한 배치를 롤백하지 않음** — PG(`autocommit=False`)에서 배치 실패 시 트랜잭션이 aborted 되어 폴백의 모든 `cursor.execute`가 `InFailedSqlTransaction`으로 실패 → 폴백이 사실상 무력. 별건으로 조사 필요
+- `hrd_etl.py:12`의 `load_data` 미사용 import (이번 변경 이전부터 존재) — 별건
+- `.claude/settings.json` PreToolUse(Bash) 훅 — "`DATABASE_URL` 있으면 ETL 차단"이 SQLite 폴백을 전제하던 로직이라, 폴백 제거 후엔 ETL을 영구 차단하게 됨. 확인 프롬프트 전환안 제안 후 승인 대기
+
+### 영향 범위
+- 수정: `utils.py`, `init_db.py`, `saramin_etl.py`, `pages/SQL_Playground.py`, `pages/DB_명세.py`, `tests/test_hrd_etl.py`
+- 추가: `.github/workflows/tests.yml`
+- 삭제: `.devcontainer/`, `hrd_data.db`, `hrd_training.db`, `market.db`
+- 문서: `README.md`, `CLAUDE.md`, `.claude/rules/database.md`, `.claude/rules/testing.md`
+
+---
+
 ## 2026-07-29 — market_etl upsert에서 개강일(TR_STA_DT) 갱신 누락 수정
 
 ### 배경

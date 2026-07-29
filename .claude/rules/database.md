@@ -22,7 +22,11 @@ WHERE 절 날짜 파라미터는 반드시 `strftime('%Y-%m-%d')` 사용.
 - 컬럼명 소문자 반환 → `load_data()`에서 대문자 변환 처리됨 (직접 처리 불필요)
 - PG 읽기: `@st.cache_resource` 커넥션 풀링 (`_get_pg_pool()`)으로 TCP 재연결 방지
 
-## DB 이중 지원
+## DB 연결 (PostgreSQL 단일)
 
-`DATABASE_URL` 환경변수 있으면 PostgreSQL, 없으면 SQLite.
+런타임은 PostgreSQL 전용. `DATABASE_URL` 없으면 `get_connection()`이
+`DatabaseNotConfiguredError` 발생 (SQLite 폴백 없음).
+
+단, `is_pg()`·`adapt_query()`와 ETL/init_db의 `if is_pg():` 분기는
+**테스트(인메모리 SQLite) 호환용으로 유지 — 제거 금지.**
 `is_pg()`, `get_database_url()`, `adapt_query()` 모두 `utils.py` 소재.

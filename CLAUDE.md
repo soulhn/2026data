@@ -22,7 +22,7 @@ python build_home_snapshot.py   # 홈 확정 스냅샷 재생성 (취업률 확�
 
 ## 프로젝트 개요
 
-HRD-Net 공공데이터 기반 훈련 과정 성과 분석 대시보드 (Streamlit + PostgreSQL/SQLite)
+HRD-Net 공공데이터 기반 훈련 과정 성과 분석 대시보드 (Streamlit + PostgreSQL)
 
 ## 아키텍처
 
@@ -40,9 +40,11 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 - 벤치마크(60.5·85.7·90.3)·누적 매출 헤드라인(104.1억)은 원장 확정값 고정(`LEDGER_*` 상수) — 시장 데이터 증가에 따른 재계산 드리프트 방지
 - 상세 페이지(pages/)는 기존대로 DB 동적 조회
 
-### DB 이중 지원 (SQLite / PostgreSQL)
-- `DATABASE_URL` 환경변수 있으면 → PostgreSQL (Supabase), 없으면 → SQLite (로컬)
-- `utils.py`의 `is_pg()`, `get_database_url()`, `adapt_query()`로 자동 전환
+### DB 연결 (PostgreSQL 단일, 2026-07 폴백 제거)
+- 런타임은 PostgreSQL (Supabase) 전용. `DATABASE_URL`이 없으면 `utils.get_connection()`이
+  `DatabaseNotConfiguredError`로 즉시 실패 — 빈 SQLite 파일을 만들던 조용한 폴백은 제거됨
+- **`is_pg()`·`adapt_query()`·ETL의 `execute_batch` vs `executemany` 분기는 유지 — 제거 금지.**
+  pytest가 인메모리 SQLite로 돌기 때문에 `?` 플레이스홀더 패스스루가 필요함
 - `adapt_query()`: `?` → `%s`, `INSERT OR IGNORE` → `ON CONFLICT DO NOTHING` 자동 변환
 - PostgreSQL 컬럼명 소문자 반환 → `load_data()`에서 대문자 변환 처리
 
@@ -50,6 +52,11 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 - `hrd_etl.yml` — 평일 KST 09:00~18:00 매시간
 - `market_etl.yml` — 매일 KST 21:00
 - `saramin_etl.yml` — 매일 KST 04:43 (사람인 채용공고, 정각 회피로 지연 최소화)
+
+### CI
+- `tests.yml` — push(main)/PR 시 Python 3.12로 `pytest tests/` 실행
+- **`DATABASE_URL`을 주입하지 않음** — CI엔 `.env`가 없어 `is_pg()`가 False가 되고 인메모리
+  SQLite로 돌아야 정상. 주입하면 ETL 테스트가 psycopg2 경로로 새어 검증이 무력화됨
 
 ### 사람인 ETL 수집 전략 (`saramin_etl.py`)
 
@@ -226,7 +233,7 @@ Fix: Correct completion rate calculation (수료율 계산 오류 수정)
 - `HANWHA_COURSE_ID` — 한화 관리 대상 과정 ID (GitHub Actions + Streamlit secrets 양쪽 등록 필요)
 - `ENCORE_API_KEY` — 엔코아 자체 운영기관 HRD-Net 인증키 (Streamlit secrets 등록). **명부/출결 API는 인증키 소속 기관의 과정만 조회 가능** → 기관마다 키·과정 쌍 필요 (`hrd_api.get_institutions()`)
 - `ENCORE_COURSE_IDS` — 엔코아 과정 ID 목록, 콤마 구분 (예: `AIG...382,AIG...396`)
-- `DATABASE_URL` — PostgreSQL 연결 문자열 (없으면 SQLite 폴백)
+- `DATABASE_URL` — PostgreSQL 연결 문자열 (**필수**. 미설정 시 `get_connection()`이 `DatabaseNotConfiguredError`)
 - `SARAMIN_API_KEY` — 사람인 채용공고 API 키 (GitHub Actions + Streamlit secrets 등록)
 - `ETL_FULL_REFRESH` — `=1`이면 market_etl이 증분(12개월) 대신 2023-01-01부터 전체 재수집. GitHub Actions 수동 실행의 `full_refresh` 입력으로 전달 (`gh workflow run market_etl.yml -f full_refresh=true`)
 
