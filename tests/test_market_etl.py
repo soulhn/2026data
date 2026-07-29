@@ -1,6 +1,10 @@
 """market_etl.py 유틸리티 함수 테스트"""
 import datetime as dt
+import pytest
 from bs4 import BeautifulSoup
+
+import init_db
+import market_etl
 from market_etl import parse_rows_xml, ymd, month_shards, week_shards, _normalize_stdg_scor
 
 
@@ -136,6 +140,52 @@ class TestNormalizeStdgScor:
 
     def test_boundary_above_100(self):
         assert _normalize_stdg_scor(100.1) == 100.1
+
+
+def _course_xml(sta_dt, end_dt, reg_man=25):
+    """개강·종강일과 신청인원만 바꾼 최소 과정 XML."""
+    return f"""<HRDNet><srchList><scn_list>
+        <trprId>T900</trprId><trprDegr>1</trprDegr>
+        <title>일정 변경 과정</title>
+        <traStartDate>{sta_dt}</traStartDate>
+        <traEndDate>{end_dt}</traEndDate>
+        <yardMan>30</yardMan><regCourseMan>{reg_man}</regCourseMan>
+        <address>서울 강남구</address>
+    </scn_list></srchList></HRDNet>"""
+
+
+@pytest.fixture
+def mock_market_db(monkeypatch, mock_db_connection):
+    """mock_db_connection 위에 market_etl 모듈도 패치."""
+    import utils
+    monkeypatch.setattr(market_etl, "get_connection", lambda **kwargs: utils.get_connection())
+    monkeypatch.setattr(market_etl, "is_pg", lambda: False)
+    monkeypatch.setattr(market_etl, "adapt_query", utils.adapt_query)
+    init_db.init_all_tables()
+    return mock_db_connection
+
+
+class TestSaveRowsUpsert:
+    def test_start_date_change_is_reflected(self, mock_market_db):
+        """개강 연기 시 TR_STA_DT도 갱신되어야 함.
+
+        누락 시 YEAR_MONTH만 새 달로 바뀌어 개강 현황 표(개강일·D-day·상태)와
+        월별 개강 예정 차트가 서로 다른 달을 가리킴.
+        """
+        first = parse_rows_xml(BeautifulSoup(_course_xml("2026-08-05", "2026-12-20"), "lxml-xml"))
+        assert market_etl.save_rows(first) == 1
+
+        delayed = parse_rows_xml(
+            BeautifulSoup(_course_xml("2026-09-02", "2027-01-15", reg_man=28), "lxml-xml"))
+        assert market_etl.save_rows(delayed) == 1
+
+        cursor = mock_market_db.cursor()
+        cursor.execute("""
+            SELECT TR_STA_DT, TR_END_DT, YEAR_MONTH, REG_COURSE_MAN
+            FROM TB_MARKET_TREND WHERE TRPR_ID = 'T900'
+        """)
+        # 회차(TRPR_DEGR)가 같으므로 행이 늘지 않고 최신값으로 갱신
+        assert cursor.fetchall() == [("2026-09-02", "2027-01-15", "2026-09", 28)]
 
 
 class TestGetCollectRange:

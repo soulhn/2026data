@@ -1,5 +1,22 @@
 # 개발 일지
 
+## 2026-07-29 — market_etl upsert에서 개강일(TR_STA_DT) 갱신 누락 수정
+
+### 배경
+- 개강 현황 탭 사용 팀원 문의: "개강 일자가 바뀌는 과정이 많은데 알아서 업데이트되나요?"
+- 확인 결과 `_UPSERT_QUERY_RAW`의 `ON CONFLICT DO UPDATE SET`에 `TR_STA_DT`만 빠져 있었음. `TR_END_DT`·정원·신청인원은 매일 갱신되는데 개강일만 최초 수집값 고정
+- 파생 증상: 개강일에서 계산되는 `YEAR_MONTH`는 갱신 대상에 포함되어 있어, 개강이 다음 달로 밀리면 **월별 개강 예정 차트는 새 달로 이동하는데 표의 개강일·D-day·상태 구분(개강 예정/진행 중/종료)은 옛 날짜 기준**으로 남아 두 화면이 서로 다른 달을 가리킴
+
+### 결정 사항
+- `TR_STA_DT=excluded.TR_STA_DT` 추가 — PK가 `(TRPR_ID, TRPR_DEGR)`라 회차가 같으면 행이 늘지 않고 갱신됨
+- 회귀 테스트 `TestSaveRowsUpsert` 신설: 같은 과정을 개강일만 바꿔 두 번 저장 → `TR_STA_DT`·`YEAR_MONTH`·신청인원이 모두 최신값인지 검증. 수정 전 코드에서 실패하는 것 확인 후 반영
+- 기존에 어긋난 행은 매일 증분 수집(최근 12개월 + 미래 90일) 시 자동 정정됨. 즉시 정리하려면 `gh workflow run market_etl.yml -f full_refresh=true`
+- **미수정(별건)**: 폐강·취소 과정을 삭제하는 로직이 없어 HRD-Net에서 내려간 과정도 개강 예정 목록에 남음 — 별도 판단 필요
+
+### 영향 범위
+- 수정: market_etl.py, tests/test_market_etl.py (테스트 209→210개)
+- 문서: docs/DEV_LOG.md
+
 ## 2026-07-22 — 시장 분석 개강 현황 탭 + market_etl 미래 수집 확장
 
 ### 배경

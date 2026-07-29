@@ -222,6 +222,8 @@ _UPSERT_QUERY_RAW = '''
     ON CONFLICT(TRPR_ID, TRPR_DEGR) DO UPDATE SET
         TRPR_NM=excluded.TRPR_NM,
         TRAINST_NM=excluded.TRAINST_NM,
+        -- 개강일 연기·변경 반영 (누락 시 YEAR_MONTH만 갱신되어 개강 현황 표와 월별 차트가 불일치)
+        TR_STA_DT=excluded.TR_STA_DT,
         TR_END_DT=excluded.TR_END_DT,
         TOT_FXNUM=excluded.TOT_FXNUM,
         TOT_TRCO=excluded.TOT_TRCO,
