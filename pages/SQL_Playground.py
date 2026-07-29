@@ -6,7 +6,7 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, load_data, is_pg, DB_FILE, page_error_boundary, mask_name_columns
+from utils import check_password, load_data, page_error_boundary, mask_name_columns
 
 st.set_page_config(page_title="SQL Playground", page_icon="🔍", layout="wide")
 check_password()
@@ -186,8 +186,7 @@ with page_error_boundary():
     st.title("🔍 SQL Playground")
     st.caption("실제 HRD-Net 데이터로 SQL 쿼리를 직접 실행해 볼 수 있습니다.")
 
-    db_label = "PostgreSQL (Supabase)" if is_pg() else f"SQLite ({DB_FILE})"
-    st.info(f"현재 연결: **{db_label}** · SELECT 전용 (읽기만 가능) · LIMIT 미지정 시 최대 100행")
+    st.info("현재 연결: **PostgreSQL (Supabase)** · SELECT 전용 (읽기만 가능) · LIMIT 미지정 시 최대 100행")
     st.divider()
 
     # ── 테이블 구조 참조 ──

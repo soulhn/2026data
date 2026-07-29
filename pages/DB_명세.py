@@ -4,7 +4,7 @@ import pandas as pd
 import sys, os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, load_data, is_pg, DB_FILE, get_connection, load_cache_json, page_error_boundary
+from utils import check_password, load_data, get_connection, load_cache_json, page_error_boundary
 from config import CACHE_TTL_DEFAULT, CacheKey
 
 
@@ -34,8 +34,7 @@ with page_error_boundary():
     st.title("🗄️ DB 명세 & 데이터 현황")
     st.caption("테이블 구조, 컬럼별 채움률, 실제 데이터 분포를 확인합니다.")
 
-    db_label = "PostgreSQL (Supabase)" if is_pg() else f"SQLite ({DB_FILE})"
-    st.info(f"현재 연결: **{db_label}**")
+    st.info("현재 연결: **PostgreSQL (Supabase)**")
     st.divider()
 
 

@@ -2,7 +2,7 @@
 전체 DB 테이블 초기화 및 마이그레이션 스크립트
 모든 테이블의 CREATE/ALTER를 한 곳에서 관리합니다.
 """
-from utils import get_connection, DB_FILE, is_pg, adapt_query
+from utils import get_connection, is_pg, adapt_query
 
 
 def init_all_tables():
@@ -349,8 +349,7 @@ def init_all_tables():
 
     conn.commit()
     conn.close()
-    db_label = "PostgreSQL" if is_pg() else DB_FILE
-    print(f"[init_db] 전체 테이블 초기화 완료 (DB: {db_label})")
+    print("[init_db] 전체 테이블 초기화 완료 (DB: PostgreSQL)")
 
 
 if __name__ == "__main__":

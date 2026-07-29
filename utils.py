@@ -12,8 +12,8 @@ from dotenv import load_dotenv
 # .env 파일 로드
 load_dotenv()
 
-# ✅ [핵심] DB 설정 중앙화: 모든 파일이 이 변수를 가져다 씁니다.
-DB_FILE = "hrd_analysis.db"
+class DatabaseNotConfiguredError(RuntimeError):
+    """DATABASE_URL 미설정 — 조용한 SQLite 폴백 대신 즉시 실패시키는 설정 오류."""
 
 def get_openai_api_key():
     """os.getenv → st.secrets 순으로 OPENAI_API_KEY 탐색"""
@@ -85,6 +85,10 @@ def page_error_boundary():
     """페이지 렌더링 중 발생하는 예외를 잡아 사용자에게 안내."""
     try:
         yield
+    except DatabaseNotConfiguredError as e:
+        # 설정 오류는 재시도로 해결되지 않으므로 "잠시 후 다시" 안내를 붙이지 않는다
+        import streamlit as st
+        st.error(f"데이터베이스 설정 오류: {e}")
     except Exception as e:
         import streamlit as st
         st.error(f"페이지 로드 중 오류가 발생했습니다: {e}")
@@ -122,18 +126,19 @@ def _get_pg_pool_cached(recreate=False):
 
 
 def get_connection(timeout=5, row_factory=None):
-    """DB 연결 객체를 반환합니다. DATABASE_URL이 있으면 PostgreSQL, 없으면 SQLite."""
-    if is_pg():
-        import psycopg2
-        import psycopg2.extras
-        conn = psycopg2.connect(get_database_url(), connect_timeout=timeout)
-        conn.autocommit = False
-        if row_factory == sqlite3.Row:
-            conn.cursor_factory = psycopg2.extras.RealDictCursor
-        return conn
-    conn = sqlite3.connect(DB_FILE, timeout=timeout)
-    if row_factory:
-        conn.row_factory = row_factory
+    """PostgreSQL 연결 객체를 반환합니다. DATABASE_URL이 없으면 즉시 예외."""
+    if not is_pg():
+        raise DatabaseNotConfiguredError(
+            "DATABASE_URL 환경변수 또는 st.secrets 설정이 필요합니다. "
+            "로컬은 .env, Streamlit Cloud는 Secrets에 "
+            "PostgreSQL 연결 문자열을 등록해주세요."
+        )
+    import psycopg2
+    import psycopg2.extras
+    conn = psycopg2.connect(get_database_url(), connect_timeout=timeout)
+    conn.autocommit = False
+    if row_factory == sqlite3.Row:
+        conn.cursor_factory = psycopg2.extras.RealDictCursor
     return conn
 
 def load_data(query, params=None):
@@ -163,8 +168,7 @@ def load_data(query, params=None):
     conn = get_connection()
     try:
         df = pd.read_sql(adapt_query(query), conn, params=params)
-        if is_pg():
-            df.columns = [c.upper() for c in df.columns]
+        df.columns = [c.upper() for c in df.columns]
         return df
     finally:
         conn.close()
