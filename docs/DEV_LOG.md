@@ -23,7 +23,7 @@
 - `pages/채용_동향.py`의 `JULIANDAY`/`SUBSTR` else 가지 — 도달 불가 데드코드지만 `pages/` 테스트 커버리지 0이라 안전망 없음. 별건
 - **`batch_execute` 폴백이 실패한 배치를 롤백하지 않음** — PG(`autocommit=False`)에서 배치 실패 시 트랜잭션이 aborted 되어 폴백의 모든 `cursor.execute`가 `InFailedSqlTransaction`으로 실패 → 폴백이 사실상 무력. 별건으로 조사 필요
 - `hrd_etl.py:12`의 `load_data` 미사용 import (이번 변경 이전부터 존재) — 별건
-- `.claude/settings.json` PreToolUse(Bash) 훅 — "`DATABASE_URL` 있으면 ETL 차단"이 SQLite 폴백을 전제하던 로직이라, 폴백 제거 후엔 ETL을 영구 차단하게 됨. 확인 프롬프트 전환안 제안 후 승인 대기
+- `.claude/settings.json` PreToolUse(Bash) 훅은 **확인 프롬프트로 전환 완료** — 기존 "`DATABASE_URL` 있으면 ETL 차단(exit 2)"은 SQLite 폴백을 전제하던 로직이라, 폴백 제거 후엔 있으면 훅이 막고 없으면 코드가 죽어 ETL이 영구 실행 불가가 됨. `DATABASE_URL` 검사 조건을 빼고 `permissionDecision: "ask"`로 변경 (완전 삭제는 비권장 — `permissions.allow`에 `Bash(python:*)`가 있어 마찰 없이 프로덕션에 쓰게 됨)
 
 ### 영향 범위
 - 수정: `utils.py`, `init_db.py`, `saramin_etl.py`, `pages/SQL_Playground.py`, `pages/DB_명세.py`, `tests/test_hrd_etl.py`

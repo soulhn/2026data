@@ -281,6 +281,6 @@ Fix: Correct completion rate calculation (수료율 계산 오류 수정)
 |---|---|---|
 | `SessionStart` | `compact` | 컨텍스트 압축 시 7가지 핵심 비즈니스 규칙 리마인더 재주입 |
 | `PreToolUse` | `Edit\|Write` | `.py` 파일 SQL 안티패턴 사전 차단 (`pd.read_sql` 직접 사용, `== '수료'`, `COUNT(*)` 별칭 누락) |
-| `PreToolUse` | `Bash` | `DATABASE_URL` 설정 시 ETL 스크립트(`hrd_etl.py`, `market_etl.py`, `init_db.py`, `saramin_etl.py`) 실행 차단 |
+| `PreToolUse` | `Bash` | ETL 스크립트(`hrd_etl.py`, `market_etl.py`, `init_db.py`, `saramin_etl.py`) 실행 시 프로덕션 DB 쓰기 확인 프롬프트 |
 | `PostToolUse` | `Edit\|Write` | CJK 한자 析(U+6790) 감지 + ruff 미사용 import/변수 검사 |
 | `Stop` | *(전체)* | `.py` 파일 수정 턴 종료 시 `pytest -x -q` 자동 실행 |
