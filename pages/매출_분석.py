@@ -474,7 +474,10 @@ with page_error_boundary():
                         row_data[f"{col_base}_상태"] = cell['status']
                         total_fee += cell['fee']
                     else:
-                        row_data[f"{col_base}_출석"] = "-"
+                        # 출석일수는 숫자로 통일 — "-"를 섞으면 컬럼이 object가 되어
+                        # Arrow 직렬화 경고가 나고 정렬도 문자열 기준이 된다.
+                        # 해당 기간에 없던 훈련생임은 _상태("해당없음")로 구분된다.
+                        row_data[f"{col_base}_출석"] = 0
                         row_data[f"{col_base}_출석률"] = "-"
                         row_data[f"{col_base}_훈련비"] = 0
                         row_data[f"{col_base}_상태"] = "해당없음"
@@ -487,7 +490,8 @@ with page_error_boundary():
                 for p in periods:
                     pn = p['period_num']
                     col_base = f"{pn}단위"
-                    sum_row[f"{col_base}_출석"] = "-"
+                    # 합계 행도 숫자 유지 — 0으로 두면 "출석 0일"로 읽히므로 훈련비와 동일하게 합산
+                    sum_row[f"{col_base}_출석"] = sum(r.get(f"{col_base}_출석", 0) for r in flat_rows)
                     sum_row[f"{col_base}_출석률"] = "-"
                     period_fee_sum = sum(r.get(f"{col_base}_훈련비", 0) for r in flat_rows)
                     sum_row[f"{col_base}_훈련비"] = period_fee_sum
