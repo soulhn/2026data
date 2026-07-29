@@ -22,6 +22,8 @@ CACHE_TTL_SARAMIN = 86400        # 채용 동향 (24시간 — ETL 주기와 동
 # ── 실시간 API 파라미터 ──
 API_MAX_WORKERS = 8              # ThreadPoolExecutor 워커 수
 API_TIMEOUT = (15, 30)           # (connect, read) 초 — Streamlit Cloud→한국 정부 서버 핸드셰이크 여유 확보
+API_TOTAL_DEADLINE = 60          # 실시간 조회 전체 상한(초). 초과 시 미완료 기관을 버리고 DB 폴백
+                                 # — 개별 요청은 재시도 2회 포함 최대 46초라 기관이 늘수록 무한정 길어짐
 
 # ── ETL 파라미터 ──
 ETL_ARCHIVE_START = dt.date(2023, 1, 1)

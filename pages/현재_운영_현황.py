@@ -41,6 +41,8 @@ with page_error_boundary():
 
     if data_source == "API":
         st.caption("실시간 (API)")
+    elif data_source == "DB_FALLBACK":
+        st.warning("실시간 조회에 실패해 DB 기준으로 표시합니다. 최신 출결이 반영되지 않을 수 있습니다.")
     else:
         st.caption("DB 기준")
 
@@ -78,7 +80,15 @@ with page_error_boundary():
             st.write(f"최근 7개 출결일: {list(top_dates)}")
 
     if courses_df is None:
-        st.info("현재 진행 중인 과정이 없습니다. 꿀 같은 휴식 시간입니다! ☕")
+        if data_source == "DB_FALLBACK":
+            # ETL은 HANWHA_COURSE_ID만 수집하므로 다른 기관 과정은 DB에 없다.
+            # 이걸 "운영 중인 과정 없음"으로 표시하면 기수가 돌고 있는데도 거짓 안내가 된다.
+            st.error(
+                "실시간 조회에 실패했고, DB에도 등록된 과정의 데이터가 없습니다. "
+                "**운영 중인 과정이 없다는 뜻이 아닙니다** — 잠시 후 다시 시도해주세요."
+            )
+        else:
+            st.info("현재 진행 중인 과정이 없습니다. 꿀 같은 휴식 시간입니다! ☕")
         st.stop()
 
 

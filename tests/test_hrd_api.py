@@ -1,5 +1,6 @@
 """hrd_api.py 단위 테스트 — API 응답 파싱 및 폴백 검증"""
 import json
+import time
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -14,6 +15,20 @@ from hrd_api import (
     get_active_data_with_fallback,
     get_institutions,
 )
+
+
+def _raise(exc):
+    """람다 안에서 예외를 던지기 위한 헬퍼."""
+    raise exc
+
+
+def _course_frames(course_id):
+    """과정 ID를 식별할 수 있는 (courses, trainees, logs) 3종 DataFrame."""
+    return (
+        pd.DataFrame({"TRPR_ID": [course_id], "TRPR_DEGR": [1]}),
+        pd.DataFrame({"TRPR_ID": [course_id], "TRNEE_ID": ["T1"]}),
+        pd.DataFrame({"TRPR_ID": [course_id], "ATEND_DT": ["20260715"]}),
+    )
 
 
 # ── 테스트용 API 응답 fixtures ──────────────────────────────────────────
@@ -228,8 +243,22 @@ class TestFallback:
 
         c, t, l, source = get_active_data_with_fallback()
 
-        assert source == "DB"
+        # "DB"(키 미설정)와 구분해야 페이지가 "운영 중인 과정 없음"으로 오안내하지 않는다
+        assert source == "DB_FALLBACK"
         mock_db.assert_called_once()
+
+    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
+    @patch("hrd_api.fetch_active_data_realtime")
+    @patch("hrd_api._get_active_data_from_db")
+    def test_fallback_with_empty_db_is_distinguishable(self, mock_db, mock_api):
+        """ETL이 한화 과정만 수집하므로 다른 기관 과정은 DB에 없다.
+        이때 빈 결과를 '운영 중인 과정 없음'과 섞으면 거짓 안내가 된다."""
+        mock_api.side_effect = Exception("API timeout")
+        mock_db.return_value = (None, None, None)
+
+        c, t, l, source = get_active_data_with_fallback()
+
+        assert c is None and source == "DB_FALLBACK"
 
     @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
     @patch("hrd_api.fetch_active_data_realtime")
@@ -270,12 +299,10 @@ class TestInstitutions:
     @patch("hrd_api.fetch_active_data_realtime")
     def test_partial_failure_keeps_surviving_course(self, mock_api):
         """한 과정이 죽어도 나머지는 살아야 한다."""
-        ok = (
-            pd.DataFrame({"TRPR_ID": ["B"], "TRPR_DEGR": [1]}),
-            pd.DataFrame({"TRPR_ID": ["B"], "TRNEE_ID": ["T1"]}),
-            pd.DataFrame({"TRPR_ID": ["B"], "ATEND_DT": ["20260715"]}),
+        # 병렬 조회라 호출 순서가 고정되지 않으므로 과정 ID로 분기 (side_effect 리스트 금지)
+        mock_api.side_effect = lambda key, cid: (
+            _raise(Exception("과정 A 조회 실패")) if cid == "A" else _course_frames(cid)
         )
-        mock_api.side_effect = [Exception("과정 A 조회 실패"), ok]
 
         courses, trainees, logs = fetch_all_institutions([("k", "A"), ("k", "B")])
 
@@ -294,6 +321,51 @@ class TestInstitutions:
         assert "TRPR_ID" in courses.columns
         assert "TRNEE_STATUS" in trainees.columns
         assert "ATEND_DT" in logs.columns
+
+
+class TestRealtimeDeadline:
+    """기관을 순차 조회하면 요청 최악 46초가 기관 수만큼 누적돼 화면이 수 분간 멈춘다.
+    병렬 + 전체 상한으로 대기 시간이 고정되는지 검증."""
+
+    @patch("hrd_api.fetch_active_data_realtime")
+    def test_deadline_aborts_instead_of_waiting(self, mock_api):
+        def _hang(key, cid):
+            time.sleep(5)
+            raise AssertionError("상한을 넘겼는데도 끝까지 기다림")
+
+        mock_api.side_effect = _hang
+        t0 = time.monotonic()
+        with pytest.raises(RuntimeError):
+            fetch_all_institutions([("k", "A"), ("k", "B")], deadline=0.3)
+        elapsed = time.monotonic() - t0
+        assert elapsed < 2, f"상한 0.3초인데 {elapsed:.1f}초 대기 (스레드 종료를 기다림)"
+
+    @patch("hrd_api.fetch_active_data_realtime")
+    def test_deadline_keeps_completed_institutions(self, mock_api):
+        """상한을 넘긴 기관만 버리고, 제때 끝난 기관 데이터는 살린다."""
+        def _by_course(key, cid):
+            if cid == "SLOW":
+                time.sleep(5)
+            return _course_frames(cid)
+
+        mock_api.side_effect = _by_course
+        courses, trainees, logs = fetch_all_institutions(
+            [("k", "SLOW"), ("k", "FAST")], deadline=0.5
+        )
+        assert courses["TRPR_ID"].tolist() == ["FAST"]
+
+    @patch("hrd_api.fetch_active_data_realtime")
+    def test_institutions_run_in_parallel(self, mock_api):
+        """3기관 × 각 0.4초가 순차면 1.2초, 병렬이면 ~0.4초."""
+        def _slow(key, cid):
+            time.sleep(0.4)
+            return _course_frames(cid)
+
+        mock_api.side_effect = _slow
+        t0 = time.monotonic()
+        fetch_all_institutions([("k", "A"), ("k", "B"), ("k", "C")], deadline=10)
+        elapsed = time.monotonic() - t0
+        assert elapsed < 0.9, f"순차 실행으로 보임 ({elapsed:.2f}초)"
 
 
 # ── 컬럼 호환성 ───────────────────────────────────────────────────────

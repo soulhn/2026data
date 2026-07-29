@@ -31,7 +31,7 @@ HRD-Net 공공데이터 기반 훈련 과정 성과 분석 대시보드 (Streaml
 hrd_etl.py (평일 매시간)  →   PostgreSQL DB    ←    대시보드 (읽기 전용)
 market_etl.py (매일 21시) →                    ←    https://playdata.streamlit.app
 saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_api.py로 API 직접 호출
-                                                     (60초 캐시, 실패 시 DB 폴백)
+                                                     (기관 병렬 조회, 전체 상한 60초, 실패 시 DB 폴백)
 ```
 
 ### 홈 화면 = 확정 스냅샷 (2026-07 전환)
@@ -47,6 +47,15 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
   pytest가 인메모리 SQLite로 돌기 때문에 `?` 플레이스홀더 패스스루가 필요함
 - `adapt_query()`: `?` → `%s`, `INSERT OR IGNORE` → `ON CONFLICT DO NOTHING` 자동 변환
 - PostgreSQL 컬럼명 소문자 반환 → `load_data()`에서 대문자 변환 처리
+
+### 실시간 조회 (`hrd_api.py`, 운영 현황 전용)
+- 기관 (인증키, 과정ID) 쌍을 **병렬** 조회. 순차로 두면 요청 최악 46초(재시도 2회 포함)가
+  기관 수만큼 누적돼 화면이 수 분간 멈춤 — `config.API_TOTAL_DEADLINE`(60초) 전체 상한 필수
+- 상한 초과 시 `executor.shutdown(wait=False, cancel_futures=True)`로 즉시 반환.
+  **`with ThreadPoolExecutor` 사용 금지** — `shutdown(wait=True)`라 상한을 넘겨도 끝까지 기다림
+- `get_active_data_with_fallback()` source 3종: `"API"` / `"DB"`(키 미설정) / `"DB_FALLBACK"`(API 실패)
+- **`hrd_etl.py`는 `HANWHA_COURSE_ID` 하나만 수집** → 엔코아 등 타 기관 과정은 DB에 없음.
+  DB 폴백이 비었을 때 "운영 중인 과정 없음"으로 표시하면 거짓 안내가 되므로 `DB_FALLBACK`을 구분할 것
 
 ### ETL 자동화
 - `hrd_etl.yml` — 평일 KST 09:00~18:00 매시간

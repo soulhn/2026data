@@ -6,7 +6,8 @@ API 실패 시 DB 폴백을 제공한다.
 import json
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import datetime
 
 import pandas as pd
@@ -227,26 +228,59 @@ def fetch_active_data_realtime(api_key, course_id):
     return courses_df, trainees_df, logs_df
 
 
-def fetch_all_institutions(pairs):
-    """기관별 (인증키, 과정ID) 쌍을 순회하며 실시간 데이터를 병합.
+def fetch_all_institutions(pairs, deadline=None):
+    """기관별 (인증키, 과정ID) 쌍을 **병렬** 조회하여 병합.
 
     한 과정이 실패해도 나머지는 살린다. 전부 실패해야 예외 → DB 폴백.
 
+    기관을 순차 처리하면 개별 요청 최악 46초(재시도 2회 포함)가 기관 수만큼 누적돼
+    화면이 수 분간 스피너로 멈춘다. 병렬 처리 + 전체 상한으로 대기 시간을 고정한다.
+
+    Args:
+        deadline: 전체 대기 상한(초). None이면 `config.API_TOTAL_DEADLINE`.
+
     Raises:
-        RuntimeError: 모든 쌍이 실패한 경우.
+        RuntimeError: 모든 쌍이 실패(또는 상한 초과)한 경우.
     """
+    if deadline is None:
+        deadline = config.API_TOTAL_DEADLINE
+
     courses, trainees, logs = [], [], []
     failures = []
-    for api_key, course_id in pairs:
+
+    if not pairs:
+        return (
+            pd.DataFrame(columns=COURSE_COLUMNS),
+            pd.DataFrame(columns=ROSTER_COLUMNS),
+            pd.DataFrame(columns=ATTEND_COLUMNS),
+        )
+
+    # with 문은 shutdown(wait=True)라 상한을 넘겨도 실행 중인 스레드를 기다린다.
+    # 네트워크 대기 중인 스레드는 cancel()로 멈출 수 없으므로 wait=False로 즉시 반환한다.
+    executor = ThreadPoolExecutor(max_workers=min(len(pairs), config.API_MAX_WORKERS))
+    try:
+        future_map = {
+            executor.submit(fetch_active_data_realtime, api_key, course_id): course_id
+            for api_key, course_id in pairs
+        }
         try:
-            c_df, t_df, l_df = fetch_active_data_realtime(api_key, course_id)
-        except Exception as e:
-            logger.warning(f"과정({course_id}) 실시간 조회 실패, 건너뜀: {e}")
-            failures.append(course_id)
-            continue
-        for src, dst in ((c_df, courses), (t_df, trainees), (l_df, logs)):
-            if not src.empty:
-                dst.append(src)
+            for future in as_completed(future_map, timeout=deadline):
+                course_id = future_map[future]
+                try:
+                    c_df, t_df, l_df = future.result()
+                except Exception as e:
+                    logger.warning(f"과정({course_id}) 실시간 조회 실패, 건너뜀: {e}")
+                    failures.append(course_id)
+                    continue
+                for src, dst in ((c_df, courses), (t_df, trainees), (l_df, logs)):
+                    if not src.empty:
+                        dst.append(src)
+        except FuturesTimeoutError:
+            pending = [cid for f, cid in future_map.items() if not f.done()]
+            logger.warning(f"실시간 조회 {deadline}초 초과 — 미완료 과정 건너뜀: {pending}")
+            failures.extend(pending)
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
     if failures and len(failures) == len(pairs):
         raise RuntimeError(f"모든 과정 조회 실패: {failures}")
@@ -334,7 +368,14 @@ def get_active_data_with_fallback():
 
     Returns:
         (courses_df, trainees_df, logs_df, source)
-        source: "API" 또는 "DB"
+        source:
+            "API"         — 실시간 조회 성공
+            "DB"          — API 키/과정 ID 미설정 → 정상적인 DB 조회
+            "DB_FALLBACK" — 실시간 조회 실패로 인한 폴백
+
+    `"DB"`와 `"DB_FALLBACK"`을 구분하는 이유: ETL이 `HANWHA_COURSE_ID` 하나만 수집하므로
+    엔코아 등 다른 기관 과정은 DB에 없다. 폴백 결과가 비어 있을 때 이를 "운영 중인 과정 없음"
+    으로 표시하면 실제로는 기수가 돌고 있는데도 거짓 안내를 하게 된다.
     """
     pairs = get_institutions()
     if not pairs:
@@ -350,4 +391,4 @@ def get_active_data_with_fallback():
     except Exception as e:
         logger.warning(f"API 호출 실패, DB 폴백: {e}")
         c, t, l = _get_active_data_from_db()
-        return c, t, l, "DB"
+        return c, t, l, "DB_FALLBACK"
