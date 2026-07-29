@@ -20,6 +20,16 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# 마지막 실시간 조회 실패 사유. 운영 현황 진단 패널이 읽는다 —
+# 폴백도 부분 실패도 정상 동작이라 예외가 화면까지 전파되지 않으므로, 이유를 따로 남기지
+# 않으면 "느려서 잘렸는지" "API가 거부했는지"를 구분할 방법이 없다.
+_last_realtime_error = None
+
+
+def get_last_realtime_error():
+    """직전 실시간 조회의 실패 사유 (전부 성공이면 None). 부분 실패도 기록된다."""
+    return _last_realtime_error
+
 BASE_URL_COURSE = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_3.jsp"
 BASE_URL_DETAIL = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_4.jsp"
 
@@ -242,11 +252,14 @@ def fetch_all_institutions(pairs, deadline=None):
     Raises:
         RuntimeError: 모든 쌍이 실패(또는 상한 초과)한 경우.
     """
+    global _last_realtime_error
+
     if deadline is None:
         deadline = config.API_TOTAL_DEADLINE
 
     courses, trainees, logs = [], [], []
     failures = []
+    reasons = {}     # 과정ID → 실패 사유. 타임아웃과 API 오류를 구분해야 원인 추적이 된다
 
     if not pairs:
         return (
@@ -271,6 +284,7 @@ def fetch_all_institutions(pairs, deadline=None):
                 except Exception as e:
                     logger.warning(f"과정({course_id}) 실시간 조회 실패, 건너뜀: {e}")
                     failures.append(course_id)
+                    reasons[course_id] = f"{type(e).__name__}: {str(e).strip().splitlines()[0][:120]}"
                     continue
                 for src, dst in ((c_df, courses), (t_df, trainees), (l_df, logs)):
                     if not src.empty:
@@ -279,11 +293,20 @@ def fetch_all_institutions(pairs, deadline=None):
             pending = [cid for f, cid in future_map.items() if not f.done()]
             logger.warning(f"실시간 조회 {deadline}초 초과 — 미완료 과정 건너뜀: {pending}")
             failures.extend(pending)
+            for cid in pending:
+                reasons[cid] = f"전체 상한 {deadline}초 초과 (응답 지연)"
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
 
-    if failures and len(failures) == len(pairs):
-        raise RuntimeError(f"모든 과정 조회 실패: {failures}")
+    # 부분 실패도 기록한다 — 살아남은 기관이 빈 결과면 "운영 중인 과정 없음"과
+    # 구분이 안 돼 다시 거짓 안내가 되기 때문
+    if failures:
+        detail = " / ".join(f"{cid} → {reasons.get(cid, '?')}" for cid in failures)
+        _last_realtime_error = detail
+        if len(failures) == len(pairs):
+            raise RuntimeError(f"모든 과정 조회 실패: {detail}")
+    else:
+        _last_realtime_error = None
 
     def _merge(frames, columns):
         return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=columns)
@@ -377,6 +400,8 @@ def get_active_data_with_fallback():
     엔코아 등 다른 기관 과정은 DB에 없다. 폴백 결과가 비어 있을 때 이를 "운영 중인 과정 없음"
     으로 표시하면 실제로는 기수가 돌고 있는데도 거짓 안내를 하게 된다.
     """
+    global _last_realtime_error
+
     pairs = get_institutions()
     if not pairs:
         logger.info("API 키/과정 ID 없음 → DB 폴백")
@@ -384,11 +409,14 @@ def get_active_data_with_fallback():
         return c, t, l, "DB"
 
     try:
+        # 전부/부분 실패 사유는 fetch_all_institutions가 _last_realtime_error에 기록한다
         courses_df, trainees_df, logs_df = fetch_all_institutions(pairs)
         if courses_df.empty:
             return None, None, None, "API"
         return courses_df, trainees_df, logs_df, "API"
     except Exception as e:
         logger.warning(f"API 호출 실패, DB 폴백: {e}")
+        if not _last_realtime_error:      # 예상 밖 예외로 기록 전에 튄 경우
+            _last_realtime_error = f"{type(e).__name__}: {e}"
         c, t, l = _get_active_data_from_db()
         return c, t, l, "DB_FALLBACK"

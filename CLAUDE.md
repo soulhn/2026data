@@ -31,7 +31,7 @@ HRD-Net 공공데이터 기반 훈련 과정 성과 분석 대시보드 (Streaml
 hrd_etl.py (평일 매시간)  →   PostgreSQL DB    ←    대시보드 (읽기 전용)
 market_etl.py (매일 21시) →                    ←    https://playdata.streamlit.app
 saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_api.py로 API 직접 호출
-                                                     (기관 병렬 조회, 전체 상한 60초, 실패 시 DB 폴백)
+                                                     (기관 병렬 조회, 전체 상한 120초, 실패 시 DB 폴백)
 ```
 
 ### 홈 화면 = 확정 스냅샷 (2026-07 전환)
@@ -50,7 +50,11 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 
 ### 실시간 조회 (`hrd_api.py`, 운영 현황 전용)
 - 기관 (인증키, 과정ID) 쌍을 **병렬** 조회. 순차로 두면 요청 최악 46초(재시도 2회 포함)가
-  기관 수만큼 누적돼 화면이 수 분간 멈춤 — `config.API_TOTAL_DEADLINE`(60초) 전체 상한 필수
+  기관 수만큼 누적돼 화면이 수 분간 멈춤 — `config.API_TOTAL_DEADLINE`(120초) 전체 상한 필수
+- **상한은 `sum(API_TIMEOUT) * 2` 이상이어야 함** — 한 기관이 과정목록 → (명부·출결) 2단계
+  순차라 그보다 짧으면 느리지만 정상인 조회가 잘림 (`tests/test_hrd_api.py`가 강제)
+- 폴백은 정상 동작이라 예외가 화면까지 안 감 → `get_last_realtime_error()`로 사유를 남기고
+  진단 패널에 노출. **부분 실패도 기록** — 살아남은 기관이 빈 결과면 거짓 안내가 되기 때문
 - 상한 초과 시 `executor.shutdown(wait=False, cancel_futures=True)`로 즉시 반환.
   **`with ThreadPoolExecutor` 사용 금지** — `shutdown(wait=True)`라 상한을 넘겨도 끝까지 기다림
 - `get_active_data_with_fallback()` source 3종: `"API"` / `"DB"`(키 미설정) / `"DB_FALLBACK"`(API 실패)

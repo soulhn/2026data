@@ -14,6 +14,7 @@ from hrd_api import (
     fetch_active_data_realtime,
     get_active_data_with_fallback,
     get_institutions,
+    get_last_realtime_error,
 )
 
 
@@ -366,6 +367,72 @@ class TestRealtimeDeadline:
         fetch_all_institutions([("k", "A"), ("k", "B"), ("k", "C")], deadline=10)
         elapsed = time.monotonic() - t0
         assert elapsed < 0.9, f"순차 실행으로 보임 ({elapsed:.2f}초)"
+
+    def test_deadline_covers_two_sequential_stages(self):
+        """한 기관은 과정목록 → (명부·출결) 2단계 순차. 각 단계가 API_TIMEOUT 상 최대
+        connect+read 초까지 걸리므로, 상한이 그보다 짧으면 정상 경로가 잘린다."""
+        import config
+        one_request = sum(config.API_TIMEOUT)      # connect + read
+        assert config.API_TOTAL_DEADLINE >= one_request * 2, (
+            f"상한 {config.API_TOTAL_DEADLINE}초 < 2단계 {one_request * 2}초 — "
+            "느리지만 정상인 조회가 폴백으로 잘림"
+        )
+
+
+class TestRealtimeFailureReason:
+    """폴백은 정상 동작이라 예외가 화면까지 안 간다. 이유를 남기지 않으면
+    '느려서 잘림'과 'API 거부'를 구분할 수 없어 원인 추적이 막힌다."""
+
+    @patch("hrd_api.fetch_active_data_realtime")
+    def test_timeout_reason_is_distinguishable(self, mock_api):
+        def _hang(key, cid):
+            time.sleep(5)
+
+        mock_api.side_effect = _hang
+        with pytest.raises(RuntimeError) as ei:
+            fetch_all_institutions([("k", "A")], deadline=0.3)
+        assert "상한" in str(ei.value) and "초과" in str(ei.value), str(ei.value)
+
+    @patch("hrd_api.fetch_active_data_realtime")
+    def test_api_error_reason_keeps_exception_type(self, mock_api):
+        mock_api.side_effect = ConnectionError("Max retries exceeded")
+        with pytest.raises(RuntimeError) as ei:
+            fetch_all_institutions([("k", "A")], deadline=5)
+        assert "ConnectionError" in str(ei.value)
+        assert "Max retries exceeded" in str(ei.value)
+
+    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
+    @patch("hrd_api.fetch_active_data_realtime")
+    @patch("hrd_api._get_active_data_from_db")
+    def test_reason_exposed_after_fallback(self, mock_db, mock_api):
+        mock_api.side_effect = ConnectionError("서버 응답 없음")
+        mock_db.return_value = (None, None, None)
+
+        get_active_data_with_fallback()
+
+        reason = get_last_realtime_error()
+        assert reason and "ConnectionError" in reason
+
+    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
+    @patch("hrd_api.fetch_active_data_realtime")
+    def test_reason_cleared_on_success(self, mock_api):
+        mock_api.return_value = _course_frames("A")
+        get_active_data_with_fallback()
+        assert get_last_realtime_error() is None
+
+    @patch("hrd_api.fetch_active_data_realtime")
+    def test_partial_failure_is_also_recorded(self, mock_api):
+        """일부 기관만 실패하면 예외가 안 나므로, 살아남은 기관이 빈 결과일 때
+        '운영 중인 과정 없음'과 구분하려면 부분 실패도 기록돼야 한다."""
+        mock_api.side_effect = lambda key, cid: (
+            _raise(ConnectionError("서버 응답 없음")) if cid == "DEAD" else _course_frames(cid)
+        )
+
+        courses, _, _ = fetch_all_institutions([("k", "DEAD"), ("k", "OK")], deadline=5)
+
+        assert courses["TRPR_ID"].tolist() == ["OK"]     # 예외는 나지 않음
+        reason = get_last_realtime_error()
+        assert reason and "DEAD" in reason and "ConnectionError" in reason
 
 
 # ── 컬럼 호환성 ───────────────────────────────────────────────────────

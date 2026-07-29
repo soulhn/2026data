@@ -8,7 +8,10 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import check_password, calc_attendance_rate, page_error_boundary, is_completed, mask_name_columns
-from hrd_api import get_active_data_with_fallback, get_full_attendance_logs, get_institutions
+from hrd_api import (
+    get_active_data_with_fallback, get_full_attendance_logs, get_institutions,
+    get_last_realtime_error,
+)
 from config import (
     CACHE_TTL_API, LATE_CUTOFF_HHMM, CLASS_END_HHMM, ATTENDANCE_TARGET,
     RISK_ABSENT, RISK_LATE, RISK_EARLY_LEAVE, RECENT_TREND_DAYS,
@@ -21,11 +24,12 @@ with page_error_boundary():
     st.title("📋 AI캠퍼스 운영 현황")
 
 
-    @st.cache_data(ttl=CACHE_TTL_API)
+    @st.cache_data(ttl=CACHE_TTL_API, show_spinner="실시간 출결 조회 중… (응답이 느리면 최대 2분)")
     def get_active_data():
         courses, trainees, logs, source = get_active_data_with_fallback()
         # 개인정보 보호: 실명은 로드 직후 마스킹 (표시·집계 전 원천 차단)
-        return courses, mask_name_columns(trainees), mask_name_columns(logs), source
+        # 실패 사유는 캐시 대상 안에서 함께 반환 — 캐시 히트 시 모듈 변수는 이미 비어 있다
+        return courses, mask_name_columns(trainees), mask_name_columns(logs), source, get_last_realtime_error()
 
 
     @st.cache_data(ttl=CACHE_TTL_API)
@@ -34,7 +38,7 @@ with page_error_boundary():
 
 
     try:
-        courses_df, trainees_df, logs_df, data_source = get_active_data()
+        courses_df, trainees_df, logs_df, data_source, realtime_error = get_active_data()
     except Exception as e:
         st.error(f"데이터 로드 중 오류: {e}")
         st.stop()
@@ -51,6 +55,10 @@ with page_error_boundary():
         st.write(f"서버 datetime.now(): `{datetime.now().isoformat()}`")
         st.write(f"서버 current_month: `{datetime.now().strftime('%Y%m')}`")
         st.write(f"data_source: `{data_source}`")
+        if realtime_error:
+            # 타임아웃("상한 N초 초과")인지 API 오류인지가 대응을 가른다
+            st.write("실시간 조회 실패 사유:")
+            st.code(realtime_error, language=None)
         # 등록된 운영기관 (인증키, 과정ID) 쌍 — 키 값은 노출하지 않음
         pairs = get_institutions()
         st.write(f"등록된 (기관키, 과정ID) 쌍: {len(pairs)}개")
@@ -80,9 +88,9 @@ with page_error_boundary():
             st.write(f"최근 7개 출결일: {list(top_dates)}")
 
     if courses_df is None:
-        if data_source == "DB_FALLBACK":
-            # ETL은 HANWHA_COURSE_ID만 수집하므로 다른 기관 과정은 DB에 없다.
-            # 이걸 "운영 중인 과정 없음"으로 표시하면 기수가 돌고 있는데도 거짓 안내가 된다.
+        # realtime_error까지 보는 이유: 일부 기관만 실패하고 성공한 기관이 빈 결과면
+        # data_source는 "API"로 남지만 데이터는 불완전하다. 이때도 "운영 중인 과정 없음"이 아니다.
+        if data_source == "DB_FALLBACK" or realtime_error:
             st.error(
                 "실시간 조회에 실패했고, DB에도 등록된 과정의 데이터가 없습니다. "
                 "**운영 중인 과정이 없다는 뜻이 아닙니다** — 잠시 후 다시 시도해주세요."
