@@ -1,5 +1,6 @@
 """hrd_etl.py 유틸리티 함수 + batch_execute 테스트"""
 import sqlite3
+import hrd_etl
 from hrd_etl import get_month_list, batch_execute
 from utils import clean_time
 
@@ -51,14 +52,12 @@ class TestGetMonthList:
 
 class TestBatchExecute:
     def test_empty_list(self, monkeypatch):
-        import utils
-        monkeypatch.setattr(utils, "is_pg", lambda: False)
+        monkeypatch.setattr(hrd_etl, "is_pg", lambda: False)
         s, e = batch_execute(None, "SELECT 1", [])
         assert s == 0 and e == 0
 
     def test_sqlite_insert(self, monkeypatch):
-        import utils
-        monkeypatch.setattr(utils, "is_pg", lambda: False)
+        monkeypatch.setattr(hrd_etl, "is_pg", lambda: False)
         conn = sqlite3.connect(":memory:")
         conn.execute("CREATE TABLE t (a TEXT, b INTEGER)")
         cursor = conn.cursor()
@@ -72,19 +71,20 @@ class TestBatchExecute:
         conn.close()
 
     def test_fallback_on_error(self, monkeypatch):
-        """배치 실패 시 row-by-row 폴백: 'a','b' 성공, 중복 'a' 실패"""
-        import utils
-        monkeypatch.setattr(utils, "is_pg", lambda: False)
+        """배치 실패 시 row-by-row 폴백: 중복 'a' 실패, 'b'·'c' 성공"""
+        monkeypatch.setattr(hrd_etl, "is_pg", lambda: False)
         conn = sqlite3.connect(":memory:")
         conn.execute("CREATE TABLE t (a TEXT PRIMARY KEY)")
+        conn.execute("INSERT INTO t VALUES ('a')")  # 선점 행
         cursor = conn.cursor()
-        # 중복 키가 포함된 데이터: executemany가 실패하면 row-by-row 폴백
-        data = [("a",), ("b",), ("a",)]  # 'a' 중복
+        # 첫 행부터 중복 → executemany가 아무것도 삽입하지 못한 채 실패 → row-by-row 폴백
+        # (SQLite executemany는 원자적이지 않아, 중복을 뒤에 두면 앞 행이 남아 폴백 결과가 달라짐)
+        data = [("a",), ("b",), ("c",)]
         s, e = batch_execute(cursor, "INSERT INTO t VALUES (?)", data)
         conn.commit()
-        assert s == 2  # 'a'와 'b' 성공
+        assert s == 2  # 'b','c' 성공
         assert e == 1  # 중복 'a' 실패
-        # DB 상태 검증: 실제로 2건만 저장됨
+        # DB 상태 검증: 선점 'a' + 신규 'b','c'
         rows = conn.execute("SELECT a FROM t ORDER BY a").fetchall()
-        assert [r[0] for r in rows] == ['a', 'b']
+        assert [r[0] for r in rows] == ['a', 'b', 'c']
         conn.close()
