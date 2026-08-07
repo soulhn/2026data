@@ -84,9 +84,6 @@ class TestParseRowsXml:
                 <trainTarget>K-디지털</trainTarget>
                 <trainTargetCd>C0104</trainTargetCd>
                 <wkendSe>1</wkendSe>
-                <titleIcon></titleIcon>
-                <titleLink></titleLink>
-                <subTitleLink></subTitleLink>
             </scn_list>
         </srchList>
         </HRDNet>"""
@@ -110,7 +107,7 @@ class TestParseRowsXml:
                 <stdgScor>94.3</stdgScor><grade></grade>
                 <certificate></certificate><contents></contents><address>서울</address><telNo></telNo>
                 <instCd></instCd><trainstCstId></trainstCstId><trainTarget></trainTarget><trainTargetCd></trainTargetCd>
-                <wkendSe></wkendSe><titleIcon></titleIcon><titleLink></titleLink><subTitleLink></subTitleLink>
+                <wkendSe></wkendSe>
             </scn_list>
         </srchList></HRDNet>"""
         soup = BeautifulSoup(xml, "lxml-xml")

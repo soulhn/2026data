@@ -84,9 +84,6 @@ def init_all_tables():
             TRAIN_TARGET TEXT,      -- 훈련유형
             TRAIN_TARGET_CD TEXT,   -- 유형코드
             WKEND_SE TEXT,          -- 주말구분
-            TITLE_ICON TEXT,        -- 아이콘
-            TITLE_LINK TEXT,        -- 링크
-            SUB_TITLE_LINK TEXT,    -- 부제목 링크
             YEAR_MONTH TEXT,        -- 파생: 개설연월 (YYYY-MM)
             REGION TEXT,            -- 파생: 지역 (ADDRESS 첫 단어)
             COLLECTED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -189,9 +186,6 @@ def init_all_tables():
         "ALTER TABLE TB_MARKET_TREND ADD COLUMN TRAIN_TARGET TEXT",
         "ALTER TABLE TB_MARKET_TREND ADD COLUMN TRAIN_TARGET_CD TEXT",
         "ALTER TABLE TB_MARKET_TREND ADD COLUMN WKEND_SE TEXT",
-        "ALTER TABLE TB_MARKET_TREND ADD COLUMN TITLE_ICON TEXT",
-        "ALTER TABLE TB_MARKET_TREND ADD COLUMN TITLE_LINK TEXT",
-        "ALTER TABLE TB_MARKET_TREND ADD COLUMN SUB_TITLE_LINK TEXT",
     ]
     for sql in migrations:
         try:
@@ -211,8 +205,9 @@ def init_all_tables():
     indexes = [
         ('IDX_MARKET_NCS',  'TB_MARKET_TREND', 'NCS_CD'),
         ('IDX_MARKET_DATE', 'TB_MARKET_TREND', 'TR_STA_DT'),
-        ('IDX_MARKET_AREA', 'TB_MARKET_TREND', 'TRNG_AREA_CD'),
-        ('IDX_MARKET_TRAINST',    'TB_MARKET_TREND', 'TRAINST_NM'),
+        # IDX_MARKET_AREA·IDX_MARKET_TRAINST 는 2026-08 제거 — 누적 스캔 1·4회의 미사용
+        # 인덱스로 12.6MB + 매일 UPSERT 쓰기 비용만 소모 (기관 분석은 inst_stats 캐시,
+        # 지역 필터는 REGION 컬럼의 IDX_MARKET_REGION 사용)
         ('IDX_MARKET_YEAR_MONTH', 'TB_MARKET_TREND', 'YEAR_MONTH'),
         ('IDX_MARKET_REGION',     'TB_MARKET_TREND', 'REGION'),
         ('IDX_MARKET_TARGET',     'TB_MARKET_TREND', 'TRAIN_TARGET'),

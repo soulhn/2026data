@@ -38,8 +38,11 @@ def test_indexes_created(mock_db_connection):
     cursor.execute("SELECT name FROM sqlite_master WHERE type='index'")
     indexes = {row[0] for row in cursor.fetchall()}
     expected_indexes = [
-        "IDX_MARKET_NCS", "IDX_MARKET_DATE", "IDX_MARKET_AREA",
+        "IDX_MARKET_NCS", "IDX_MARKET_DATE",
         "IDX_ATTEND_DEGR", "IDX_ATTEND_DATE", "IDX_COURSE_END_DT",
     ]
     for idx in expected_indexes:
         assert idx in indexes, f"인덱스 {idx}가 생성되지 않음"
+    # 2026-08 제거된 미사용 인덱스가 재생성되지 않는지 (init_db 목록에서 빠졌는지)
+    for idx in ("IDX_MARKET_AREA", "IDX_MARKET_TRAINST"):
+        assert idx not in indexes, f"제거된 인덱스 {idx}가 다시 생성됨"

@@ -143,7 +143,6 @@ def parse_rows_xml(soup: BeautifulSoup):
             g("certificate"), g("contents"), address, g("telNo"),
             g("instCd"), g("trainstCstId"), g("trainTarget"), g("trainTargetCd"),
             g("wkendSe"),
-            g("titleIcon"), g("titleLink"), g("subTitleLink"),
             year_month, region
         ))
     return out
@@ -216,9 +215,9 @@ _UPSERT_QUERY_RAW = '''
         STDG_SCOR, GRADE,
         CERTIFICATE, CONTENTS, ADDRESS, TEL_NO,
         INST_INO, TRAINST_CST_ID, TRAIN_TARGET, TRAIN_TARGET_CD,
-        WKEND_SE, TITLE_ICON, TITLE_LINK, SUB_TITLE_LINK,
+        WKEND_SE,
         YEAR_MONTH, REGION
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(TRPR_ID, TRPR_DEGR) DO UPDATE SET
         TRPR_NM=excluded.TRPR_NM,
         TRAINST_NM=excluded.TRAINST_NM,
