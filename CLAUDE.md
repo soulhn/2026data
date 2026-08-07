@@ -84,6 +84,8 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 | **게시일 필터** | `published_min/max` unix timestamp (환경변수 `SARAMIN_PUBLISHED_DAYS`로 범위 설정, 기본 3일) | `config.SARAMIN_PUBLISHED_DAYS` |
 | **정렬** | `pd` (게시일 최신순) | `saramin_etl.py` 고정 |
 | **중복 처리** | `ON CONFLICT(JOB_ID) DO UPDATE` — 키워드 간 중복 공고 자동 병합, SEARCH_KEYWORD는 최초값 보존 | `saramin_etl.py` |
+| **보존 정책** | 마감 후 30일 / 상시채용(마감일 1년 이상 미래)은 게시 후 90일 지나면 삭제 (Supabase 500MB 대응, 2026-08 도입). `--cleanup-only`로 API 쿼터 없이 실행 가능 | `config.SARAMIN_RETENTION_*` |
+| **누적 추이 캐시** | 시계열 캐시 3종(월별 신규·종료·키워드 추이)은 재계산이 아니라 **누적 병합** — 같은 월은 max 채택. 원본이 삭제돼도 과거 추이 유지. **전체 재계산으로 되돌리면 삭제 시점에 추이 소실** | `saramin_etl.merge_cumulative()` |
 | **다중 지역** | `TB_JOB_POSTING_REGION` junction 테이블로 다중 지역 공고 정확 반영 | `init_db.py` |
 | **캐시 집계** | KPI, 월별 추이, 직무별, 지역별, 키워드별 추이 등 11종 → `TB_MARKET_CACHE` | `saramin_etl.py` |
 | **응답 형식** | JSON (API 기본값) | `saramin_etl.py` |
