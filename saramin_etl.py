@@ -12,6 +12,8 @@ from init_db import init_all_tables
 from config import (
     SARAMIN_PAGE_SIZE, SARAMIN_API_CALL_LIMIT,
     SARAMIN_KEYWORDS, SARAMIN_PUBLISHED_DAYS,
+    SARAMIN_RETENTION_EXPIRED_DAYS, SARAMIN_EVERGREEN_MIN_AHEAD_DAYS,
+    SARAMIN_RETENTION_EVERGREEN_DAYS,
     ETL_BATCH_SIZE, CacheKey,
 )
 
@@ -395,6 +397,84 @@ def save_rows(rows):
         conn.close()
 
 
+# ── 누적 캐시 병합 ──
+
+# 시계열 캐시는 전체 재계산이 아니라 누적 병합한다. 보존 정책이 옛 원본을 지우면
+# 재계산 값이 실제보다 작아지므로, 과거 월은 캐시에 남은 값을 지켜야 추이가 유지된다.
+CUMULATIVE_CACHE_KEYS = {
+    CacheKey.SARAMIN_MONTHLY: ("YEAR_MONTH",),
+    CacheKey.SARAMIN_EXPIRED_MONTHLY: ("YEAR_MONTH",),
+    CacheKey.SARAMIN_KEYWORD_TREND: ("SEARCH_KEYWORD", "YEAR_MONTH"),
+}
+
+
+def merge_cumulative(existing_rows, fresh_rows, key_cols):
+    """월별 카운트 캐시를 누적 병합한다.
+
+    같은 키(월)는 큰 CNT를 채택한다 — 월 카운트는 수집 직후 며칠만 늘고(게시일 3일 창)
+    이후에는 보존 삭제로 줄기만 하므로, max가 곧 그 월의 완전한 값이다.
+    날짜 비교가 없어 월 경계·실행 순서와 무관하게 안전하다.
+    주의: 원본을 의도적으로 정정(오염 데이터 삭제 등)해도 캐시 값은 남는다 → 그때는 캐시를 수동 삭제.
+    """
+    merged = {tuple(r.get(c) for c in key_cols): r for r in existing_rows}
+    for r in fresh_rows:
+        k = tuple(r.get(c) for c in key_cols)
+        if k not in merged or (r.get("CNT") or 0) > (merged[k].get("CNT") or 0):
+            merged[k] = r
+    return sorted(merged.values(), key=lambda r: tuple(str(r.get(c)) for c in key_cols))
+
+
+# ── 보존 정책 ──
+def cleanup_old_postings():
+    """보존 기간이 지난 공고를 삭제한다 (Supabase 500MB 한도 대응).
+
+    - 일반 공고: 마감 후 SARAMIN_RETENTION_EXPIRED_DAYS 경과 시 삭제
+    - 상시채용(마감일이 1년 이상 먼 미래): 마감 기준으로는 영원히 안 지워지므로
+      게시 후 SARAMIN_RETENTION_EVERGREEN_DAYS 경과 시 삭제
+    날짜가 'YYYY-MM-DD' 문자열이라 커트오프를 파이썬에서 계산해 문자열 비교만 한다
+    (PG/SQLite 공통 문법 — 엔진 분기 불필요).
+    """
+    today = dt.date.today()
+    expired_cutoff = (today - dt.timedelta(days=SARAMIN_RETENTION_EXPIRED_DAYS)).isoformat()
+    evergreen_horizon = (today + dt.timedelta(days=SARAMIN_EVERGREEN_MIN_AHEAD_DAYS)).isoformat()
+    posted_cutoff = (today - dt.timedelta(days=SARAMIN_RETENTION_EVERGREEN_DAYS)).isoformat()
+
+    doomed_where = (
+        "((EXPIRATION_DT IS NOT NULL AND EXPIRATION_DT < ?) "
+        "OR (EXPIRATION_DT > ? AND POSTING_DT IS NOT NULL AND POSTING_DT < ?))"
+    )
+    params = (expired_cutoff, evergreen_horizon, posted_cutoff)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # junction 먼저 삭제해야 고아 행이 안 남는다 (FK 미설정)
+        deleted = {}
+        for table in ("TB_JOB_POSTING_KEYWORD", "TB_JOB_POSTING_REGION"):
+            cursor.execute(adapt_query(
+                f"DELETE FROM {table} WHERE JOB_ID IN "
+                f"(SELECT JOB_ID FROM TB_JOB_POSTING WHERE {doomed_where})"
+            ), params)
+            deleted[table] = cursor.rowcount
+        cursor.execute(adapt_query(
+            f"DELETE FROM TB_JOB_POSTING WHERE {doomed_where}"
+        ), params)
+        deleted["TB_JOB_POSTING"] = cursor.rowcount
+        conn.commit()
+        logger.info(
+            f"[보존 정책] 마감<{expired_cutoff} 또는 상시채용 게시<{posted_cutoff} 삭제: "
+            + ", ".join(f"{t} {n}건" for t, n in deleted.items())
+        )
+        return deleted
+    except Exception as e:
+        logger.error(f"[보존 정책] 삭제 실패: {e}")
+        if is_pg():
+            conn.rollback()
+        return {}
+    finally:
+        conn.close()
+
+
 # ── 집계 캐시 ──
 def compute_and_cache_aggregations():
     """ETL 완료 후 주요 집계를 TB_MARKET_CACHE에 저장합니다."""
@@ -415,6 +495,15 @@ def compute_and_cache_aggregations():
             cursor.execute(sql)
             cols = [d[0].upper() for d in cursor.description]
             rows = [dict(zip(cols, row)) for row in cursor.fetchall()]
+            if key in CUMULATIVE_CACHE_KEYS:
+                # 보존 삭제로 옛 원본이 사라져도 과거 월 추이는 기존 캐시 값으로 유지
+                cursor.execute(
+                    adapt_query("SELECT CACHE_DATA FROM TB_MARKET_CACHE WHERE CACHE_KEY = ?"),
+                    (key,),
+                )
+                prev = cursor.fetchone()
+                existing = json.loads(prev[0]) if prev and prev[0] else []
+                rows = merge_cumulative(existing, rows, CUMULATIVE_CACHE_KEYS[key])
             data_json = json.dumps(rows, ensure_ascii=False, default=str)
             cursor.execute(upsert_sql, (key, data_json))
             conn.commit()
@@ -557,8 +646,21 @@ def main():
 
     logger.info(f"[Summary] API 호출: {api_call_count}회, 총 저장: {total_saved:,}건")
     logger.info(f"총 소요: {time.monotonic() - _t0:.1f}초")
+    # 순서 중요: 삭제 → 집계. 과거 월 추이는 누적 병합(merge_cumulative)이 지켜준다
+    cleanup_old_postings()
+    compute_and_cache_aggregations()
+
+
+def cleanup_only():
+    """API 수집 없이 보존 삭제 + 캐시 재집계만 수행 (일일 API 쿼터 소모 없음)."""
+    init_all_tables()
+    cleanup_old_postings()
     compute_and_cache_aggregations()
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--cleanup-only" in sys.argv:
+        cleanup_only()
+    else:
+        main()

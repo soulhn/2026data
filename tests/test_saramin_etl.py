@@ -307,6 +307,125 @@ class TestYearMonthFallback:
         assert ym is None
 
 
+class TestMergeCumulative:
+    """시계열 캐시 누적 병합 — 보존 삭제 후에도 과거 월 추이가 유지되는지."""
+
+    def test_past_month_preserved_when_absent_from_fresh(self):
+        existing = [{"YEAR_MONTH": "2026-04", "CNT": 19800}]
+        fresh = [{"YEAR_MONTH": "2026-08", "CNT": 2688}]
+        merged = saramin_etl.merge_cumulative(existing, fresh, ("YEAR_MONTH",))
+        assert merged == [
+            {"YEAR_MONTH": "2026-04", "CNT": 19800},
+            {"YEAR_MONTH": "2026-08", "CNT": 2688},
+        ]
+
+    def test_max_wins_on_overlap(self):
+        """보존 삭제로 원본이 줄어 재계산 값이 작아져도 완전했던 값을 지킨다."""
+        existing = [{"YEAR_MONTH": "2026-07", "CNT": 18306}]
+        fresh = [{"YEAR_MONTH": "2026-07", "CNT": 4200}]  # 삭제 후 재계산 → 축소
+        merged = saramin_etl.merge_cumulative(existing, fresh, ("YEAR_MONTH",))
+        assert merged == [{"YEAR_MONTH": "2026-07", "CNT": 18306}]
+
+    def test_growing_current_month_updates(self):
+        """진행 중인 월은 수집이 쌓이며 커지므로 새 값을 채택한다."""
+        existing = [{"YEAR_MONTH": "2026-08", "CNT": 100}]
+        fresh = [{"YEAR_MONTH": "2026-08", "CNT": 2688}]
+        merged = saramin_etl.merge_cumulative(existing, fresh, ("YEAR_MONTH",))
+        assert merged == [{"YEAR_MONTH": "2026-08", "CNT": 2688}]
+
+    def test_composite_key_keyword_month(self):
+        existing = [{"SEARCH_KEYWORD": "Python", "YEAR_MONTH": "2026-04", "CNT": 110}]
+        fresh = [
+            {"SEARCH_KEYWORD": "Python", "YEAR_MONTH": "2026-08", "CNT": 30},
+            {"SEARCH_KEYWORD": "React", "YEAR_MONTH": "2026-08", "CNT": 20},
+        ]
+        merged = saramin_etl.merge_cumulative(
+            existing, fresh, ("SEARCH_KEYWORD", "YEAR_MONTH"))
+        assert len(merged) == 3
+        assert {"SEARCH_KEYWORD": "Python", "YEAR_MONTH": "2026-04", "CNT": 110} in merged
+
+
+def _insert_posting(conn, job_id, posting_dt, expiration_dt, keyword="Python"):
+    conn.execute(
+        "INSERT INTO TB_JOB_POSTING (JOB_ID, ACTIVE, POSTING_DT, EXPIRATION_DT, "
+        "YEAR_MONTH, JOB_MID_NM, SEARCH_KEYWORD, COMPANY_NM) "
+        "VALUES (?, 1, ?, ?, ?, 'IT Dev', ?, 'TestCorp')",
+        (job_id, posting_dt, expiration_dt, posting_dt[:7], keyword),
+    )
+    conn.execute(
+        "INSERT INTO TB_JOB_POSTING_KEYWORD (JOB_ID, SEARCH_KEYWORD) VALUES (?, ?)",
+        (job_id, keyword),
+    )
+    conn.execute(
+        "INSERT INTO TB_JOB_POSTING_REGION (JOB_ID, REGION) VALUES (?, ?)",
+        (job_id, "서울"),
+    )
+
+
+class TestCleanupOldPostings:
+    """보존 정책 — 마감 후 30일 / 상시채용 게시 후 90일 삭제."""
+
+    def _seed(self, conn):
+        import datetime as dt
+        today = dt.date.today()
+        d = lambda days: (today + dt.timedelta(days=days)).isoformat()
+        # (job_id, 게시일, 마감일)
+        _insert_posting(conn, "OLD_EXPIRED", d(-100), d(-45))      # 마감 45일 전 → 삭제
+        _insert_posting(conn, "RECENT_EXPIRED", d(-40), d(-10))    # 마감 10일 전 → 보존
+        _insert_posting(conn, "ACTIVE_NORMAL", d(-5), d(+20))      # 진행중 → 보존
+        _insert_posting(conn, "EVERGREEN_OLD", d(-120), d(+2000))  # 상시채용, 게시 120일 → 삭제
+        _insert_posting(conn, "EVERGREEN_NEW", d(-10), d(+2000))   # 상시채용, 게시 10일 → 보존
+        conn.commit()
+
+    def test_retention_rules(self, mock_saramin_db):
+        self._seed(mock_saramin_db)
+        deleted = saramin_etl.cleanup_old_postings()
+
+        assert deleted["TB_JOB_POSTING"] == 2
+        cursor = mock_saramin_db.cursor()
+        cursor.execute("SELECT JOB_ID FROM TB_JOB_POSTING ORDER BY JOB_ID")
+        remaining = [r[0] for r in cursor.fetchall()]
+        assert remaining == ["ACTIVE_NORMAL", "EVERGREEN_NEW", "RECENT_EXPIRED"]
+
+    def test_junction_rows_cascade(self, mock_saramin_db):
+        """키워드·지역 junction도 함께 지워져 고아 행이 안 남아야 한다."""
+        self._seed(mock_saramin_db)
+        saramin_etl.cleanup_old_postings()
+
+        cursor = mock_saramin_db.cursor()
+        for table in ("TB_JOB_POSTING_KEYWORD", "TB_JOB_POSTING_REGION"):
+            cursor.execute(
+                f"SELECT COUNT(*) AS cnt FROM {table} WHERE JOB_ID NOT IN "
+                f"(SELECT JOB_ID FROM TB_JOB_POSTING)"
+            )
+            assert cursor.fetchone()[0] == 0, f"{table}에 고아 행 존재"
+
+    def test_trend_cache_survives_retention(self, mock_saramin_db):
+        """핵심 시나리오: 집계 → 보존 삭제 → 재집계 후에도 과거 월 추이가 남는다."""
+        import datetime as dt
+        today = dt.date.today()
+        d = lambda days: (today + dt.timedelta(days=days)).isoformat()
+        old_month = d(-100)[:7]
+
+        _insert_posting(mock_saramin_db, "OLD1", d(-100), d(-45))
+        _insert_posting(mock_saramin_db, "OLD2", d(-100), d(-45))
+        _insert_posting(mock_saramin_db, "NOW1", d(-5), d(+20))
+        mock_saramin_db.commit()
+
+        saramin_etl.compute_and_cache_aggregations()   # 삭제 전 — 완전한 값 캐시
+        saramin_etl.cleanup_old_postings()             # OLD1·OLD2 삭제
+        saramin_etl.compute_and_cache_aggregations()   # 재집계 — 병합이 과거 월을 지켜야 함
+
+        cursor = mock_saramin_db.cursor()
+        cursor.execute(
+            "SELECT CACHE_DATA FROM TB_MARKET_CACHE WHERE CACHE_KEY = ?",
+            (saramin_etl.CacheKey.SARAMIN_MONTHLY,),
+        )
+        rows = json.loads(cursor.fetchone()[0])
+        by_month = {r["YEAR_MONTH"]: r["CNT"] for r in rows}
+        assert by_month.get(old_month) == 2, f"과거 월 추이 소실: {by_month}"
+
+
 class TestCacheAggregations:
     def test_aggregations_run(self, mock_saramin_db):
         rows, _ = saramin_etl.parse_jobs_json(SAMPLE_JSON)

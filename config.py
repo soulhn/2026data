@@ -56,6 +56,13 @@ RECENT_TREND_DAYS = 10
 SARAMIN_PAGE_SIZE = 110
 SARAMIN_API_CALL_LIMIT = 480
 SARAMIN_PUBLISHED_DAYS = int(os.environ.get("SARAMIN_PUBLISHED_DAYS", "3"))
+
+# ── 사람인 보존 정책 (2026-08 도입: Supabase 500MB 한도 대응) ──
+# 원본은 "새 집계 계산에 필요한 최소한"만 보존. 화면 추이는 TB_MARKET_CACHE 누적 집계가 담당.
+SARAMIN_RETENTION_EXPIRED_DAYS = 30      # 마감 후 이 일수가 지난 공고 삭제
+SARAMIN_EVERGREEN_MIN_AHEAD_DAYS = 365   # 마감일이 이보다 먼 미래면 상시채용으로 간주
+SARAMIN_RETENTION_EVERGREEN_DAYS = 90    # 상시채용은 게시 후 이 일수가 지나면 삭제
+                                         # (마감일이 2032년 등 먼 미래라 마감 기준으로는 영원히 안 지워짐)
 SARAMIN_KEYWORDS = [
     # 인기 키워드 세분화 (110건/키워드 한계 대응)
     'Python 백엔드', 'Python 데이터', 'Python AI',

@@ -10,7 +10,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from utils import check_password, load_data, load_cache_json, page_error_boundary
-from config import CACHE_TTL_SARAMIN, CacheKey
+from config import CACHE_TTL_SARAMIN, SARAMIN_RETENTION_EXPIRED_DAYS, CacheKey
 
 with page_error_boundary():
     check_password()
@@ -33,26 +33,45 @@ with page_error_boundary():
             FROM TB_JOB_POSTING
         """)
 
+    # 월별 신규 추이 — 누적 캐시 우선. 보존 정책으로 원본이 삭제돼도 과거 월이 유지된다
+    @st.cache_data(ttl=CACHE_TTL_SARAMIN)
+    def get_monthly_new():
+        cached = load_cache_json(CacheKey.SARAMIN_MONTHLY)
+        if cached:
+            return pd.DataFrame(cached)
+        return load_data("""
+            SELECT YEAR_MONTH, COUNT(*) AS CNT
+            FROM TB_JOB_POSTING
+            WHERE YEAR_MONTH IS NOT NULL
+            GROUP BY YEAR_MONTH ORDER BY YEAR_MONTH
+        """)
+
     df_kpi = get_kpi()
     if df_kpi.empty or int(df_kpi.iloc[0].get('CNT') or 0) == 0:
         st.warning("채용 데이터가 아직 수집되지 않았습니다. ETL 실행 후 다시 확인해주세요.")
         st.stop()
 
     row = df_kpi.iloc[0]
-    total_cnt = int(row.get('CNT') or 0)
     active_cnt = int(row.get('ACTIVE_CNT') or 0)
     expired_cnt = int(row.get('EXPIRED_CNT') or 0)
     company_cnt = int(row.get('COMPANY_CNT') or 0)
+    df_monthly = get_monthly_new()
+    # 누적 수집: 보존 삭제된 원본까지 포함한 값 — 누적 캐시 월별 합
+    cumulative_cnt = int(df_monthly['CNT'].sum()) if not df_monthly.empty \
+        else int(row.get('CNT') or 0)
 
     st.subheader("핵심 지표")
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("총 수집 공고", f"{total_cnt:,}건")
+    k1.metric("누적 수집 공고", f"{cumulative_cnt:,}건",
+              help="수집 시작 이후 전체 누적. 보존 기간이 지나 원본에서 삭제된 공고도 포함합니다 (누적 캐시 기준).")
     k2.metric("진행중 공고", f"{active_cnt:,}건")
-    k3.metric("종료 공고", f"{expired_cnt:,}건")
-    k4.metric("기업 수", f"{company_cnt:,}개")
+    k3.metric("최근 마감 공고", f"{expired_cnt:,}건",
+              help=f"마감 후 {SARAMIN_RETENTION_EXPIRED_DAYS}일까지만 원본을 보존하므로 최근 마감분입니다.")
+    k4.metric("기업 수", f"{company_cnt:,}개",
+              help="현재 보유 공고 기준입니다.")
     st.divider()
 
-    tab1, tab2, tab3 = st.tabs(["진행중 공고", "종료 공고 분석", "키워드 분석"])
+    tab1, tab2, tab3 = st.tabs(["진행중 공고", "월별 추이", "키워드 분석"])
 
     # ================================================================
     # 탭 1: 진행중 공고
@@ -138,91 +157,51 @@ with page_error_boundary():
             st.info("진행중 공고 직무 데이터가 없습니다.")
 
     # ================================================================
-    # 탭 2: 종료 공고 분석
+    # 탭 2: 월별 추이 — 누적 캐시 기반 (보존 삭제와 무관하게 시계열 유지)
     # ================================================================
     with tab2:
-        if expired_cnt == 0:
-            st.info("종료된 공고가 아직 없습니다. 시간이 지나면서 종료 공고가 자연 누적됩니다.")
+        st.subheader("월별 신규 공고 추이")
+        st.caption("게시월 기준 누적 캐시입니다. 가장 최근 월은 수집이 진행 중인 값입니다.")
+
+        if not df_monthly.empty:
+            fig = px.bar(df_monthly, x='YEAR_MONTH', y='CNT')
+            fig.update_xaxes(type='category', categoryorder='category ascending')
+            fig.update_layout(
+                showlegend=False, height=350,
+                xaxis_title=None, yaxis_title=None,
+            )
+            st.plotly_chart(fig, width='stretch')
         else:
-            # 월별 종료 공고 추이
-            st.subheader("월별 종료 공고 추이")
+            st.info("월별 추이 데이터가 아직 없습니다.")
+        st.divider()
 
-            @st.cache_data(ttl=CACHE_TTL_SARAMIN)
-            def get_expired_monthly():
-                month_expr = "TO_CHAR(EXPIRATION_DT::date, 'YYYY-MM')"
-                return load_data(f"""
-                    SELECT {month_expr} AS YEAR_MONTH, COUNT(*) AS CNT
-                    FROM TB_JOB_POSTING
-                    WHERE EXPIRATION_DT IS NOT NULL AND {expired_where}
-                    GROUP BY {month_expr} ORDER BY YEAR_MONTH
-                """)
+        st.subheader("월별 종료 공고 추이")
+        st.caption("마감월 기준 누적 캐시입니다.")
 
-            df_em = get_expired_monthly()
-            if not df_em.empty:
-                fig = px.bar(
-                    df_em, x='YEAR_MONTH', y='CNT',
-                )
-                fig.update_xaxes(type='category')
-                fig.update_layout(
-                    showlegend=False, height=350,
-                    xaxis_title=None, yaxis_title=None,
-                )
-                st.plotly_chart(fig, width='stretch')
-            st.divider()
+        @st.cache_data(ttl=CACHE_TTL_SARAMIN)
+        def get_expired_monthly():
+            cached = load_cache_json(CacheKey.SARAMIN_EXPIRED_MONTHLY)
+            if cached:
+                return pd.DataFrame(cached)
+            month_expr = "TO_CHAR(EXPIRATION_DT::date, 'YYYY-MM')"
+            return load_data(f"""
+                SELECT {month_expr} AS YEAR_MONTH, COUNT(*) AS CNT
+                FROM TB_JOB_POSTING
+                WHERE EXPIRATION_DT IS NOT NULL AND {expired_where}
+                GROUP BY {month_expr} ORDER BY YEAR_MONTH
+            """)
 
-            # 직무별 종료 공고 분포
-            st.subheader("직무별 종료 공고 분포")
-
-            @st.cache_data(ttl=CACHE_TTL_SARAMIN)
-            def get_expired_job():
-                return load_data(f"""
-                    SELECT JOB_MID_NM, COUNT(*) AS CNT
-                    FROM TB_JOB_POSTING
-                    WHERE JOB_MID_NM IS NOT NULL AND JOB_MID_NM != ''
-                      AND {expired_where}
-                    GROUP BY JOB_MID_NM ORDER BY CNT DESC
-                """)
-
-            df_ej = get_expired_job()
-            if not df_ej.empty:
-                fig = px.bar(
-                    df_ej.head(15), x='CNT', y='JOB_MID_NM',
-                    orientation='h',
-                )
-                fig.update_layout(
-                    yaxis={'categoryorder': 'total ascending', 'title': None},
-                    xaxis_title=None, height=400,
-                )
-                st.plotly_chart(fig, width='stretch')
-            st.divider()
-
-            # 직무별 평균 게시 기간
-            st.subheader("직무별 평균 게시 기간")
-
-            @st.cache_data(ttl=CACHE_TTL_SARAMIN)
-            def get_posting_duration():
-                dur_expr = "(EXPIRATION_DT::date - POSTING_DT::date)"
-                return load_data(f"""
-                    SELECT JOB_MID_NM, AVG({dur_expr}) AS AVG_DAYS
-                    FROM TB_JOB_POSTING
-                    WHERE JOB_MID_NM IS NOT NULL AND JOB_MID_NM != ''
-                      AND EXPIRATION_DT IS NOT NULL AND POSTING_DT IS NOT NULL
-                      AND {expired_where}
-                    GROUP BY JOB_MID_NM ORDER BY AVG_DAYS DESC
-                """)
-
-            df_dur = get_posting_duration()
-            if not df_dur.empty:
-                df_dur['AVG_DAYS'] = pd.to_numeric(df_dur['AVG_DAYS'], errors='coerce')
-                fig = px.bar(
-                    df_dur.head(15), x='AVG_DAYS', y='JOB_MID_NM',
-                    orientation='h',
-                )
-                fig.update_layout(
-                    yaxis={'categoryorder': 'total ascending', 'title': None},
-                    xaxis_title=None, height=400,
-                )
-                st.plotly_chart(fig, width='stretch')
+        df_em = get_expired_monthly()
+        if not df_em.empty:
+            fig = px.bar(df_em, x='YEAR_MONTH', y='CNT')
+            fig.update_xaxes(type='category', categoryorder='category ascending')
+            fig.update_layout(
+                showlegend=False, height=350,
+                xaxis_title=None, yaxis_title=None,
+            )
+            st.plotly_chart(fig, width='stretch')
+        else:
+            st.info("종료된 공고가 아직 없습니다.")
 
     # ================================================================
     # 탭 3: 키워드 분석
