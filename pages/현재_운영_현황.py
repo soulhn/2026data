@@ -414,7 +414,6 @@ with page_error_boundary():
         with st.expander("📝 보고용 텍스트 복사", expanded=True):
             # 보고용 텍스트는 상시 실명 — 운영진 내부 보고 전용, 훈련생 노출 채널 공유 금지
             name_col = 'TRNEE_NM_REAL' if 'TRNEE_NM_REAL' in df_monitor.columns else 'TRNEE_NM'
-            st.caption("⚠️ 실명 포함 — 운영진 내부 보고 전용입니다.")
 
             def get_names_str(df, type_):
                 names = []
