@@ -412,14 +412,9 @@ with page_error_boundary():
 
         # ── [2] 보고용 텍스트 ────────────────────────────────────────────
         with st.expander("📝 보고용 텍스트 복사", expanded=True):
-            # 실명은 운영진 내부 보고 전용. 훈련생이 볼 수 있는 채널에는 마스킹 상태로 공유.
-            _has_real = 'TRNEE_NM_REAL' in df_monitor.columns
-            show_real = _has_real and st.toggle(
-                "실명 표시",
-                value=False,
-                help="운영진 내부 보고 전용입니다. 훈련생이 볼 수 있는 채널에는 끈 상태(마스킹)로 공유하세요.",
-            )
-            name_col = 'TRNEE_NM_REAL' if show_real else 'TRNEE_NM'
+            # 보고용 텍스트는 상시 실명 — 운영진 내부 보고 전용, 훈련생 노출 채널 공유 금지
+            name_col = 'TRNEE_NM_REAL' if 'TRNEE_NM_REAL' in df_monitor.columns else 'TRNEE_NM'
+            st.caption("⚠️ 실명 포함 — 운영진 내부 보고 전용입니다.")
 
             def get_names_str(df, type_):
                 names = []
