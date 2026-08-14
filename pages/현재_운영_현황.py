@@ -28,6 +28,11 @@ with page_error_boundary():
     def get_active_data():
         courses, trainees, logs, source = get_active_data_with_fallback()
         # 개인정보 보호: 실명은 로드 직후 마스킹 (표시·집계 전 원천 차단)
+        # 예외: 보고용 텍스트의 실명 토글을 위해 TRNEE_NM_REAL로만 원본 보존.
+        # 이 컬럼은 보고 블록 외 어떤 표시·다운로드에도 쓰지 않는다.
+        if trainees is not None and not trainees.empty and 'TRNEE_NM' in trainees.columns:
+            trainees = trainees.copy()
+            trainees['TRNEE_NM_REAL'] = trainees['TRNEE_NM']
         # 실패 사유는 캐시 대상 안에서 함께 반환 — 캐시 히트 시 모듈 변수는 이미 비어 있다
         return courses, mask_name_columns(trainees), mask_name_columns(logs), source, get_last_realtime_error()
 
@@ -182,8 +187,12 @@ with page_error_boundary():
     today_logs = this_logs[this_logs['ATEND_DT'] == target_date].copy()
     today_logs = today_logs.drop_duplicates(subset=['TRNEE_ID'], keep='last')
 
+    # TRNEE_NM_REAL은 보고용 텍스트 실명 토글 전용 — 표시용 표에는 넣지 말 것
+    _stu_cols = ['TRNEE_ID', 'TRNEE_NM', 'TRNEE_STATUS']
+    if 'TRNEE_NM_REAL' in active_students.columns:
+        _stu_cols.append('TRNEE_NM_REAL')
     df_monitor = pd.merge(
-        active_students[['TRNEE_ID', 'TRNEE_NM', 'TRNEE_STATUS']],
+        active_students[_stu_cols],
         today_logs[['TRNEE_ID', 'IN_TIME', 'OUT_TIME', 'ATEND_STATUS']],
         on='TRNEE_ID', how='left',
     )
@@ -403,21 +412,30 @@ with page_error_boundary():
 
         # ── [2] 보고용 텍스트 ────────────────────────────────────────────
         with st.expander("📝 보고용 텍스트 복사", expanded=True):
+            # 실명은 운영진 내부 보고 전용. 훈련생이 볼 수 있는 채널에는 마스킹 상태로 공유.
+            _has_real = 'TRNEE_NM_REAL' in df_monitor.columns
+            show_real = _has_real and st.toggle(
+                "실명 표시",
+                value=False,
+                help="운영진 내부 보고 전용입니다. 훈련생이 볼 수 있는 채널에는 끈 상태(마스킹)로 공유하세요.",
+            )
+            name_col = 'TRNEE_NM_REAL' if show_real else 'TRNEE_NM'
+
             def get_names_str(df, type_):
                 names = []
                 if type_ == 'absent':
-                    names = df[df['IN_TIME'].isna()]['TRNEE_NM'].tolist()
+                    names = df[df['IN_TIME'].isna()][name_col].tolist()
                 elif type_ == 'not_left':
-                    names = df[(df['IN_TIME'].notna()) & (df['OUT_TIME'].isna())]['TRNEE_NM'].tolist()
+                    names = df[(df['IN_TIME'].notna()) & (df['OUT_TIME'].isna())][name_col].tolist()
                 elif type_ == 'late':
                     for _, row in df[df['ATEND_STATUS'] == '지각'].iterrows():
-                        names.append(f"{row['TRNEE_NM']}({str(row['IN_TIME']).strip()})")
+                        names.append(f"{row[name_col]}({str(row['IN_TIME']).strip()})")
                 elif type_ == 'early':
                     for _, row in df[df['IS_EARLY_LEAVE']].iterrows():
                         t = str(row['OUT_TIME']).strip() if pd.notna(row['OUT_TIME']) else ''
-                        names.append(f"{row['TRNEE_NM']}({t})" if t else row['TRNEE_NM'])
+                        names.append(f"{row[name_col]}({t})" if t else row[name_col])
                 elif type_ == 'out':
-                    names = df[df['ATEND_STATUS'] == '외출']['TRNEE_NM'].tolist()
+                    names = df[df['ATEND_STATUS'] == '외출'][name_col].tolist()
                 return ", ".join(names) if names else "없음"
 
             now_kst = datetime.now(ZoneInfo('Asia/Seoul'))
