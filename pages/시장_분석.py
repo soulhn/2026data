@@ -388,14 +388,19 @@ def load_schedule_kpi(where, params, today, this_month):
 
 @st.cache_data(ttl=CACHE_TTL_MARKET, show_spinner=False)
 def load_schedule_courses(where, params, status, today, limit):
-    """개강 현황 탭: 상태별 과정 목록 (개강·종강 일정, 정원, 신청인원)."""
+    """개강 현황 탭: 상태별 과정 목록 (개강·종강 일정, 회차, 정원, 신청인원).
+
+    KT AIVLE 등 대기업 위탁 과정은 같은 과정 ID가 같은 날 반별로 수십 회차 개강한다.
+    회차 없이는 동일 행이 반복돼 보이므로 회차를 함께 내리고, 상태별 1차 정렬 뒤
+    과정 ID·회차로 2차 정렬해 같은 과정의 회차가 순서대로 붙어 나오게 한다.
+    """
     cond, n_today, order = SCHEDULE_STATUS[status]
     return _sql_query(f"""
-        SELECT TRPR_NM, TRAINST_NM, REGION, TRAIN_TARGET,
+        SELECT TRPR_NM, TRPR_DEGR, TRAINST_NM, REGION, TRAIN_TARGET,
                TR_STA_DT, TR_END_DT, TOT_FXNUM, REG_COURSE_MAN
         FROM TB_MARKET_TREND {where}
           {"AND" if where else "WHERE"} {cond}
-        ORDER BY {order}
+        ORDER BY {order}, TRPR_ID, TRPR_DEGR
         LIMIT ?
     """, params=list(params) + [today] * n_today + [limit])
 
@@ -898,11 +903,11 @@ with page_error_boundary():
                 _days = (pd.to_datetime(sched_df['TR_STA_DT'], errors='coerce') - pd.Timestamp(_today_d)).dt.days
                 sched_df['개강까지'] = _days.apply(lambda d: f"D-{int(d)}" if pd.notna(d) else '-')
             show_sched = sched_df.rename(columns={
-                'TRPR_NM': '과정명', 'TRAINST_NM': '기관명', 'REGION': '지역',
+                'TRPR_NM': '과정명', 'TRPR_DEGR': '회차', 'TRAINST_NM': '기관명', 'REGION': '지역',
                 'TRAIN_TARGET': '훈련 유형', 'TR_STA_DT': '개강일', 'TR_END_DT': '종강일',
                 'TOT_FXNUM': '정원', 'REG_COURSE_MAN': '신청인원',
             })
-            _cols = ['과정명', '기관명', '지역', '훈련 유형', '개강일', '종강일', '정원', '신청인원', '모집률(%)']
+            _cols = ['과정명', '회차', '기관명', '지역', '훈련 유형', '개강일', '종강일', '정원', '신청인원', '모집률(%)']
             if '개강까지' in show_sched.columns:
                 _cols = ['개강까지'] + _cols
             # height=560 고정 시 전체화면에서도 560px에 머물러 하단이 빈 공간으로 남음
@@ -915,6 +920,7 @@ with page_error_boundary():
                     show_sched[_cols], hide_index=True, width='stretch', height='stretch',
                     column_config={
                         '과정명': st.column_config.TextColumn(width='large'),
+                        '회차': st.column_config.NumberColumn(format="%d회차", width='small'),
                         '기관명': st.column_config.TextColumn(width='medium'),
                         '정원': st.column_config.NumberColumn(format="%d명"),
                         '신청인원': st.column_config.NumberColumn(format="%d명"),
