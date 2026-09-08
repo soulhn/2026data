@@ -8,7 +8,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import check_password, page_error_boundary, calc_recruit_rate
-from hrd_api import get_course_history_with_fallback, get_institutions
+from hrd_api import get_course_history_with_fallback, get_institutions, fetch_all_roster_counts
 from config import CACHE_TTL_API, COURSE_SHORT_NAMES
 
 st.set_page_config(page_title="HRD 등록 대비 개강 참석률", page_icon="🎯", layout="wide")
@@ -91,6 +91,37 @@ with page_error_boundary():
     # 수료율은 종료 회차에서만 의미가 있다 (진행중은 FINI_CNT가 0으로 내려옴)
     df['수료율'] = _pct(df['FINI_CNT'], df['TOT_PAR_MKS']).where(df['상태'] == '종료')
 
+    # ── 이탈 인원 · 80%이상수료 (명부 API 상태 집계) ──
+    # 회차 집계 API(_3.jsp)에는 이탈 수가 없다. 명부(_4.jsp)의 훈련생 상태를 회차별로 세어 붙인다.
+    # 개강 인원이 0인 개설예정 회차는 명부가 비므로 호출하지 않는다.
+
+    @st.cache_data(ttl=CACHE_TTL_API, show_spinner="HRD-Net 명부 조회 중… (회차별 이탈 인원)")
+    def load_roster_counts(rounds):
+        return fetch_all_roster_counts(get_institutions(), list(rounds))
+
+    rounds = tuple(
+        (r.TRPR_ID, int(r.TRPR_DEGR))
+        for r in df[df['TOT_PAR_MKS'] > 0][['TRPR_ID', 'TRPR_DEGR']].itertuples(index=False)
+    )
+    roster_counts, roster_error = load_roster_counts(rounds) if data_source == "API" and rounds else (None, None)
+    if roster_counts is not None and not roster_counts.empty:
+        df = df.merge(roster_counts, on=['TRPR_ID', 'TRPR_DEGR'], how='left')
+    else:
+        df['DROPOUT_CNT'] = pd.NA
+        df['PARTIAL_FINI_CNT'] = pd.NA
+    # 명부를 못 읽은 종료 회차는 개강 인원 − 수료로 대신한다. HRD 수료(finiCnt)에 조기취업이 빠져 있어
+    # 조기취업자가 있는 회차는 실제 이탈보다 그만큼 크게 잡힌다 (한화 18회차: 27 − 24 = 3, 명부 중도탈락 1 + 조기취업 2)
+    ended_fallback = (df['TOT_PAR_MKS'] - df['FINI_CNT']).where(df['상태'] == '종료')
+    df['이탈 인원'] = df['DROPOUT_CNT'].astype('Float64').fillna(ended_fallback.astype('Float64')).astype('Int64')
+    df['80%이상수료'] = df['PARTIAL_FINI_CNT'].astype('Float64').astype('Int64')
+    df['이탈률'] = (df['이탈 인원'].astype('Float64')
+                  / df['TOT_PAR_MKS'].astype('Float64').replace(0, pd.NA) * 100).round(1)
+
+    if roster_error:
+        st.warning(f"일부 회차 명부 조회 실패 — 해당 회차의 이탈 인원·80%이상수료는 비어 있습니다: {roster_error}")
+    elif roster_counts is None and data_source != "API":
+        st.caption("명부 API를 쓸 수 없어 이탈 인원은 종료 회차만 개강 인원 − 수료로 표시합니다. 80%이상수료는 비어 있습니다.")
+
     df = df.sort_values(['TR_STA_DT', 'TRPR_ID', 'TRPR_DEGR']).reset_index(drop=True)
 
     # ─────────────────── 필터 ───────────────────
@@ -128,9 +159,16 @@ with page_error_boundary():
               help="확정자 신고 기준 수강인원 (훈련생 명부와 일치)")
     k5.metric("수료 합계 (종료)", f"{tot_fini:,}명")
 
-    r1, r2, r3, r4 = st.columns(4)
+    known = view[view['이탈 인원'].notna()]
+    tot_drop = int(known['이탈 인원'].sum())
+    par_of_known = int(known['TOT_PAR_MKS'].sum())
+
+    r1, r2, r3, r4, r5 = st.columns(5)
     r1.metric("개강 참석률", f"{tot_par / tot_trp * 100:.1f}%" if tot_trp else "-",
               help="개강 인원 / 수강신청 × 100")
+    r5.metric("이탈률", f"{tot_drop / par_of_known * 100:.1f}%" if par_of_known else "-",
+              f"이탈 {tot_drop:,}명", delta_color="inverse",
+              help="이탈 인원 / 개강 인원 × 100 — 이탈 인원이 확인된 회차만 합산")
     r2.metric("모집률", f"{min(tot_trp / tot_fx * 100, 100):.1f}%" if tot_fx else "-",
               help="수강신청 / 정원 × 100 (상한 100%)")
     r3.metric("정원 충원율", f"{tot_par / tot_fx * 100:.1f}%" if tot_fx else "-",
@@ -192,11 +230,15 @@ with page_error_boundary():
     # ─────────────────── 회차별 상세 표 ───────────────────
 
     st.subheader("📋 회차별 모집·등록·수강 현황")
-    st.caption("HRD-Net 훈련일정 상세 API 집계값. 표 우측 상단에서 CSV로 내려받아 회사 페이지와 대조할 수 있습니다.")
+    st.caption(
+        "HRD-Net 훈련일정 상세 API 집계값 + 명부 상태 집계(이탈 인원·80%이상수료). "
+        "이탈 인원 = 개강 후 확정 인원 중 중도탈락·제적. 80%이상수료는 수료에 포함된 인원이라 이탈이 아닙니다. "
+        "표 우측 상단에서 CSV로 내려받아 회사 페이지와 대조할 수 있습니다."
+    )
 
     table_cols = ['과정', '회차', '상태', 'TR_STA_DT', 'TR_END_DT',
-                  'TOT_FXNUM', 'TOT_TRP_CNT', 'TOT_PAR_MKS', '신청 이탈', 'FINI_CNT',
-                  '개강 참석률', '모집률', '정원 충원율', '수료율']
+                  'TOT_FXNUM', 'TOT_TRP_CNT', 'TOT_PAR_MKS', '신청 이탈', '이탈 인원', 'FINI_CNT', '80%이상수료',
+                  '개강 참석률', '모집률', '정원 충원율', '수료율', '이탈률']
     st.dataframe(
         view.sort_values(['TR_STA_DT', 'TRPR_DEGR'], ascending=False)[table_cols],
         column_config={
@@ -206,11 +248,17 @@ with page_error_boundary():
             "TOT_TRP_CNT": st.column_config.NumberColumn("수강신청", format="%d명", help="HRD 등록 인원"),
             "TOT_PAR_MKS": st.column_config.NumberColumn("개강 인원", format="%d명", help="확정 신고 인원"),
             "신청 이탈":    st.column_config.NumberColumn("신청 이탈", format="%d명", help="수강신청 − 개강 인원"),
-            "FINI_CNT":    st.column_config.NumberColumn("수료", format="%d명"),
+            "이탈 인원":    st.column_config.NumberColumn("이탈 인원", format="%d명",
+                                                       help="명부 상태 중도탈락·제적 (개강 후 확정 인원 기준). 명부를 못 읽은 종료 회차는 개강 인원 − 수료 (조기취업이 섞여 실제보다 클 수 있음)"),
+            "FINI_CNT":    st.column_config.NumberColumn("수료", format="%d명", help="HRD-Net finiCnt = 정상수료 + 80%이상수료. 조기취업은 포함되지 않음"),
+            "80%이상수료":  st.column_config.NumberColumn("80%이상수료", format="%d명",
+                                                       help="수료에 포함된 인원 중 80%이상수료 상태. 회사 운영표의 '80%수료(비용O)' 항목과 대응"),
             "개강 참석률":  st.column_config.ProgressColumn("개강 참석률(%)", format="%.1f%%", min_value=0, max_value=100),
             "모집률":       st.column_config.ProgressColumn("모집률(%)", format="%.1f%%", min_value=0, max_value=100),
             "정원 충원율":  st.column_config.ProgressColumn("정원 충원율(%)", format="%.1f%%", min_value=0, max_value=100),
             "수료율":       st.column_config.ProgressColumn("수료율(%)", format="%.1f%%", min_value=0, max_value=100),
+            "이탈률":       st.column_config.ProgressColumn("이탈률(%)", format="%.1f%%", min_value=0, max_value=100,
+                                                         help="이탈 인원 / 개강 인원 × 100"),
         },
         hide_index=True,
         width='stretch',
@@ -241,13 +289,16 @@ with page_error_boundary():
 | 정원 | `totFxnum` | 승인 정원 |
 | 수강신청 | `totTrpCnt` | HRD 등록(수강신청) 누적 인원 |
 | 개강 인원 | `totParMks` | 확정 신고 인원으로 해석. **훈련생 명부(API 3) 건수와 정확히 일치**하는 것을 실측으로 확인 |
-| 수료 | `finiCnt` | 수료 인원. 진행중 회차는 0으로 내려옴 |
+| 수료 | `finiCnt` | 수료 인원 = 정상수료 + 80%이상수료. **조기취업은 빠져 있음** (명부 실측: 한화 3회차 정상 22 + 80% 1 = 23 = finiCnt, 조기취업 1 제외). 진행중 회차는 0으로 내려옴 |
+| 이탈 인원 | 명부 API(`_4.jsp`) `trneeSttusNm` | 회차별 명부에서 **중도탈락·제적** 상태를 센 값. 개강 후 확정 인원 기준 이탈이며, 회사 운영표의 **중도이탈**과 같은 단계 (개강 전 초기이탈은 명부에 없어 안 잡힘) |
+| 80%이상수료 | 명부 API `trneeSttusNm` | 수료 중 `80%이상수료` 상태만 센 값. 이탈이 아니라 수료에 포함되며, 회사 운영표의 '80%수료(비용O)' 항목 대조용 |
 | 상태 | `trStaDt`/`trEndDt` | 오늘(KST) 기준으로 개설예정 · 진행중 · 종료를 이 화면이 계산 |
 
 **제외한 것**
 
 - **회차 0 레코드 (과정마다 1건, 총 {n_courses}건)** — 개강일·종료일이 없고 수강신청 0, 정원만 30으로 내려오는 과정 헤더(템플릿) 행입니다. 실제 기수가 아니므로 표·합계·차트 모두에서 뺐습니다. 운영 현황 페이지도 같은 규칙입니다.
-- **개인 단위 데이터** — 명부·출결(중도탈락, 제적 등)은 이 화면에 넣지 않았습니다. 이 화면은 HRD-Net 과정 집계값만 다룹니다.
+- **개인 식별 정보** — 명부는 상태를 회차별로 세는 데만 쓰고 이름·ID는 화면에 올리지 않습니다. 출결 기록은 다루지 않습니다.
+- **명부 조회 실패 회차** — 이탈 인원·80%이상수료가 비어 보입니다(상단 경고). 종료 회차만 개강 인원 − 수료로 이탈 인원을 대신 채우는데, 조기취업자가 섞여 실제 이탈보다 클 수 있습니다.
 - **DB 폴백 시 엔코아 과정** — ETL이 한화 과정만 수집하므로 API 실패 시 한화만 보입니다 (상단 경고로 표시).
 
 **가공한 것**
@@ -276,6 +327,8 @@ with page_error_boundary():
 | 4 | 수료 인원 | 수료 (종료 회차만) | 수료·조기취업 인원 | 조기취업이 수료에 포함되는지 확인 |
 | 5 | 정원 | 정원 | 승인 정원 | 회차별 변경 여부 |
 | 6 | 기준 시점 | 조회 시각 스냅샷 | 회사 페이지 기준일 | 며칠 차이만으로도 진행중 회차 수치가 달라짐 |
+| 7 | 이탈 인원 | 이탈 인원 (명부 중도탈락·제적) | 중도이탈 | 같아야 정상. 회사 페이지의 초기이탈은 명부에 없으므로 여기엔 안 잡힘 |
+| 8 | 80%이상수료 | 80%이상수료 | 80%수료(비용O) | 건수가 같아야 정상. 다르면 상태 반영 시점 차이 |
         """)
         if not pre_open.empty:
             rows = ", ".join(

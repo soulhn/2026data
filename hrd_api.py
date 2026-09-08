@@ -556,3 +556,80 @@ def get_course_history_with_fallback():
     except Exception as e:
         logger.warning(f"이력 API 호출 실패, DB 폴백: {e}")
         return _get_course_history_from_db(), "DB_FALLBACK", f"{type(e).__name__}: {e}"
+
+
+# ── 회차별 명부 상태 집계 (이탈 인원·80%이상수료) ─────────────────────
+
+ROSTER_COUNT_COLUMNS = ["TRPR_ID", "TRPR_DEGR", "DROPOUT_CNT", "PARTIAL_FINI_CNT"]
+
+
+def summarize_roster_status(trainees_df):
+    """명부 → (TRPR_ID, TRPR_DEGR)별 이탈 인원·80%이상수료 인원.
+
+    DROPOUT_CNT      = 상태에 '중도탈락' 또는 '제적' 포함 (개강 후 확정 인원 기준 이탈)
+    PARTIAL_FINI_CNT = 상태에 '80%' 포함 ('80%이상수료'). 수료에 포함되는 값이며 이탈이 아니다 —
+                       회사 운영표가 '80%수료(비용O)'를 따로 관리해 옆에 나란히 보여주기 위한 컬럼
+    """
+    if trainees_df is None or trainees_df.empty:
+        return pd.DataFrame(columns=ROSTER_COUNT_COLUMNS)
+    t = trainees_df.copy()
+    status = t["TRNEE_STATUS"].astype(str)
+    t["DROPOUT_CNT"] = status.str.contains("중도탈락|제적", na=False)
+    t["PARTIAL_FINI_CNT"] = status.str.contains("80%", na=False)
+    t["TRPR_DEGR"] = pd.to_numeric(t["TRPR_DEGR"], errors="coerce").fillna(0).astype(int)
+    out = t.groupby(["TRPR_ID", "TRPR_DEGR"])[["DROPOUT_CNT", "PARTIAL_FINI_CNT"]].sum().reset_index()
+    out[["DROPOUT_CNT", "PARTIAL_FINI_CNT"]] = out[["DROPOUT_CNT", "PARTIAL_FINI_CNT"]].astype(int)
+    return out[ROSTER_COUNT_COLUMNS]
+
+
+def fetch_all_roster_counts(pairs, rounds, deadline=None):
+    """회차 목록의 명부를 **병렬** 조회해 이탈·80%이상수료 인원을 집계.
+
+    Args:
+        pairs: `get_institutions()` 결과 — (인증키, 과정ID). 명부 API는 키 소속 기관 과정만 열리므로
+               과정ID에 맞는 키를 골라 쓴다. 키가 없는 과정은 건너뛴다.
+        rounds: (과정ID, 회차) 목록. 개강 인원이 0인 개설예정 회차는 호출 전에 빼는 것이 좋다.
+
+    Returns:
+        (counts_df, error_detail) — 실패한 회차는 결과에서 빠지고 사유를 문자열로 돌려준다.
+        전부 실패해도 예외를 던지지 않는다 (이 집계는 퍼널 페이지의 보조 컬럼이라 화면을 멈추면 안 됨).
+    """
+    if deadline is None:
+        deadline = config.API_TOTAL_DEADLINE
+    key_of = {cid: key for key, cid in pairs}
+    targets = [(cid, int(degr)) for cid, degr in rounds if cid in key_of]
+    if not targets:
+        return pd.DataFrame(columns=ROSTER_COUNT_COLUMNS), None
+
+    session = get_retry_session(retries=2, backoff_factor=0.5)
+    frames, reasons = [], {}
+    executor = ThreadPoolExecutor(max_workers=config.API_MAX_WORKERS)
+    try:
+        future_map = {
+            executor.submit(fetch_trainee_roster, session, key_of[cid], cid, degr): (cid, degr)
+            for cid, degr in targets
+        }
+        try:
+            for future in as_completed(future_map, timeout=deadline):
+                cid, degr = future_map[future]
+                try:
+                    df = future.result()
+                except Exception as e:
+                    logger.warning(f"명부({cid} {degr}회차) 조회 실패, 건너뜀: {e}")
+                    reasons[(cid, degr)] = f"{type(e).__name__}: {str(e).strip().splitlines()[0][:120]}"
+                    continue
+                if not df.empty:
+                    frames.append(df)
+        except FuturesTimeoutError:
+            pending = [k for f, k in future_map.items() if not f.done()]
+            logger.warning(f"명부 조회 {deadline}초 초과 — 미완료 회차 건너뜀: {pending}")
+            for k in pending:
+                reasons[k] = f"전체 상한 {deadline}초 초과 (응답 지연)"
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    error_detail = None
+    if reasons:
+        error_detail = " / ".join(f"{cid} {degr}회차 → {msg}" for (cid, degr), msg in reasons.items())
+    roster = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=ROSTER_COLUMNS)
+    return summarize_roster_status(roster), error_detail
