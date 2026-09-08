@@ -79,6 +79,7 @@ saramin_etl.py (매일 09시)       →               ← 운영 현황: hrd_api
 | `TB_JOB_POSTING` | 채용공고 (사람인 API 수집) | `JOB_ID` | ~5,000 |
 | `TB_JOB_POSTING_KEYWORD` | 채용공고-키워드 다대다 매핑 | `(JOB_ID, SEARCH_KEYWORD)` | ~7,000 |
 | `TB_JOB_POSTING_REGION` | 채용공고-지역 다대다 매핑 | `(JOB_ID, REGION)` | ~6,000 |
+| `TB_JOB_POSTING_TRACK` | 채용공고-과정 트랙 매핑 (MLE·AIO·MLO·COMMON, 규칙 기반 태깅) | `(JOB_ID, TRACK)` | ~3,000 |
 
 > 컬럼별 상세 명세는 대시보드 **DB 명세** 페이지에서 확인 가능. API 매핑은 [docs/api/hrd_net.md](./docs/api/hrd_net.md) · [docs/api/saramin.md](./docs/api/saramin.md) 참조
 
@@ -97,7 +98,7 @@ saramin_etl.py (매일 09시)       →               ← 운영 현황: hrd_api
  ┃ ┣ 📜 종료과정_성과.py          # [내부] 기수별 심층 분석 6탭 + 전체 기수 비교
  ┃ ┣ 📜 현재_운영_현황.py         # [내부] 출석률 게이지, 출결추이, 누적 위험지표
  ┃ ┣ 📜 매출_분석.py              # [내부] 단위기간별 훈련비 매출 4탭 + 전체 기수 비교
- ┃ ┣ 📜 채용_동향.py              # [채용] 사람인 채용공고 분석 (진행중/종료 분리, 키워드 추이)
+ ┃ ┣ 📜 채용_동향.py              # [채용] 과정별 취업 방향(MLE·AIO·MLO) 채용공고 분석, 신입 가능 필터
  ┃ ┣ 📜 DB_명세.py               # [공통] DB 테이블·컬럼 명세 및 원본 데이터 조회
  ┃ ┣ 📜 SQL_Playground.py       # [공통] SELECT 전용 SQL 쿼리 실행 (예제 쿼리 제공)
  ┃ ┣ 📜 AI_리포트.py             # [AI] Gemini 기반 기수별 성과 리포트 자동 생성
@@ -109,12 +110,12 @@ saramin_etl.py (매일 09시)       →               ← 운영 현황: hrd_api
  ┃ ┣ 📜 test_init_db.py          # 테이블 생성, 멱등성, 인덱스
  ┃ ┣ 📜 test_hrd_etl.py          # clean_time, get_month_list, batch_execute
  ┃ ┣ 📜 test_market_etl.py       # parse_rows_xml, ymd, shards
- ┃ ┣ 📜 test_saramin_etl.py     # 사람인 ETL 파싱, 키워드 매핑, 캐시 집계
+ ┃ ┣ 📜 test_saramin_etl.py     # 사람인 ETL 파싱, 트랙 분류 규칙, 태깅, 보존 정책, 캐시 집계
  ┃ ┗ 📜 test_hrd_api.py           # API 모듈 파싱, 병렬호출, 폴백, 컬럼 호환성
  ┣ 📜 home.py                   # 메인 대시보드 (시장 포지셔닝, KPI 요약, 오늘의 출결 현황)
  ┣ 📜 hrd_etl.py                # [수집] 내부 과정/훈련생/출결 + 캐시 사전 집계
  ┣ 📜 market_etl.py             # [수집] 외부 시장 전체 데이터 (매일 수집) + 캐시 사전 집계
- ┣ 📜 saramin_etl.py            # [수집] 사람인 채용공고 (키워드 20개, 1일 단위 분할 수집)
+ ┣ 📜 saramin_etl.py            # [수집] 사람인 채용공고 (직무 코드 13 + 키워드 29 쿼리, 1일 단위 분할) + 과정 트랙 태깅
  ┣ 📜 init_db.py                # [DB] 테이블 DDL + 인덱스 10개 + 마이그레이션
  ┣ 📜 config.py                 # [설정] 전역 상수 (출결, 매출, AI, 캐시 TTL, ETL 파라미터)
  ┣ 📜 hrd_api.py                # [실시간] 운영 현황 API 직접 호출 (DB 폴백)
@@ -243,7 +244,7 @@ Repository Secrets에 등록:
 - **시장 분석:** 내부 과정 vs 시장 교차분석, 시계열 트렌드, 경쟁 심화도, 비용-성과 시뮬레이터, 자격증 분석 (scikit-learn)
 - **매출 분석:** 단위기간별 훈련비 청구 계산 (일훈련비 145,200원 기준), 기수별 매출 비교
 - **AI 리포트:** OpenAI (gpt-5-mini) 기반 기수별 성과 리포트 자동 생성
-- **채용 동향:** 사람인 API 기반 IT 채용공고 분석 (키워드 20개, 1일 단위 분할 수집, 다중 지역 지원, 진행중/종료 분리)
+- **채용 동향:** AI캠퍼스 3개 과정(MLE·AIO·MLO)의 취업 방향별 채용공고 — 사람인 직무 코드·키워드 42개 쿼리로 수집, 규칙 기반 트랙 분류, 신입 가능 필터, 공고 목록·CSV
 - **위험 관리:** 누적 출결 위험 지표 (결석 3회+, 지각 5회+, 조퇴 5회+), 출결 추이 모니터링
 
 ---

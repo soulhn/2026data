@@ -14,3 +14,6 @@ settings.local.json
 ._*
 .Spotlight-V100
 .Trashes
+
+# 커리큘럼 원본 (내부 자료 — 저장소에 올리지 않음)
+data/curriculum/

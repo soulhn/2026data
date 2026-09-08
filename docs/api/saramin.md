@@ -281,6 +281,39 @@ ETL 후 사전 집계된 캐시 데이터. 대시보드에서 빠른 조회용.
 
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
-| `CACHE_KEY` | TEXT PK | 캐시 식별자 (예: `saramin_keyword_trend`) |
+| `CACHE_KEY` | TEXT PK | 캐시 식별자 (예: `saramin_track_monthly`) |
 | `CACHE_DATA` | TEXT | JSON 직렬화된 집계 결과 |
 | `COMPUTED_AT` | TIMESTAMP | 집계 시각 |
+
+### TB_JOB_POSTING_TRACK (2026-09)
+
+공고 ↔ 과정 트랙 매핑. `saramin_etl.tag_tracks()`가 `config.SARAMIN_TRACK_RULES`로 전량 재생성.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `JOB_ID` | TEXT | 공고 ID (FK → TB_JOB_POSTING) |
+| `TRACK` | TEXT | `MLE` / `AIO` / `MLO` / `COMMON` |
+| `SCORE` | INTEGER | 분류 점수 (강한 신호 3 + 보조 1) |
+| `MATCH_SOURCE` | TEXT | `code` / `keyword` / `both` |
+| `ENTRY_LEVEL` | INTEGER | 신입 지원 가능 (`EXPERIENCE_CD ∈ {0,1,3}`) |
+| `TAGGED_AT` | TIMESTAMP | 태깅 시각 |
+
+**PK:** (`JOB_ID`, `TRACK`) 복합키
+
+---
+
+## 직무 코드(job_cd) 활용 (2026-09)
+
+출처: https://oapi.saramin.co.kr/guide/code-table5?mcode=2 (IT개발·데이터, 261행). 직무명과 스킬 키워드가
+한 코드 체계에 섞여 있고, 응답의 `job-code`도 같은 목록으로 돌아온다 (`JOB_CD`에 저장, 쉼표 구분).
+
+| 구분 | 코드: 이름 |
+|---|---|
+| 직무 | 83 데이터엔지니어 · 84 백엔드/서버개발 · 87 웹개발 · 92 프론트엔드 · 2232 풀스택 · 82 데이터분석가 · 2248 데이터 사이언티스트 · 2246 BI 엔지니어 · 107 데이터시각화 · 105 데이터라벨링 · 95 DBA · 127 인프라 · 146 DevOps · 136 클라우드 · 100 SE(시스템엔지니어) · 150 ETL · 122 알고리즘 |
+| AI | 181 AI(인공지능) · 109 머신러닝 · 108 딥러닝 · 160 NLP(자연어처리) · 131 챗봇 · 133 컴퓨터비전 · 123 영상처리 · 116 빅데이터 |
+| 스킬 | 272 Python · 235 Java · 291 Spring · 292 SpringBoot · 214 Docker · 244 Kubernetes · 201 AWS · 246 Linux · 241 Kafka · 289 Spark · 227 Hadoop · 217 ElasticStack · 254 MongoDB · 257 MySQL · 270 PostgreSQL · 280 Redis · 259 NoSQL · 293 SQL · 273 Pytorch · 300 Tensorflow · 142 API · 282 RestAPI |
+| 코드 없음 | MLOps · LLM · RAG · LangChain · Airflow · MLflow · FastAPI · Neo4j · n8n · 에이전트 · 파인튜닝 · Terraform → `keywords`로만 수집 |
+
+- 수집 쿼리(`config.SARAMIN_QUERIES`)는 코드 하나씩만 보낸다 — 쉼표 다중 지정의 OR/AND 의미가 문서에 없어 검증 전까지 단일 코드
+- `JOB_NM`(이름 목록)은 `JOB_CD`보다 토큰이 많을 수 있다 — 스킬명이 이름에만 붙는 경우가 있어 분류는 숫자 코드로 한다
+- 경력 필터 파라미터는 없다 → 신입 가능 여부는 `EXPERIENCE_CD`로 후처리

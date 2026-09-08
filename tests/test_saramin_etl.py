@@ -345,7 +345,7 @@ class TestMergeCumulative:
         assert {"SEARCH_KEYWORD": "Python", "YEAR_MONTH": "2026-04", "CNT": 110} in merged
 
 
-def _insert_posting(conn, job_id, posting_dt, expiration_dt, keyword="Python"):
+def _insert_posting(conn, job_id, posting_dt, expiration_dt, keyword="Python", track="MLE"):
     conn.execute(
         "INSERT INTO TB_JOB_POSTING (JOB_ID, ACTIVE, POSTING_DT, EXPIRATION_DT, "
         "YEAR_MONTH, JOB_MID_NM, SEARCH_KEYWORD, COMPANY_NM) "
@@ -360,6 +360,159 @@ def _insert_posting(conn, job_id, posting_dt, expiration_dt, keyword="Python"):
         "INSERT INTO TB_JOB_POSTING_REGION (JOB_ID, REGION) VALUES (?, ?)",
         (job_id, "서울"),
     )
+    conn.execute(
+        "INSERT INTO TB_JOB_POSTING_TRACK (JOB_ID, TRACK, SCORE, MATCH_SOURCE, ENTRY_LEVEL) "
+        "VALUES (?, ?, 3, 'keyword', 1)",
+        (job_id, track),
+    )
+
+
+def _insert_raw_posting(conn, job_id, title, job_cd, job_mid_cd='2', job_type_cd='1',
+                        experience_cd='1', keyword=''):
+    """분류 규칙 검증용 원본 공고 (진행중, 게시 5일 전)."""
+    import datetime as dt
+    today = dt.date.today()
+    conn.execute(
+        "INSERT INTO TB_JOB_POSTING (JOB_ID, ACTIVE, POSITION_TITLE, KEYWORD, JOB_CD, JOB_MID_CD, "
+        "JOB_TYPE_CD, EXPERIENCE_CD, POSTING_DT, EXPIRATION_DT, YEAR_MONTH, COMPANY_NM) "
+        "VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'TestCorp')",
+        (job_id, title, keyword, job_cd, job_mid_cd, job_type_cd, experience_cd,
+         (today - dt.timedelta(days=5)).isoformat(), (today + dt.timedelta(days=20)).isoformat(),
+         (today - dt.timedelta(days=5)).isoformat()[:7]),
+    )
+
+
+class TestBuildQueryParams:
+    def test_keyword_query(self):
+        p = saramin_etl.build_query_params({'label': 'LLM', 'keywords': 'LLM'}, '1', '2')
+        assert p['keywords'] == 'LLM'
+        assert 'job_cd' not in p
+        assert p['published_min'] == '1' and p['published_max'] == '2'
+
+    def test_job_cd_query(self):
+        p = saramin_etl.build_query_params({'label': '데이터엔지니어(83)', 'job_cd': '83'}, '1', '2')
+        assert p['job_cd'] == '83'
+        assert 'keywords' not in p
+
+    def test_config_queries_within_daily_budget(self):
+        """수집 쿼리 수 × 일 분할 창 수가 일일 호출 한도 안에 들어야 한다."""
+        from config import SARAMIN_QUERIES, SARAMIN_PUBLISHED_DAYS, SARAMIN_API_CALL_LIMIT
+        planned = len(SARAMIN_QUERIES) * (SARAMIN_PUBLISHED_DAYS + 1)
+        assert planned <= SARAMIN_API_CALL_LIMIT, f"예정 호출 {planned}회 > 한도 {SARAMIN_API_CALL_LIMIT}"
+        labels = [q['label'] for q in SARAMIN_QUERIES]
+        assert len(labels) == len(set(labels)), "수집 쿼리 label 중복"
+        for q in SARAMIN_QUERIES:
+            assert bool(q.get('keywords')) ^ bool(q.get('job_cd')), f"keywords/job_cd 중 하나만: {q}"
+
+
+class TestClassifyPosting:
+    """트랙 분류 규칙 — 강한 신호 3점 / 보조 1점 / 임계 3, 제외 규칙, 약어 오탐 방지."""
+
+    def _c(self, title, job_cd='', mid='2', jtype='1', exp='1', keyword=''):
+        return saramin_etl.classify_posting(title, keyword, job_cd, mid, jtype, exp)
+
+    def test_llm_title_is_mle_keyword(self):
+        r = self._c("LLM 엔지니어 (RAG 파이프라인)")
+        assert 'MLE' in r
+        assert r['MLE'][1] == 'keyword'
+        assert 'AIO' not in r   # AIO 는 LLM 이 보조 신호(1점)뿐
+
+    def test_two_codes_is_mlo_code(self):
+        r = self._c("백엔드 개발자", job_cd='83,214')   # 데이터엔지니어 + Docker
+        assert r.get('MLO', (0, None))[1] == 'code'
+
+    def test_single_code_alone_is_not_enough(self):
+        """사람인 태그 하나(3점)만으로는 태깅하지 않는다 — 텍스트 근거나 코드 2개 필요."""
+        assert 'MLO' not in self._c("CAE 해석 소프트웨어 개발", job_cd='83')
+        assert 'MLO' in self._c("데이터 엔지니어", job_cd='83')
+
+    def test_weak_codes_only_never_tags(self):
+        """보조 코드만 4개 쌓여도(클라우드·AWS·Docker·Redis) 강한 코드 없이는 태깅하지 않는다."""
+        assert 'MLO' not in self._c("Cloud Security Engineer", job_cd='136,201,214,280')
+        assert 'MLO' in self._c("Cloud Security Engineer", job_cd='244,136,201')   # Kubernetes 강한 코드
+
+    def test_code_only_needs_role_word_in_title(self):
+        """직무 태그만 잔뜩 붙은 일괄 채용 공고는 제목에 직무 단어가 없으면 태깅하지 않는다."""
+        assert self._c("2026년도 신입직원 채용공고", job_cd='83,241,146') == {}
+        assert 'MLO' in self._c("데이터 플랫폼 엔지니어 채용", job_cd='83,241')
+
+    def test_trainee_recruitment_excluded(self):
+        assert self._c("AI 실무인재 양성과정 교육생 모집", job_cd='83,181') == {}
+
+    def test_planner_and_qa_excluded(self):
+        assert self._c("AI Agent 서비스 기획자", job_cd='131,272') == {}
+        assert self._c("QA 엔지니어", job_cd='272,84') == {}
+
+    def test_marketing_and_labeling_excluded(self):
+        assert self._c("퍼포먼스 마케팅 담당자", job_cd='272,84') == {}
+        assert self._c("AI 학습 데이터 라벨링 연구원", job_cd='83,181') == {}
+        assert self._c("AWS B2B 세일즈 디벨로퍼", job_cd='146,201') == {}
+
+    def test_non_it_excluded(self):
+        assert self._c("LLM 엔지니어", mid='3') == {}
+
+    def test_part_time_excluded(self):
+        assert self._c("LLM 엔지니어", jtype='5') == {}
+
+    def test_instructor_excluded(self):
+        assert self._c("파이썬 강사 모집", job_cd='272') == {}
+
+    def test_acronym_not_matched_inside_word(self):
+        """STORAGE 안의 RAG, ETL 이 아닌 SETTLE 등은 매치되지 않는다."""
+        assert 'MLE' not in self._c("STORAGE 관리자")
+        assert 'MLO' not in self._c("SETTLEMENT 시스템 개발")
+
+    def test_common_requires_entry_level(self):
+        assert 'COMMON' in self._c("Python 개발자", job_cd='272', exp='0')
+        assert 'COMMON' not in self._c("Python 개발자", job_cd='272', exp='2')
+
+    def test_entry_level_flag(self):
+        assert self._c("LLM 엔지니어", exp='3')['MLE'][2] == 1
+        assert self._c("LLM 엔지니어", exp='2')['MLE'][2] == 0
+
+    def test_multi_track_and_both_source(self):
+        r = self._c("LLM 에이전트 개발자 (FastAPI)", job_cd='272,84', exp='0')
+        assert set(r) >= {'MLE', 'AIO', 'COMMON'}
+        assert r['AIO'][1] == 'both'      # 에이전트(정규식) + 272·84(보조 코드)
+
+    def test_weak_signals_alone_can_reach_threshold(self):
+        """보조 신호 3개(코드 272·84 + Python 텍스트)로도 AIO 임계에 도달한다."""
+        r = self._c("Python 백엔드 개발자", job_cd='272,84', exp='2')
+        assert r.get('AIO', (0,))[0] == 3
+
+
+class TestTagTracks:
+    def test_tags_written_and_idempotent(self, mock_saramin_db):
+        _insert_raw_posting(mock_saramin_db, "J1", "LLM 엔지니어", "160", experience_cd='1')
+        _insert_raw_posting(mock_saramin_db, "J2", "데이터 엔지니어", "83,241", experience_cd='2')
+        _insert_raw_posting(mock_saramin_db, "J3", "영업 관리자", "", job_mid_cd='8')
+        mock_saramin_db.commit()
+
+        counts = saramin_etl.tag_tracks()
+        assert counts.get('MLE', 0) >= 1 and counts.get('MLO', 0) >= 1
+
+        cursor = mock_saramin_db.cursor()
+        cursor.execute("SELECT JOB_ID, TRACK, ENTRY_LEVEL FROM TB_JOB_POSTING_TRACK ORDER BY JOB_ID, TRACK")
+        rows = cursor.fetchall()
+        assert ("J1", "MLE", 1) in rows
+        assert ("J2", "MLO", 0) in rows
+        assert not any(r[0] == "J3" for r in rows)
+
+        first = len(rows)
+        saramin_etl.tag_tracks()   # 전량 재생성 — 중복 없이 같은 결과
+        cursor.execute("SELECT COUNT(*) AS cnt FROM TB_JOB_POSTING_TRACK")
+        assert cursor.fetchone()[0] == first
+
+    def test_retag_drops_tags_of_deleted_postings(self, mock_saramin_db):
+        _insert_raw_posting(mock_saramin_db, "J1", "LLM 엔지니어", "160")
+        mock_saramin_db.commit()
+        saramin_etl.tag_tracks()
+        mock_saramin_db.execute("DELETE FROM TB_JOB_POSTING WHERE JOB_ID = 'J1'")
+        mock_saramin_db.commit()
+        saramin_etl.tag_tracks()
+        cursor = mock_saramin_db.cursor()
+        cursor.execute("SELECT COUNT(*) AS cnt FROM TB_JOB_POSTING_TRACK")
+        assert cursor.fetchone()[0] == 0
 
 
 class TestCleanupOldPostings:
@@ -393,7 +546,7 @@ class TestCleanupOldPostings:
         saramin_etl.cleanup_old_postings()
 
         cursor = mock_saramin_db.cursor()
-        for table in ("TB_JOB_POSTING_KEYWORD", "TB_JOB_POSTING_REGION"):
+        for table in ("TB_JOB_POSTING_KEYWORD", "TB_JOB_POSTING_REGION", "TB_JOB_POSTING_TRACK"):
             cursor.execute(
                 f"SELECT COUNT(*) AS cnt FROM {table} WHERE JOB_ID NOT IN "
                 f"(SELECT JOB_ID FROM TB_JOB_POSTING)"
@@ -419,11 +572,12 @@ class TestCleanupOldPostings:
         cursor = mock_saramin_db.cursor()
         cursor.execute(
             "SELECT CACHE_DATA FROM TB_MARKET_CACHE WHERE CACHE_KEY = ?",
-            (saramin_etl.CacheKey.SARAMIN_MONTHLY,),
+            (saramin_etl.CacheKey.SARAMIN_TRACK_MONTHLY,),
         )
         rows = json.loads(cursor.fetchone()[0])
-        by_month = {r["YEAR_MONTH"]: r["CNT"] for r in rows}
-        assert by_month.get(old_month) == 2, f"과거 월 추이 소실: {by_month}"
+        by_month = {(r["TRACK"], r["YEAR_MONTH"]): r["CNT"] for r in rows}
+        assert by_month.get(("MLE", old_month)) == 2, f"과거 월 추이 소실: {by_month}"
+        assert by_month.get(("ALL", old_month)) == 2, f"전체 행 추이 소실: {by_month}"
 
 
 class TestCacheAggregations:
@@ -438,4 +592,14 @@ class TestCacheAggregations:
         cursor = mock_saramin_db.cursor()
         cursor.execute("SELECT COUNT(*) AS cnt FROM TB_MARKET_CACHE WHERE CACHE_KEY LIKE 'saramin_%'")
         count = cursor.fetchone()[0]
-        assert count == 11
+        assert count == 2   # saramin_track_monthly · saramin_query_hits
+
+    def test_legacy_cache_keys_removed(self, mock_saramin_db):
+        """트랙 개편 이전 캐시 키는 집계 시 정리된다."""
+        mock_saramin_db.execute(
+            "INSERT INTO TB_MARKET_CACHE (CACHE_KEY, CACHE_DATA) VALUES ('saramin_kpi', '[]')")
+        mock_saramin_db.commit()
+        saramin_etl.compute_and_cache_aggregations()
+        cursor = mock_saramin_db.cursor()
+        cursor.execute("SELECT COUNT(*) AS cnt FROM TB_MARKET_CACHE WHERE CACHE_KEY = 'saramin_kpi'")
+        assert cursor.fetchone()[0] == 0

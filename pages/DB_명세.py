@@ -178,12 +178,24 @@ with page_error_boundary():
             ],
         },
         "TB_JOB_POSTING_KEYWORD": {
-            "설명": "채용공고-키워드 매핑. 공고와 검색 키워드 간 다대다 관계.",
+            "설명": "채용공고-수집 쿼리 매핑. 공고가 어떤 수집 쿼리(직무 코드·키워드)로 들어왔는지의 다대다 관계.",
             "PK": "(JOB_ID, SEARCH_KEYWORD)",
             "columns": [
                 ("JOB_ID",          "TEXT",      "사람인 공고 ID (FK → TB_JOB_POSTING)"),
-                ("SEARCH_KEYWORD",  "TEXT",      "수집 시 사용된 검색 키워드"),
+                ("SEARCH_KEYWORD",  "TEXT",      "수집 쿼리 라벨 (config.SARAMIN_QUERIES.label)"),
                 ("COLLECTED_AT",    "TIMESTAMP", "수집 시각"),
+            ],
+        },
+        "TB_JOB_POSTING_TRACK": {
+            "설명": "채용공고-과정 트랙 매핑. saramin_etl.tag_tracks()가 분류 규칙(config.SARAMIN_TRACK_RULES)으로 전량 재생성. 한 공고가 여러 트랙에 붙을 수 있음.",
+            "PK": "(JOB_ID, TRACK)",
+            "columns": [
+                ("JOB_ID",          "TEXT",      "사람인 공고 ID (FK → TB_JOB_POSTING)"),
+                ("TRACK",           "TEXT",      "과정 트랙 — MLE(머신러닝캠프) / AIO(멀티에이전트) / MLO(AI Ready 데이터) / COMMON(공통)"),
+                ("SCORE",           "INTEGER",   "분류 점수 (강한 신호 3점 + 보조 신호 1점, 임계 3)"),
+                ("MATCH_SOURCE",    "TEXT",      "매칭 근거 — code(직무 코드) / keyword(제목·키워드) / both"),
+                ("ENTRY_LEVEL",     "INTEGER",   "신입 지원 가능 (EXPERIENCE_CD가 경력무관·신입·신입/경력이면 1)"),
+                ("TAGGED_AT",       "TIMESTAMP", "태깅 시각"),
             ],
         },
         "TB_MARKET_CACHE": {
@@ -205,6 +217,7 @@ with page_error_boundary():
         "TB_COURSE_MASTER":  ["EI_EMPL_RATE_3", "EI_EMPL_RATE_6", "HRD_EMPL_RATE_6"],
         "TB_JOB_POSTING":    ["JOB_TYPE_NM", "EDU_LV_NM", "EXPERIENCE_NM", "SALARY_NM", "CLOSE_TYPE_NM", "SEARCH_KEYWORD", "REGION"],
         "TB_JOB_POSTING_KEYWORD": ["SEARCH_KEYWORD"],
+        "TB_JOB_POSTING_TRACK": ["TRACK", "MATCH_SOURCE", "ENTRY_LEVEL"],
         "TB_MARKET_CACHE":   ["CACHE_KEY"],
     }
 
@@ -323,7 +336,8 @@ with page_error_boundary():
         if s["trainee_status"] is None:
             s["trainee_status"] = load_data("SELECT TRNEE_STATUS as 훈련생상태, COUNT(*) as 건수 FROM TB_TRAINEE_INFO GROUP BY TRNEE_STATUS ORDER BY 건수 DESC")
         s["job_region"] = load_data("SELECT REGION as 지역, COUNT(*) as 건수 FROM TB_JOB_POSTING WHERE REGION IS NOT NULL AND REGION != '' GROUP BY REGION ORDER BY 건수 DESC")
-        s["job_keyword"] = load_data("SELECT SEARCH_KEYWORD as 키워드, COUNT(*) as 건수 FROM TB_JOB_POSTING_KEYWORD GROUP BY SEARCH_KEYWORD ORDER BY 건수 DESC")
+        s["job_keyword"] = load_data("SELECT SEARCH_KEYWORD as 수집쿼리, COUNT(*) as 건수 FROM TB_JOB_POSTING_KEYWORD GROUP BY SEARCH_KEYWORD ORDER BY 건수 DESC")
+        s["job_track"] = load_data("SELECT TRACK as 과정, COUNT(*) as 건수, SUM(ENTRY_LEVEL) as 신입가능 FROM TB_JOB_POSTING_TRACK GROUP BY TRACK ORDER BY 건수 DESC")
         s["job_year_month"] = load_data("SELECT YEAR_MONTH as 연월, COUNT(*) as 건수 FROM TB_JOB_POSTING WHERE YEAR_MONTH IS NOT NULL GROUP BY YEAR_MONTH ORDER BY 연월")
         s["cache_items"]   = load_data("SELECT CACHE_KEY as 캐시키, COMPUTED_AT as 계산시각 FROM TB_MARKET_CACHE ORDER BY CACHE_KEY")
         df_last = load_data("SELECT MAX(COLLECTED_AT) AS LAST_AT FROM TB_COURSE_MASTER")
@@ -505,10 +519,16 @@ with page_error_boundary():
                     if not df.empty: st.dataframe(df, hide_index=True, width='stretch')
 
             elif tbl_name == "TB_JOB_POSTING_KEYWORD":
-                st.markdown("*키워드별 매핑 건수*")
+                st.markdown("*수집 쿼리별 매핑 건수*")
                 df = counts.get("job_keyword", pd.DataFrame())
                 if not df.empty: st.dataframe(df, hide_index=True, width='stretch')
                 else: st.caption("데이터 없음")
+
+            elif tbl_name == "TB_JOB_POSTING_TRACK":
+                st.markdown("*과정 트랙별 태깅 건수*")
+                df = counts.get("job_track", pd.DataFrame())
+                if not df.empty: st.dataframe(df, hide_index=True, width='stretch')
+                else: st.caption("데이터 없음 — saramin_etl.py --tag-only 실행 필요")
 
             elif tbl_name == "TB_MARKET_CACHE":
                 df = counts.get("cache_items", pd.DataFrame())

@@ -158,6 +158,21 @@ def init_all_tables():
     ''')
 
     # ==========================================
+    # [매핑] 채용공고 ↔ 과정 트랙 (다대다) — saramin_etl.tag_tracks() 가 전량 재생성
+    # ==========================================
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS TB_JOB_POSTING_TRACK (
+            JOB_ID          TEXT NOT NULL,
+            TRACK           TEXT NOT NULL,
+            SCORE           INTEGER,
+            MATCH_SOURCE    TEXT,
+            ENTRY_LEVEL     INTEGER,
+            TAGGED_AT       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (JOB_ID, TRACK)
+        )
+    ''')
+
+    # ==========================================
     # [캐시] 시장 동향 집계 캐시 (ETL 후 pre-compute)
     # ==========================================
     cursor.execute('''
@@ -226,6 +241,7 @@ def init_all_tables():
         ('IDX_JOB_SEARCH_KW',    'TB_JOB_POSTING', 'SEARCH_KEYWORD'),
         ('IDX_JOB_KW_KEYWORD',   'TB_JOB_POSTING_KEYWORD', 'SEARCH_KEYWORD'),
         ('IDX_JOB_RGN_REGION',   'TB_JOB_POSTING_REGION',  'REGION'),
+        ('IDX_JOB_TRK_TRACK',    'TB_JOB_POSTING_TRACK',   'TRACK'),
     ]
     for idx_name, table, col in indexes:
         try:

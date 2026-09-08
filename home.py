@@ -255,7 +255,7 @@ def render_dashboard():
 * 시장 전체 훈련과정 비교 분석
 
 **💼 채용**
-* IT 채용공고 트렌드 분석
+* 과정별 취업 방향 채용공고 분석 (MLE · AIO · MLO)
 
 **🛠️ 도구**
 * AI 리포트 · DB 명세 · SQL Playground · 용어 사전

@@ -1,9 +1,15 @@
-"""사람인 채용공고 ETL — 키워드별 IT 채용공고 수집 + 캐시 집계"""
+"""사람인 채용공고 ETL — 과정별 취업 방향(트랙) 기준 채용공고 수집 + 트랙 태깅 + 캐시 집계
+
+수집(직무 코드·키워드 쿼리)과 분류(트랙 규칙)는 분리돼 있다. 어떤 쿼리로 들어왔든
+`tag_tracks()`가 모든 보유 공고를 같은 규칙으로 다시 태깅한다 (설계: docs/track_job_mapping.md).
+"""
 import json
 import logging
 import os
+import re
 import time
 import datetime as dt
+from collections import Counter
 
 from dotenv import load_dotenv
 
@@ -11,9 +17,12 @@ from utils import get_connection, get_retry_session, adapt_query, is_pg
 from init_db import init_all_tables
 from config import (
     SARAMIN_PAGE_SIZE, SARAMIN_API_CALL_LIMIT,
-    SARAMIN_KEYWORDS, SARAMIN_PUBLISHED_DAYS,
+    SARAMIN_QUERIES, SARAMIN_PUBLISHED_DAYS,
     SARAMIN_RETENTION_EXPIRED_DAYS, SARAMIN_EVERGREEN_MIN_AHEAD_DAYS,
     SARAMIN_RETENTION_EVERGREEN_DAYS,
+    SARAMIN_TRACK_RULES, SARAMIN_TRACK_ORDER, SARAMIN_ENTRY_LEVEL_CODES,
+    SARAMIN_EXCLUDE_JOB_TYPES, SARAMIN_EXCLUDE_TITLE_RE, SARAMIN_CODE_ONLY_MIN_SCORE,
+    SARAMIN_CODE_ONLY_TITLE_RE,
     ETL_BATCH_SIZE, CacheKey,
 )
 
@@ -194,12 +203,30 @@ def _daily_ranges(days):
     return ranges
 
 
-def collect_keyword(session, keyword, api_call_count):
-    """단일 키워드로 채용공고 수집. 1일 단위로 분할 호출하여 110건 한계 대응.
+def build_query_params(query, pub_min, pub_max):
+    """SARAMIN_QUERIES 항목 → API 요청 파라미터. `keywords` 또는 `job_cd` 중 있는 것만 싣는다."""
+    params = {
+        'access-key': API_KEY,
+        'count': str(SARAMIN_PAGE_SIZE),
+        'start': '0',
+        'sort': 'pd',
+        'published_min': pub_min,
+        'published_max': pub_max,
+    }
+    if query.get('keywords'):
+        params['keywords'] = query['keywords']
+    if query.get('job_cd'):
+        params['job_cd'] = query['job_cd']
+    return params
+
+
+def collect_query(session, query, api_call_count):
+    """수집 쿼리 하나(키워드 또는 직무 코드)로 채용공고 수집. 1일 단위 분할로 110건 한계 대응.
 
     사람인 API는 1회 호출당 최대 110건만 반환하며 페이징을 지원하지 않음.
     SARAMIN_PUBLISHED_DAYS 기간을 1일씩 나누어 호출하면 수집량이 N배 증가.
     """
+    label = query['label']
     all_extended = []
     truncated_days = 0
 
@@ -208,29 +235,21 @@ def collect_keyword(session, keyword, api_call_count):
             logger.warning(f"API 호출 한도 도달 ({api_call_count}회). 수집 조기 종료.")
             break
 
-        params = {
-            'access-key': API_KEY,
-            'keywords': keyword,
-            'count': str(SARAMIN_PAGE_SIZE),
-            'start': '0',
-            'sort': 'pd',
-            'published_min': pub_min,
-            'published_max': pub_max,
-        }
+        params = build_query_params(query, pub_min, pub_max)
 
         try:
             resp = session.get(BASE_URL, params=params, timeout=30)
             api_call_count += 1
             resp.raise_for_status()
         except Exception as e:
-            logger.error(f"[{keyword}] 요청 실패: {e}")
+            logger.error(f"[{label}] 요청 실패: {e}")
             continue
 
         try:
             data = resp.json()
         except Exception:
             preview = resp.content[:500].decode('utf-8', errors='replace')
-            logger.warning(f"[{keyword}] JSON 파싱 실패. 응답 미리보기: {preview}")
+            logger.warning(f"[{label}] JSON 파싱 실패. 응답 미리보기: {preview}")
             continue
 
         rows, total = parse_jobs_json(data)
@@ -244,14 +263,14 @@ def collect_keyword(session, keyword, api_call_count):
             _ym_src = r[24] or r[26] or r[27]  # POSTING_DT or OPENING_DT or MODIFICATION_DT
             ym = _ym_src[:7] if _ym_src and len(_ym_src) >= 7 else None
             rgn = _extract_region(r[10])
-            all_extended.append(r + (keyword, ym, rgn))
+            all_extended.append(r + (label, ym, rgn))
 
     if all_extended:
-        logger.info(f"[{keyword}] {len(all_extended)}건 수집 ({SARAMIN_PUBLISHED_DAYS + 1}일 분할)")
+        logger.info(f"[{label}] {len(all_extended)}건 수집 ({SARAMIN_PUBLISHED_DAYS + 1}일 분할)")
     if truncated_days:
         logger.warning(
-            f"[{keyword}] {truncated_days}일이 PAGE_SIZE({SARAMIN_PAGE_SIZE})에 도달 — "
-            f"키워드 세분화를 검토하세요."
+            f"[{label}] {truncated_days}일이 PAGE_SIZE({SARAMIN_PAGE_SIZE})에 도달 — "
+            f"수집 쿼리 세분화를 검토하세요."
         )
 
     return api_call_count, all_extended
@@ -397,15 +416,138 @@ def save_rows(rows):
         conn.close()
 
 
+# ── 트랙 분류 ──
+_COMPILED_RULES = {
+    track: {
+        'strong_codes': rule['strong_codes'],
+        'weak_codes': rule['weak_codes'],
+        'strong_re': re.compile(rule['strong_re']) if rule['strong_re'] else None,
+        'weak_re': re.compile(rule['weak_re']) if rule['weak_re'] else None,
+        'threshold': rule['threshold'],
+        'entry_only': rule.get('entry_only', False),
+    }
+    for track, rule in SARAMIN_TRACK_RULES.items()
+}
+_EXCLUDE_TITLE_RE = re.compile(SARAMIN_EXCLUDE_TITLE_RE)
+_CODE_ONLY_TITLE_RE = re.compile(SARAMIN_CODE_ONLY_TITLE_RE)
+
+
+def _split_codes(value):
+    return {c.strip() for c in str(value or '').split(',') if c.strip()}
+
+
+def classify_posting(title, keyword, job_cd, job_mid_cd, job_type_cd, experience_cd):
+    """공고 하나를 트랙별로 채점한다. 반환: {TRACK: (score, match_source, entry_level)}.
+
+    강한 신호 3점(코드 하나·정규식 매치 1회), 보조 신호 1점, threshold 이상이면 태깅.
+    단, 제목·키워드 근거 없이 코드만으로는 SARAMIN_CODE_ONLY_MIN_SCORE 이상이어야 한다.
+    IT개발·데이터(상위 직무 2)가 아니거나 알바·파견·교육생, 강사·헤드헌팅 등 제외 제목은 제외.
+    """
+    mid_codes = _split_codes(job_mid_cd)
+    if '2' not in mid_codes:
+        return {}
+    if str(job_type_cd or '') in SARAMIN_EXCLUDE_JOB_TYPES:
+        return {}
+    title = title or ''
+    if _EXCLUDE_TITLE_RE.search(title):
+        return {}
+
+    codes = _split_codes(job_cd)
+    text = f"{title} {keyword or ''}"
+    entry_level = 1 if str(experience_cd or '') in SARAMIN_ENTRY_LEVEL_CODES else 0
+    title_has_role = bool(_CODE_ONLY_TITLE_RE.search(title))
+
+    result = {}
+    for track, rule in _COMPILED_RULES.items():
+        if rule['entry_only'] and not entry_level:
+            continue
+        strong_code_hits = len(codes & rule['strong_codes'])
+        code_score = 3 * strong_code_hits + len(codes & rule['weak_codes'])
+        text_score = 0
+        if rule['strong_re'] and rule['strong_re'].search(text):
+            text_score += 3
+        if rule['weak_re'] and rule['weak_re'].search(text):
+            text_score += 1
+        score = code_score + text_score
+        if score < rule['threshold']:
+            continue
+        if not text_score and (not strong_code_hits or code_score < SARAMIN_CODE_ONLY_MIN_SCORE
+                               or not title_has_role):
+            continue
+        if code_score and text_score:
+            source = 'both'
+        elif code_score:
+            source = 'code'
+        else:
+            source = 'keyword'
+        result[track] = (score, source, entry_level)
+    return result
+
+
+_TRACK_INSERT_RAW = '''
+    INSERT INTO TB_JOB_POSTING_TRACK (JOB_ID, TRACK, SCORE, MATCH_SOURCE, ENTRY_LEVEL)
+    VALUES (?, ?, ?, ?, ?)
+'''
+
+
+def tag_tracks():
+    """보유 공고 전량을 트랙 규칙으로 다시 태깅한다 (전량 삭제 후 재생성 — 규칙 변경 시 소급 반영)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(adapt_query(
+            "SELECT JOB_ID, POSITION_TITLE, KEYWORD, JOB_CD, JOB_MID_CD, JOB_TYPE_CD, EXPERIENCE_CD "
+            "FROM TB_JOB_POSTING"
+        ))
+        postings = cursor.fetchall()
+        tags = []
+        for job_id, title, keyword, job_cd, job_mid_cd, job_type_cd, exp_cd in postings:
+            for track, (score, source, entry) in classify_posting(
+                    title, keyword, job_cd, job_mid_cd, job_type_cd, exp_cd).items():
+                tags.append((job_id, track, score, source, entry))
+
+        cursor.execute("DELETE FROM TB_JOB_POSTING_TRACK")
+        insert_sql = adapt_query(_TRACK_INSERT_RAW)
+        if is_pg():
+            from psycopg2.extras import execute_batch
+            for i in range(0, len(tags), ETL_BATCH_SIZE):
+                execute_batch(cursor, insert_sql, tags[i:i + ETL_BATCH_SIZE], page_size=200)
+        else:
+            cursor.executemany(insert_sql, tags)
+        conn.commit()
+
+        counts = Counter(t[1] for t in tags)
+        entry_counts = Counter(t[1] for t in tags if t[4])
+        summary = ", ".join(
+            f"{tr} {counts.get(tr, 0):,}건(신입가능 {entry_counts.get(tr, 0):,})"
+            for tr in SARAMIN_TRACK_ORDER
+        )
+        logger.info(f"[트랙 태깅] 공고 {len(postings):,}건 → {summary}")
+        return dict(counts)
+    except Exception as e:
+        logger.error(f"[트랙 태깅] 실패: {e}")
+        if is_pg():
+            conn.rollback()
+        return {}
+    finally:
+        conn.close()
+
+
 # ── 누적 캐시 병합 ──
 
 # 시계열 캐시는 전체 재계산이 아니라 누적 병합한다. 보존 정책이 옛 원본을 지우면
 # 재계산 값이 실제보다 작아지므로, 과거 월은 캐시에 남은 값을 지켜야 추이가 유지된다.
 CUMULATIVE_CACHE_KEYS = {
-    CacheKey.SARAMIN_MONTHLY: ("YEAR_MONTH",),
-    CacheKey.SARAMIN_EXPIRED_MONTHLY: ("YEAR_MONTH",),
-    CacheKey.SARAMIN_KEYWORD_TREND: ("SEARCH_KEYWORD", "YEAR_MONTH"),
+    CacheKey.SARAMIN_TRACK_MONTHLY: ("TRACK", "YEAR_MONTH"),
 }
+
+# 2026-09 트랙 개편 이전 캐시 키 — 페이지가 더 이상 읽지 않으므로 집계 때 정리한다
+_LEGACY_CACHE_KEYS = (
+    "saramin_kpi", "saramin_monthly", "saramin_job_cd", "saramin_loc",
+    "saramin_keyword_trend", "saramin_keyword_dist", "saramin_active_loc",
+    "saramin_active_job_cd", "saramin_expired_monthly", "saramin_expired_job_cd",
+    "saramin_posting_duration",
+)
 
 
 def merge_cumulative(existing_rows, fresh_rows, key_cols):
@@ -450,7 +592,7 @@ def cleanup_old_postings():
     try:
         # junction 먼저 삭제해야 고아 행이 안 남는다 (FK 미설정)
         deleted = {}
-        for table in ("TB_JOB_POSTING_KEYWORD", "TB_JOB_POSTING_REGION"):
+        for table in ("TB_JOB_POSTING_KEYWORD", "TB_JOB_POSTING_REGION", "TB_JOB_POSTING_TRACK"):
             cursor.execute(adapt_query(
                 f"DELETE FROM {table} WHERE JOB_ID IN "
                 f"(SELECT JOB_ID FROM TB_JOB_POSTING WHERE {doomed_where})"
@@ -515,99 +657,45 @@ def compute_and_cache_aggregations():
                 conn.rollback()
             return False
 
-    today_str = dt.date.today().isoformat()
-
-    # 만료 판정: EXPIRATION_DT < 오늘 OR ACTIVE = 0 — 엔진 무관 동일 문법
-    expired_cond = f"(EXPIRATION_DT < '{today_str}' OR ACTIVE = 0)"
-    active_cond = f"((EXPIRATION_DT IS NULL OR EXPIRATION_DT >= '{today_str}') AND ACTIVE = 1)"
-    # 날짜 연산·포맷만 엔진별로 다름
-    if is_pg():
-        duration_expr = "(EXPIRATION_DT::date - POSTING_DT::date)"
-        exp_month_expr = "TO_CHAR(EXPIRATION_DT::date, 'YYYY-MM')"
-    else:
-        duration_expr = "(JULIANDAY(EXPIRATION_DT) - JULIANDAY(POSTING_DT))"
-        exp_month_expr = "SUBSTR(EXPIRATION_DT, 1, 7)"
-
+    # 진행중 분포·목록은 페이지가 PG에서 직접 조회한다(트랙·신입 필터 조합이 많아 캐시 부적합).
+    # 캐시는 보존 삭제 후에도 남아야 하는 월별 추이(누적 병합)와 수집 쿼리별 보유 현황만 담는다.
+    # '전체'(ALL)는 어느 트랙이든 붙은 공고의 중복 제거 합.
     aggs = [
-        (CacheKey.SARAMIN_KPI, adapt_query(f"""
-            SELECT COUNT(*) AS CNT,
-                   COALESCE(SUM(CASE WHEN {active_cond} THEN 1 ELSE 0 END), 0) AS ACTIVE_CNT,
-                   COALESCE(SUM(CASE WHEN {expired_cond} THEN 1 ELSE 0 END), 0) AS EXPIRED_CNT,
-                   COUNT(DISTINCT COMPANY_NM) AS COMPANY_CNT
-            FROM TB_JOB_POSTING
+        (CacheKey.SARAMIN_TRACK_MONTHLY, adapt_query("""
+            SELECT t.TRACK AS TRACK, jp.YEAR_MONTH AS YEAR_MONTH, COUNT(*) AS CNT,
+                   COALESCE(SUM(t.ENTRY_LEVEL), 0) AS ENTRY_CNT
+            FROM TB_JOB_POSTING_TRACK t JOIN TB_JOB_POSTING jp ON t.JOB_ID = jp.JOB_ID
+            WHERE jp.YEAR_MONTH IS NOT NULL
+            GROUP BY t.TRACK, jp.YEAR_MONTH
+            UNION ALL
+            SELECT 'ALL' AS TRACK, jp.YEAR_MONTH AS YEAR_MONTH, COUNT(*) AS CNT,
+                   COALESCE(SUM(CASE WHEN jp.JOB_ID IN
+                        (SELECT JOB_ID FROM TB_JOB_POSTING_TRACK WHERE ENTRY_LEVEL = 1)
+                        THEN 1 ELSE 0 END), 0) AS ENTRY_CNT
+            FROM TB_JOB_POSTING jp
+            WHERE jp.JOB_ID IN (SELECT JOB_ID FROM TB_JOB_POSTING_TRACK)
+              AND jp.YEAR_MONTH IS NOT NULL
+            GROUP BY jp.YEAR_MONTH
         """)),
-        (CacheKey.SARAMIN_MONTHLY, adapt_query("""
-            SELECT YEAR_MONTH, COUNT(*) AS CNT
-            FROM TB_JOB_POSTING
-            WHERE YEAR_MONTH IS NOT NULL
-            GROUP BY YEAR_MONTH ORDER BY YEAR_MONTH
-        """)),
-        (CacheKey.SARAMIN_JOB_CD, adapt_query("""
-            SELECT JOB_MID_NM, COUNT(*) AS CNT
-            FROM TB_JOB_POSTING
-            WHERE JOB_MID_NM IS NOT NULL AND JOB_MID_NM != ''
-            GROUP BY JOB_MID_NM ORDER BY CNT DESC
-        """)),
-        (CacheKey.SARAMIN_LOC, adapt_query("""
-            SELECT jr.REGION, COUNT(*) AS CNT
-            FROM TB_JOB_POSTING_REGION jr
-            GROUP BY jr.REGION ORDER BY CNT DESC
-        """)),
-        (CacheKey.SARAMIN_KEYWORD_TREND, adapt_query("""
-            SELECT jk.SEARCH_KEYWORD, jp.YEAR_MONTH, COUNT(*) AS CNT
-            FROM TB_JOB_POSTING_KEYWORD jk
-            JOIN TB_JOB_POSTING jp ON jk.JOB_ID = jp.JOB_ID
-            WHERE jk.SEARCH_KEYWORD IS NOT NULL AND jp.YEAR_MONTH IS NOT NULL
-            GROUP BY jk.SEARCH_KEYWORD, jp.YEAR_MONTH
-            ORDER BY jk.SEARCH_KEYWORD, jp.YEAR_MONTH
-        """)),
-        (CacheKey.SARAMIN_KEYWORD_DIST, adapt_query("""
+        (CacheKey.SARAMIN_QUERY_HITS, adapt_query("""
             SELECT SEARCH_KEYWORD, COUNT(*) AS CNT
             FROM TB_JOB_POSTING_KEYWORD
             GROUP BY SEARCH_KEYWORD ORDER BY CNT DESC
         """)),
-        # ── 신규 5종: 진행중/종료 분리 집계 ──
-        (CacheKey.SARAMIN_ACTIVE_LOC, adapt_query(f"""
-            SELECT jr.REGION, COUNT(*) AS CNT
-            FROM TB_JOB_POSTING_REGION jr
-            JOIN TB_JOB_POSTING jp ON jr.JOB_ID = jp.JOB_ID
-            WHERE {active_cond}
-            GROUP BY jr.REGION ORDER BY CNT DESC
-        """)),
-        (CacheKey.SARAMIN_ACTIVE_JOB_CD, adapt_query(f"""
-            SELECT JOB_MID_NM, COUNT(*) AS CNT
-            FROM TB_JOB_POSTING
-            WHERE JOB_MID_NM IS NOT NULL AND JOB_MID_NM != '' AND {active_cond}
-            GROUP BY JOB_MID_NM ORDER BY CNT DESC
-        """)),
-        (CacheKey.SARAMIN_EXPIRED_MONTHLY, adapt_query(f"""
-            SELECT {exp_month_expr} AS YEAR_MONTH, COUNT(*) AS CNT
-            FROM TB_JOB_POSTING
-            WHERE EXPIRATION_DT IS NOT NULL AND {expired_cond}
-            GROUP BY {exp_month_expr} ORDER BY {exp_month_expr}
-        """)),
-        (CacheKey.SARAMIN_EXPIRED_JOB_CD, adapt_query(f"""
-            SELECT JOB_MID_NM, COUNT(*) AS CNT
-            FROM TB_JOB_POSTING
-            WHERE JOB_MID_NM IS NOT NULL AND JOB_MID_NM != '' AND {expired_cond}
-            GROUP BY JOB_MID_NM ORDER BY CNT DESC
-        """)),
-        (CacheKey.SARAMIN_POSTING_DURATION, adapt_query(f"""
-            SELECT JOB_MID_NM, AVG_DAYS, CNT FROM (
-                SELECT JOB_MID_NM,
-                       ROUND(AVG({duration_expr}), 1) AS AVG_DAYS,
-                       COUNT(*) AS CNT
-                FROM TB_JOB_POSTING
-                WHERE JOB_MID_NM IS NOT NULL AND JOB_MID_NM != ''
-                  AND POSTING_DT IS NOT NULL AND EXPIRATION_DT IS NOT NULL
-                  AND {expired_cond}
-                GROUP BY JOB_MID_NM
-            ) sub WHERE CNT >= 3
-            ORDER BY AVG_DAYS
-        """)),
     ]
 
     saved = sum(run_agg(key, sql) for key, sql in aggs)
+
+    try:
+        placeholders = ",".join("?" for _ in _LEGACY_CACHE_KEYS)
+        cursor.execute(adapt_query(
+            f"DELETE FROM TB_MARKET_CACHE WHERE CACHE_KEY IN ({placeholders})"), _LEGACY_CACHE_KEYS)
+        conn.commit()
+    except Exception as e:
+        logger.warning(f"[캐시] 구 캐시 정리 실패 (무시): {e}")
+        if is_pg():
+            conn.rollback()
+
     conn.close()
     logger.info(f"[집계 캐시] {saved}개 집계 완료")
 
@@ -622,39 +710,49 @@ def main():
         return
 
     daily_calls = SARAMIN_PUBLISHED_DAYS + 1
+    planned = len(SARAMIN_QUERIES) * daily_calls
     logger.info(
         f"[설정] published={SARAMIN_PUBLISHED_DAYS}일 (1일 단위 분할, "
-        f"키워드당 {daily_calls}회), 키워드 {len(SARAMIN_KEYWORDS)}개, "
-        f"최대 {SARAMIN_PAGE_SIZE}건/호출"
+        f"쿼리당 {daily_calls}회), 수집 쿼리 {len(SARAMIN_QUERIES)}개 → 예정 호출 {planned}회 "
+        f"(한도 {SARAMIN_API_CALL_LIMIT}), 최대 {SARAMIN_PAGE_SIZE}건/호출"
     )
     session = get_retry_session()
     api_call_count = 0
     total_saved = 0
 
-    for keyword in SARAMIN_KEYWORDS:
+    for query in SARAMIN_QUERIES:
         if api_call_count >= SARAMIN_API_CALL_LIMIT:
-            logger.warning("API 호출 한도 도달. 남은 키워드 건너뜀.")
+            logger.warning("API 호출 한도 도달. 남은 수집 쿼리 건너뜀.")
             break
 
-        api_call_count, rows = collect_keyword(session, keyword, api_call_count)
+        api_call_count, rows = collect_query(session, query, api_call_count)
         if rows:
             saved = save_rows(rows)
             save_keyword_mappings(rows)
             save_region_mappings(rows)
             total_saved += saved
-            logger.info(f"[{keyword}] {saved}건 저장 (누적: {total_saved:,}건)")
+            logger.info(f"[{query['label']}] {saved}건 저장 (누적: {total_saved:,}건)")
 
     logger.info(f"[Summary] API 호출: {api_call_count}회, 총 저장: {total_saved:,}건")
     logger.info(f"총 소요: {time.monotonic() - _t0:.1f}초")
-    # 순서 중요: 삭제 → 집계. 과거 월 추이는 누적 병합(merge_cumulative)이 지켜준다
+    # 순서 중요: 삭제 → 태깅 → 집계. 과거 월 추이는 누적 병합(merge_cumulative)이 지켜준다
     cleanup_old_postings()
+    tag_tracks()
     compute_and_cache_aggregations()
 
 
 def cleanup_only():
-    """API 수집 없이 보존 삭제 + 캐시 재집계만 수행 (일일 API 쿼터 소모 없음)."""
+    """API 수집 없이 보존 삭제 + 트랙 태깅 + 캐시 재집계만 수행 (일일 API 쿼터 소모 없음)."""
     init_all_tables()
     cleanup_old_postings()
+    tag_tracks()
+    compute_and_cache_aggregations()
+
+
+def tag_only():
+    """API 수집·삭제 없이 트랙 태깅 + 캐시 재집계만 수행 (규칙 조정 후 소급 반영용)."""
+    init_all_tables()
+    tag_tracks()
     compute_and_cache_aggregations()
 
 
@@ -662,5 +760,7 @@ if __name__ == "__main__":
     import sys
     if "--cleanup-only" in sys.argv:
         cleanup_only()
+    elif "--tag-only" in sys.argv:
+        tag_only()
     else:
         main()

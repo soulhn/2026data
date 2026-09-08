@@ -74,22 +74,27 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 - **`DATABASE_URL`을 주입하지 않음** — CI엔 `.env`가 없어 `is_pg()`가 False가 되고 인메모리
   SQLite로 돌아야 정상. 주입하면 ETL 테스트가 psycopg2 경로로 새어 검증이 무력화됨
 
-### 사람인 ETL 수집 전략 (`saramin_etl.py`)
+### 사람인 ETL 수집 전략 (`saramin_etl.py`, 2026-09 과정 트랙 개편)
+
+채용 동향은 **AI캠퍼스 3개 과정(MLE 머신러닝캠프 · AIO 멀티에이전트 · MLO AI Ready 데이터 + COMMON 공통)의
+취업 방향별** 공고를 보여준다. 수집(어떤 쿼리로 가져오나)과 분류(어느 과정 공고인가)는 분리돼 있다 —
+설계 근거·직무 방향은 `docs/track_job_mapping.md`.
 
 | 항목 | 값 | 설정 위치 |
 |---|---|---|
-| **검색 키워드** | Python 백엔드/데이터/AI, Java Spring/백엔드, JavaScript, React, Spring, AI 엔지니어/머신러닝, 백엔드, 프론트엔드, DevOps, 데이터 엔지니어/분석, 클라우드, Flutter, 보안, DBA, 쿠버네티스 (20개, 인기 키워드 세분화) | `config.SARAMIN_KEYWORDS` |
-| **키워드당 건수** | 최대 110건/키워드 (API 페이징 미지원, 도달 시 WARNING 로그) | `config.SARAMIN_PAGE_SIZE` |
-| **일일 API 호출 한도** | 480회 (500회 중 안전마진) | `config.SARAMIN_API_CALL_LIMIT` |
-| **게시일 필터** | `published_min/max` unix timestamp (환경변수 `SARAMIN_PUBLISHED_DAYS`로 범위 설정, 기본 3일) | `config.SARAMIN_PUBLISHED_DAYS` |
+| **수집 쿼리** | 직무 코드 13개(`job_cd`: NLP 160·머신러닝 109·데이터엔지니어 83·DevOps 146·Kafka 241 등) + 키워드 29개(LLM·RAG·LangGraph·MLOps·Airflow 등) = 42개. **넓은 코드(백엔드 84·웹개발 87·Python 272)는 하루 110건에 절단되므로 수집이 아니라 분류에만 사용** | `config.SARAMIN_QUERIES` |
+| **트랙 분류** | `tag_tracks()`가 보유 공고 **전량을 삭제 후 재태깅** → `TB_JOB_POSTING_TRACK` (규칙 바꾸면 소급 반영). 강한 신호 3점 · 보조 1점 · 임계 3. **코드 단독 매치는 강한 코드 포함 4점 이상 + 제목에 직무 단어 필수** — 사람인 태그는 기업이 넓게 붙여 코드 하나만으로는 오탐. 제외: IT개발·데이터 외, 알바·파견·교육생, 강사·마케팅·기획자·라벨링·세일즈 제목 | `config.SARAMIN_TRACK_RULES`, `SARAMIN_EXCLUDE_*`, `SARAMIN_CODE_ONLY_*` |
+| **약어 정규식** | `LLM·RAG·NLP·ETL·MCP·AWS`는 대소문자 구분 + 영문자 비인접 조건(`(?<![A-Za-z])`) — `STORAGE`·`SETTLE` 오탐 방지. 한글 인접은 허용 | `config._ACR` |
+| **신입 가능** | `EXPERIENCE_CD ∈ {0 경력무관, 1 신입, 3 신입/경력}` → `ENTRY_LEVEL=1`. API에 경력 필터가 없어 후처리 | `config.SARAMIN_ENTRY_LEVEL_CODES` |
+| **쿼리당 건수** | 최대 110건/호출 (API 페이징 미지원, 도달 시 WARNING 로그). 1일 창 분할 | `config.SARAMIN_PAGE_SIZE` |
+| **일일 API 호출** | 42 쿼리 × (3일 + 오늘) = **168회** (한도 480). `tests/test_saramin_etl.py`가 예산 초과를 막음 | `config.SARAMIN_API_CALL_LIMIT`, `SARAMIN_PUBLISHED_DAYS` |
 | **정렬** | `pd` (게시일 최신순) | `saramin_etl.py` 고정 |
-| **중복 처리** | `ON CONFLICT(JOB_ID) DO UPDATE` — 키워드 간 중복 공고 자동 병합, SEARCH_KEYWORD는 최초값 보존 | `saramin_etl.py` |
-| **보존 정책** | 마감 후 30일 / 상시채용(마감일 1년 이상 미래)은 게시 후 90일 지나면 삭제 (Supabase 500MB 대응, 2026-08 도입). `--cleanup-only`로 API 쿼터 없이 실행 가능 | `config.SARAMIN_RETENTION_*` |
-| **누적 추이 캐시** | 시계열 캐시 3종(월별 신규·종료·키워드 추이)은 재계산이 아니라 **누적 병합** — 같은 월은 max 채택. 원본이 삭제돼도 과거 추이 유지. **전체 재계산으로 되돌리면 삭제 시점에 추이 소실** | `saramin_etl.merge_cumulative()` |
-| **다중 지역** | `TB_JOB_POSTING_REGION` junction 테이블로 다중 지역 공고 정확 반영 | `init_db.py` |
-| **캐시 집계** | KPI, 월별 추이, 직무별, 지역별, 키워드별 추이 등 11종 → `TB_MARKET_CACHE` | `saramin_etl.py` |
-| **응답 형식** | JSON (API 기본값) | `saramin_etl.py` |
-| **저장 테이블** | `TB_JOB_POSTING` (33 컬럼, PK: `JOB_ID`), `TB_JOB_POSTING_KEYWORD`, `TB_JOB_POSTING_REGION` | `init_db.py` |
+| **중복 처리** | `ON CONFLICT(JOB_ID) DO UPDATE` — 쿼리 간 중복 공고 자동 병합, `TB_JOB_POSTING_KEYWORD`에 수집 쿼리 라벨 전부 보존 | `saramin_etl.py` |
+| **보존 정책** | 마감 후 30일 / 상시채용(마감일 1년 이상 미래)은 게시 후 90일 지나면 삭제. junction 3종(KEYWORD·REGION·TRACK) 함께 삭제 | `config.SARAMIN_RETENTION_*` |
+| **누적 추이 캐시** | `saramin_track_monthly`(TRACK × YEAR_MONTH, `ALL` 행 포함)는 **누적 병합** — 같은 키는 max 채택. 원본이 삭제돼도 과거 추이 유지. **전체 재계산으로 되돌리면 삭제 시점에 추이 소실** | `saramin_etl.merge_cumulative()` |
+| **캐시 집계** | 2종만: `saramin_track_monthly` · `saramin_query_hits`. **진행중 분포·목록은 페이지가 PG 직접 조회**(`UNNEST`·`STRING_AGG` 등 PG 전용 SQL — 트랙·신입 필터 조합이 많아 캐시 부적합). 구 캐시 키 11종은 집계 시 자동 삭제 | `saramin_etl.py`, `pages/채용_동향.py` |
+| **실행 모드** | 기본(수집→삭제→태깅→집계) / `--cleanup-only`(삭제→태깅→집계) / `--tag-only`(태깅→집계, 규칙 조정 후 소급용). 뒤 둘은 API 쿼터 소모 없음 | `saramin_etl.py` |
+| **저장 테이블** | `TB_JOB_POSTING` (33 컬럼, PK: `JOB_ID`), `TB_JOB_POSTING_KEYWORD`, `TB_JOB_POSTING_REGION`, `TB_JOB_POSTING_TRACK` | `init_db.py` |
 
 ## 주의사항
 
@@ -196,6 +201,8 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 | **월별 평균** | 신청인원 0명 과정 제외 |
 
 **공통 함수**: `utils.calc_recruit_rate()`
+
+---
 
 ### 개강 참석률 (모집 퍼널)
 
