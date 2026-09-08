@@ -7,12 +7,16 @@ import pandas as pd
 import pytest
 
 from hrd_api import (
+    COURSE_HISTORY_COLUMNS,
+    fetch_all_course_history,
     fetch_all_institutions,
+    fetch_course_history,
     fetch_attendance_month,
     fetch_course_list,
     fetch_trainee_roster,
     fetch_active_data_realtime,
     get_active_data_with_fallback,
+    get_course_history_with_fallback,
     get_institutions,
     get_last_realtime_error,
 )
@@ -466,3 +470,98 @@ class TestColumnCompatibility:
         expected = {"TRPR_ID", "TRPR_DEGR", "TRNEE_ID", "ATEND_DT",
                     "IN_TIME", "OUT_TIME", "ATEND_STATUS", "COLLECTED_AT"}
         assert set(df.columns) == expected
+
+
+# ── 모집 퍼널 (전 회차 이력) ───────────────────────────────────────────
+
+
+def _history_records():
+    return [
+        {"trprId": "AIG00001", "trprDegr": "2", "trprNm": "과정 2기",
+         "trStaDt": "2026-08-28", "trEndDt": "2027-02-23",
+         "totFxnum": "30", "totTrpCnt": "16", "totParMks": "8", "finiCnt": "0", "instIno": "I1"},
+        {"trprId": "AIG00001", "trprDegr": "1", "trprNm": "과정 1기",
+         "trStaDt": "2024-01-15", "trEndDt": "2024-07-15",
+         "totFxnum": "30", "totTrpCnt": "52", "totParMks": "30", "finiCnt": "24", "instIno": "I1"},
+        # 개설예정 회차: totParMks가 None으로 내려온다
+        {"trprId": "AIG00001", "trprDegr": "3", "trprNm": "과정 3기",
+         "trStaDt": "2099-09-21", "trEndDt": "2099-12-31",
+         "totFxnum": "30", "totTrpCnt": "0", "totParMks": None, "finiCnt": "0", "instIno": "I1"},
+        {"trprId": "AIG00001", "trprDegr": "0", "trprNm": "회차 0 (스킵)"},
+    ]
+
+
+class TestFetchCourseHistory:
+    def test_keeps_ended_courses(self, mock_session):
+        """운영 현황용 fetch_course_list와 달리 종료 회차도 남겨야 퍼널이 완성된다."""
+        mock_session.get.return_value = _make_response(_history_records())
+        df = fetch_course_history(mock_session, "KEY", "AIG00001")
+        assert df["TRPR_DEGR"].tolist() == [1, 2, 3]          # 회차 오름차순
+        assert df.loc[df["TRPR_DEGR"] == 1, "FINI_CNT"].item() == "24"
+
+    def test_open_scheduled_keeps_none_par_mks(self, mock_session):
+        mock_session.get.return_value = _make_response(_history_records())
+        df = fetch_course_history(mock_session, "KEY", "AIG00001")
+        assert pd.isna(df.loc[df["TRPR_DEGR"] == 3, "TOT_PAR_MKS"].item())
+
+    def test_columns_match_db(self, mock_session):
+        """DB 폴백(TB_COURSE_MASTER)과 컬럼이 같아야 페이지가 소스를 구분하지 않아도 된다."""
+        mock_session.get.return_value = _make_response(_history_records())
+        df = fetch_course_history(mock_session, "KEY", "AIG00001")
+        assert list(df.columns) == COURSE_HISTORY_COLUMNS
+
+    def test_active_list_unchanged_by_refactor(self, mock_session):
+        """공통 파서로 바꿨어도 운영 현황용 목록은 여전히 활성 회차만 남긴다."""
+        mock_session.get.return_value = _make_response(_history_records())
+        df = fetch_course_list(mock_session, "KEY", "AIG00001")
+        assert sorted(df["TRPR_DEGR"].tolist()) == [2, 3]
+        assert "FINI_CNT" not in df.columns
+
+
+class TestCourseHistoryFallback:
+    @patch("hrd_api.get_retry_session")
+    @patch("hrd_api.fetch_course_history")
+    def test_partial_failure_keeps_surviving_and_reports(self, mock_fetch, _sess):
+        mock_fetch.side_effect = lambda s, key, cid: (
+            _raise(Exception("과정 A 조회 실패")) if cid == "A"
+            else pd.DataFrame({"TRPR_ID": [cid], "TRPR_DEGR": [1]})
+        )
+        df, error = fetch_all_course_history([("k", "A"), ("k", "B")])
+        assert df["TRPR_ID"].tolist() == ["B"]
+        assert error and "A" in error and "과정 A 조회 실패" in error
+
+    @patch("hrd_api.get_retry_session")
+    @patch("hrd_api.fetch_course_history")
+    def test_all_failed_raises(self, mock_fetch, _sess):
+        mock_fetch.side_effect = Exception("API timeout")
+        with pytest.raises(RuntimeError):
+            fetch_all_course_history([("k", "A"), ("k", "B")])
+
+    def test_empty_pairs_keeps_columns(self):
+        df, error = fetch_all_course_history([])
+        assert list(df.columns) == COURSE_HISTORY_COLUMNS and error is None
+
+    @patch.dict("os.environ", {}, clear=True)
+    @patch("hrd_api._get_course_history_from_db")
+    def test_no_keys_uses_db(self, mock_db):
+        mock_db.return_value = pd.DataFrame({"TRPR_ID": ["H"]})
+        df, source, error = get_course_history_with_fallback()
+        assert source == "DB" and error is None
+        mock_db.assert_called_once()
+
+    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
+    @patch("hrd_api.fetch_all_course_history")
+    @patch("hrd_api._get_course_history_from_db")
+    def test_api_failure_falls_back_with_reason(self, mock_db, mock_api):
+        """폴백은 한화 과정만 있으므로 페이지가 '엔코아 빠짐'을 안내하려면 소스 구분이 필요하다."""
+        mock_api.side_effect = RuntimeError("모든 과정 이력 조회 실패")
+        mock_db.return_value = pd.DataFrame({"TRPR_ID": ["H"]})
+        df, source, error = get_course_history_with_fallback()
+        assert source == "DB_FALLBACK" and "RuntimeError" in error
+
+    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
+    @patch("hrd_api.fetch_all_course_history")
+    def test_api_success_passes_partial_error_through(self, mock_api):
+        mock_api.return_value = (pd.DataFrame({"TRPR_ID": ["H"]}), "E1 → Timeout")
+        df, source, error = get_course_history_with_fallback()
+        assert source == "API" and error == "E1 → Timeout"

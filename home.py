@@ -249,7 +249,7 @@ def render_dashboard():
         st.info("좌측 메뉴를 선택하여 상세 분석 페이지로 이동하세요.")
         st.markdown("""
 **📊 성과 분석**
-* 종료과정 성과 · 운영 현황 · 매출 분석
+* 종료과정 성과 · 운영 현황 · 매출 분석 · HRD 등록 대비 개강 참석률
 
 **🌏 외부 동향**
 * 시장 전체 훈련과정 비교 분석
@@ -270,6 +270,7 @@ pg = st.navigation({
         st.Page("pages/종료과정_성과.py", title="종료과정 성과", icon="📊"),
         st.Page("pages/현재_운영_현황.py", title="AI캠퍼스 운영 현황", icon="📋"),
         st.Page("pages/매출_분석.py", title="매출 분석", icon="💰"),
+        st.Page("pages/HRD등록_개강참석률.py", title="HRD 등록 대비 개강 참석률", icon="🎯"),
     ],
     "외부 동향": [
         st.Page("pages/시장_분석.py", title="시장 분석", icon="📈"),

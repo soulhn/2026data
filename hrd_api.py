@@ -35,6 +35,8 @@ BASE_URL_DETAIL = "https://hrd.work24.go.kr/jsp/HRDP/HRDPO00/HRDPOA60/HRDPOA60_4
 
 COURSE_COLUMNS = ["TRPR_ID", "TRPR_DEGR", "TRPR_NM", "TR_STA_DT", "TR_END_DT",
                   "TOT_FXNUM", "TOT_PAR_MKS", "TOT_TRP_CNT"]
+COURSE_HISTORY_COLUMNS = ["TRPR_ID", "TRPR_DEGR", "TRPR_NM", "TR_STA_DT", "TR_END_DT",
+                          "TOT_FXNUM", "TOT_TRP_CNT", "TOT_PAR_MKS", "FINI_CNT", "INST_INO"]
 ROSTER_COLUMNS = ["TRPR_ID", "TRPR_DEGR", "TRNEE_ID", "TRNEE_NM", "TRNEE_STATUS"]
 ATTEND_COLUMNS = ["TRPR_ID", "TRPR_DEGR", "TRNEE_ID", "ATEND_DT", "IN_TIME",
                   "OUT_TIME", "ATEND_STATUS", "COLLECTED_AT"]
@@ -80,13 +82,11 @@ def get_institutions():
 # ── 개별 API 함수 ──────────────────────────────────────────────────────
 
 
-def fetch_course_list(session, api_key, course_id):
-    """과정 목록 조회 → DataFrame.
+def _request_course_records(session, api_key, course_id):
+    """훈련일정 상세 API(_3.jsp) 호출 → 회차 레코드 리스트 (trprDegr 유효한 것만).
 
-    Returns:
-        활성 과정(TR_END_DT >= today)만 필터된 DataFrame.
-        컬럼: TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT,
-              TOT_FXNUM, TOT_PAR_MKS, TOT_TRP_CNT
+    이 API는 기관 소유권 검사가 없어 어떤 키로든 조회되지만, 명부/출결과 같은
+    (키, 과정ID) 쌍으로 호출해 두면 기관별 병렬 조회 구조를 그대로 재사용할 수 있다.
     """
     res = session.get(BASE_URL_COURSE, params={
         "returnType": "JSON", "authKey": api_key,
@@ -103,15 +103,31 @@ def fetch_course_list(session, api_key, course_id):
     else:
         course_list = []
 
-    rows = []
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    records = []
     for c in course_list:
+        if not isinstance(c, dict):
+            continue
         try:
             degr = int(c.get("trprDegr", 0))
         except (ValueError, TypeError):
             continue
         if degr == 0:
             continue
+        records.append((degr, c))
+    return records
+
+
+def fetch_course_list(session, api_key, course_id):
+    """과정 목록 조회 → DataFrame.
+
+    Returns:
+        활성 과정(TR_END_DT >= today)만 필터된 DataFrame.
+        컬럼: TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT,
+              TOT_FXNUM, TOT_PAR_MKS, TOT_TRP_CNT
+    """
+    rows = []
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    for degr, c in _request_course_records(session, api_key, course_id):
         end_dt = c.get("trEndDt", "")
         if end_dt < today_str:
             continue
@@ -128,6 +144,36 @@ def fetch_course_list(session, api_key, course_id):
     df = pd.DataFrame(rows, columns=COURSE_COLUMNS)
     if not df.empty:
         df = df.sort_values("TRPR_DEGR", ascending=False).reset_index(drop=True)
+    return df
+
+
+def fetch_course_history(session, api_key, course_id):
+    """과정의 **전 회차** 모집·등록·수강 집계 → DataFrame (종료 회차 포함).
+
+    `fetch_course_list`는 운영 현황용이라 활성 회차만 남기지만, 모집 퍼널 분석은
+    개설예정·진행중·종료를 모두 봐야 하므로 날짜 필터를 걸지 않는다.
+
+    컬럼: COURSE_HISTORY_COLUMNS
+        TOT_FXNUM(정원) → TOT_TRP_CNT(수강신청=HRD 등록) → TOT_PAR_MKS(개강 인원=확정 신고)
+        → FINI_CNT(수료). 개설예정 회차는 TOT_PAR_MKS가 None으로 올 수 있다.
+    """
+    rows = []
+    for degr, c in _request_course_records(session, api_key, course_id):
+        rows.append({
+            "TRPR_ID": c.get("trprId"),
+            "TRPR_DEGR": degr,
+            "TRPR_NM": c.get("trprNm"),
+            "TR_STA_DT": c.get("trStaDt"),
+            "TR_END_DT": c.get("trEndDt"),
+            "TOT_FXNUM": c.get("totFxnum"),
+            "TOT_TRP_CNT": c.get("totTrpCnt"),
+            "TOT_PAR_MKS": c.get("totParMks"),
+            "FINI_CNT": c.get("finiCnt"),
+            "INST_INO": c.get("instIno"),
+        })
+    df = pd.DataFrame(rows, columns=COURSE_HISTORY_COLUMNS)
+    if not df.empty:
+        df = df.sort_values(["TRPR_ID", "TRPR_DEGR"]).reset_index(drop=True)
     return df
 
 
@@ -420,3 +466,93 @@ def get_active_data_with_fallback():
             _last_realtime_error = f"{type(e).__name__}: {e}"
         c, t, l = _get_active_data_from_db()
         return c, t, l, "DB_FALLBACK"
+
+
+# ── 모집 퍼널 (전 회차 이력) ───────────────────────────────────────────
+
+
+def fetch_all_course_history(pairs, deadline=None):
+    """기관별 (인증키, 과정ID) 쌍의 전 회차 집계를 병렬 조회하여 병합.
+
+    운영 현황(`fetch_all_institutions`)과 같은 부분 실패 정책 — 한 과정이 실패해도
+    나머지는 살리고, 전부 실패해야 예외를 던진다.
+
+    Returns:
+        (history_df, error_detail) — error_detail은 실패한 과정이 없으면 None.
+
+    Raises:
+        RuntimeError: 모든 쌍이 실패(또는 상한 초과)한 경우.
+    """
+    if deadline is None:
+        deadline = config.API_TOTAL_DEADLINE
+    if not pairs:
+        return pd.DataFrame(columns=COURSE_HISTORY_COLUMNS), None
+
+    session = get_retry_session(retries=2, backoff_factor=0.5)
+    frames, failures, reasons = [], [], {}
+
+    executor = ThreadPoolExecutor(max_workers=min(len(pairs), config.API_MAX_WORKERS))
+    try:
+        future_map = {
+            executor.submit(fetch_course_history, session, api_key, course_id): course_id
+            for api_key, course_id in pairs
+        }
+        try:
+            for future in as_completed(future_map, timeout=deadline):
+                course_id = future_map[future]
+                try:
+                    df = future.result()
+                except Exception as e:
+                    logger.warning(f"과정({course_id}) 이력 조회 실패, 건너뜀: {e}")
+                    failures.append(course_id)
+                    reasons[course_id] = f"{type(e).__name__}: {str(e).strip().splitlines()[0][:120]}"
+                    continue
+                if not df.empty:
+                    frames.append(df)
+        except FuturesTimeoutError:
+            pending = [cid for f, cid in future_map.items() if not f.done()]
+            logger.warning(f"이력 조회 {deadline}초 초과 — 미완료 과정 건너뜀: {pending}")
+            failures.extend(pending)
+            for cid in pending:
+                reasons[cid] = f"전체 상한 {deadline}초 초과 (응답 지연)"
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    error_detail = None
+    if failures:
+        error_detail = " / ".join(f"{cid} → {reasons.get(cid, '?')}" for cid in failures)
+        if len(failures) == len(pairs):
+            raise RuntimeError(f"모든 과정 이력 조회 실패: {error_detail}")
+
+    history = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=COURSE_HISTORY_COLUMNS)
+    return history, error_detail
+
+
+def _get_course_history_from_db():
+    """DB(TB_COURSE_MASTER) 기준 전 회차 집계 (폴백용). ETL 수집 대상인 한화 과정만 있다."""
+    return load_data(
+        "SELECT TRPR_ID, TRPR_DEGR, TRPR_NM, TR_STA_DT, TR_END_DT, "
+        "TOT_FXNUM, TOT_TRP_CNT, TOT_PAR_MKS, FINI_CNT, INST_INO "
+        "FROM TB_COURSE_MASTER ORDER BY TRPR_ID, TRPR_DEGR"
+    )
+
+
+def get_course_history_with_fallback():
+    """전 회차 모집·등록·수강 집계. API 우선, 실패 시 DB 폴백.
+
+    Returns:
+        (history_df, source, error_detail)
+        source: "API" / "DB"(키 미설정) / "DB_FALLBACK"(실시간 조회 실패)
+
+    DB에는 한화 과정만 있으므로 폴백 시 엔코아 과정이 빠진다 — 화면에서 반드시 안내할 것.
+    """
+    pairs = get_institutions()
+    if not pairs:
+        logger.info("API 키/과정 ID 없음 → 이력 DB 폴백")
+        return _get_course_history_from_db(), "DB", None
+    try:
+        history, error_detail = fetch_all_course_history(pairs)
+        return history, "API", error_detail
+    except Exception as e:
+        logger.warning(f"이력 API 호출 실패, DB 폴백: {e}")
+        return _get_course_history_from_db(), "DB_FALLBACK", f"{type(e).__name__}: {e}"
