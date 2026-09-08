@@ -79,6 +79,22 @@ def get_institutions():
     return pairs
 
 
+def get_funnel_institutions():
+    """모집 퍼널·노션 대조용 (인증키, 과정ID) 쌍 — `get_institutions()` + `config.FUNNEL_EXTRA_COURSES`.
+
+    추가 과정(SKN·MLO)은 과정 ID를 코드에 두고 키만 기존 환경변수에서 가져온다.
+    키가 없는 항목은 조용히 빠지고, 이미 있는 과정 ID는 중복 추가하지 않는다.
+    """
+    pairs = list(get_institutions())
+    known = {cid for _, cid in pairs}
+    for key_name, cid in config.FUNNEL_EXTRA_COURSES:
+        key = _get_secret(key_name)
+        if key and cid not in known:
+            pairs.append((key, cid))
+            known.add(cid)
+    return pairs
+
+
 # ── 개별 API 함수 ──────────────────────────────────────────────────────
 
 
@@ -537,8 +553,11 @@ def _get_course_history_from_db():
     )
 
 
-def get_course_history_with_fallback():
+def get_course_history_with_fallback(pairs=None):
     """전 회차 모집·등록·수강 집계. API 우선, 실패 시 DB 폴백.
+
+    Args:
+        pairs: (인증키, 과정ID) 목록. 기본은 `get_institutions()`. 퍼널 페이지는 `get_funnel_institutions()`를 넘긴다.
 
     Returns:
         (history_df, source, error_detail)
@@ -546,7 +565,8 @@ def get_course_history_with_fallback():
 
     DB에는 한화 과정만 있으므로 폴백 시 엔코아 과정이 빠진다 — 화면에서 반드시 안내할 것.
     """
-    pairs = get_institutions()
+    if pairs is None:
+        pairs = get_institutions()
     if not pairs:
         logger.info("API 키/과정 ID 없음 → 이력 DB 폴백")
         return _get_course_history_from_db(), "DB", None

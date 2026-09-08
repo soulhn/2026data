@@ -156,6 +156,7 @@ HRD_API_KEY="발급받은_인증키"
 HANWHA_COURSE_ID="관리할_내부_과정_ID"
 ENCORE_API_KEY="엔코아_기관_인증키"        # AI캠퍼스 운영 현황 (기관별 키 필수)
 ENCORE_COURSE_IDS="과정ID1,과정ID2"       # 엔코아 과정 ID (콤마 구분)
+# 모집 퍼널 페이지에만 추가되는 과정(SKN·MLO)은 환경변수가 아니라 config.FUNNEL_EXTRA_COURSES 에 과정 ID로 등록 — 키는 위 두 개 재사용
 DATABASE_URL="postgresql://..."   # Supabase 연결 (필수 — 미설정 시 DB 접근 시점에 즉시 에러)
 SARAMIN_API_KEY="사람인_API_키"  # 채용공고 수집 (선택사항)
 OPENAI_API_KEY="OpenAI_API_키"   # AI 리포트 기능 (선택사항)

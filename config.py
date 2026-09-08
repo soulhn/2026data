@@ -237,7 +237,17 @@ REVENUE_FULL_THRESHOLD = 0.80       # 전액 청구 최소 출석률
 COURSE_SHORT_NAMES = {
     "AIG20260000578382": "MLE",   # [엔코아] LLM 지식 그래프 기반 신뢰형 GraphRAG … 머신러닝 엔지니어 양성 과정
     "AIG20260000578396": "AIO",   # [엔코아] 멀티 에이전트 워크플로우 기반 AI 오케스트레이션 … 개발자 양성 과정
+    "AIG20260000578340": "MLO",   # [엔코아] AI Ready Data 기반 Cloud·Native 자동화를 위한 MLOps 엔지니어 양성 과정
+    "AIG20240000459068": "SKN",   # SK네트웍스 Family AI 캠프 (플레이데이터평생교육원, 한화와 같은 기관)
 }
+
+# 모집 퍼널 페이지(HRD등록_개강참석률)와 노션 대조에만 추가로 붙는 과정 — (인증키 환경변수 이름, 과정 ID).
+# 과정 ID는 비밀이 아니라 코드에 둔다. 키는 기존 환경변수를 그대로 쓰므로 시크릿 변경이 필요 없다.
+# 운영 현황 페이지·hrd_etl(DB 수집)에는 영향을 주지 않는다 — 그쪽은 HANWHA_COURSE_ID·ENCORE_COURSE_IDS 그대로.
+FUNNEL_EXTRA_COURSES = [
+    ("HRD_API_KEY", "AIG20240000459068"),     # SKN — 플레이데이터 기관 키(한화 키)로 조회 가능 (기관코드 200200543 동일)
+    ("ENCORE_API_KEY", "AIG20260000578340"),  # MLO — 엔코아 키
+]
 
 # ── 취업률 특수값 코드 매핑 ──
 # EI_EMPL_RATE_3 / EI_EMPL_RATE_6 / HRD_EMPL_RATE_6 (TB_COURSE_MASTER TEXT 컬럼)
@@ -317,5 +327,7 @@ NOTION_OPS_SINCE = "2023-01-01"  # 이 날짜 이후 개강 행만 조회 (한�
 COURSE_GROUP_KEYWORDS = {
     "AIO": ("오케스트레이션",),
     "MLE": ("머신러닝",),
+    "MLO": ("AI Ready", "MLOps"),
+    "SKN": ("SK네트웍스",),          # 노션엔 소문자 "sk네트웍스"도 있어 대소문자 무시로 비교
     "한화": ("한화", "BEYOND"),
 }

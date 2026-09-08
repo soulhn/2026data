@@ -1,5 +1,24 @@
 # 개발 일지
 
+## 2026-09-08 — 개강 참석률 페이지에 SKN·MLO 과정 추가 (과정 ID를 코드 설정으로)
+
+### 배경
+- 퍼널 페이지에 SK네트웍스 Family AI 캠프(플레이데이터)와 AI Ready Data MLOps(엔코아)를 붙여야 했음
+- 과정 ID를 환경변수(`HANWHA_COURSE_ID`는 단일값)로 넣으려면 로컬 `.env`·Streamlit Cloud·GitHub Actions 세 곳을 고쳐야 하고, 운영 현황·ETL까지 범위가 번짐
+
+### 결정 사항
+- 과정 ID는 비밀이 아니므로 `config.FUNNEL_EXTRA_COURSES = [(키 환경변수 이름, 과정 ID)]`에 둔다. 키는 기존 `HRD_API_KEY`·`ENCORE_API_KEY` 재사용 → **시크릿 변경 없음**
+- `hrd_api.get_funnel_institutions()` = `get_institutions()` + 추가 과정(키 없으면 제외, 중복 제외). `get_course_history_with_fallback(pairs=None)`에 쌍을 넘길 수 있게 확장
+- 퍼널 페이지·노션 대조 페이지만 확장 목록을 쓴다. **운영 현황 페이지·hrd_etl은 그대로** (SKN은 AI캠퍼스가 아니고, ETL이 SKN을 담으면 종료과정 성과·매출 페이지 숫자가 바뀜)
+- SKN 과정 ID `AIG20240000459068`는 한화와 같은 기관(플레이데이터평생교육원, 200200543)이라 한화 키로 명부까지 열림. MLO `AIG20260000578340`는 엔코아 키
+- 노션 대조 그룹에 SKN·MLO 추가, 과정명 비교는 대소문자 무시 (노션 "sk네트웍스 37기")
+
+### 영향 범위
+- 수정: config.py, hrd_api.py, notion_ops.py, pages/HRD등록_개강참석률.py, pages/노션_HRD_대조.py, tests, README.md
+- 회차 수: 한화 25 + SKN 38 + 엔코아 9 → 명부 병렬 조회 약 70건 (30건 2초 기준 수 초)
+
+---
+
 ## 2026-09-08 — 개강 참석률 페이지에 이탈 인원·80%이상수료 컬럼 추가
 
 ### 배경

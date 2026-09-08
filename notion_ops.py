@@ -63,9 +63,9 @@ class NotionFetchError(RuntimeError):
 
 def course_group(name):
     """과정명(노션·HRD 어느 쪽이든)을 `config.COURSE_GROUP_KEYWORDS` 그룹으로 매핑. 없으면 None."""
-    text = str(name or "")
+    text = str(name or "").lower()   # 노션엔 "sk네트웍스"처럼 소문자 표기도 있다
     for group, keywords in config.COURSE_GROUP_KEYWORDS.items():
-        if any(k in text for k in keywords):
+        if any(k.lower() in text for k in keywords):
             return group
     return None
 

@@ -565,3 +565,45 @@ class TestCourseHistoryFallback:
         mock_api.return_value = (pd.DataFrame({"TRPR_ID": ["H"]}), "E1 → Timeout")
         df, source, error = get_course_history_with_fallback()
         assert source == "API" and error == "E1 → Timeout"
+
+
+# ── get_funnel_institutions ────────────────────────────────────────────
+
+
+class TestFunnelInstitutions:
+    """퍼널 페이지 전용 과정 추가(config.FUNNEL_EXTRA_COURSES) — 키만 환경변수, 과정 ID는 코드."""
+
+    @patch.dict("os.environ", {
+        "HRD_API_KEY": "hkey", "HANWHA_COURSE_ID": "hcid",
+        "ENCORE_API_KEY": "ekey", "ENCORE_COURSE_IDS": "e1",
+    }, clear=True)
+    @patch("hrd_api.config.FUNNEL_EXTRA_COURSES", [("HRD_API_KEY", "skn"), ("ENCORE_API_KEY", "mlo")])
+    def test_appends_extra_courses_with_matching_keys(self):
+        from hrd_api import get_funnel_institutions
+        assert get_funnel_institutions() == [("hkey", "hcid"), ("ekey", "e1"), ("hkey", "skn"), ("ekey", "mlo")]
+
+    @patch.dict("os.environ", {"ENCORE_API_KEY": "ekey", "ENCORE_COURSE_IDS": "e1"}, clear=True)
+    @patch("hrd_api.config.FUNNEL_EXTRA_COURSES", [("HRD_API_KEY", "skn"), ("ENCORE_API_KEY", "mlo")])
+    def test_skips_extra_course_when_key_missing(self):
+        from hrd_api import get_funnel_institutions
+        assert get_funnel_institutions() == [("ekey", "e1"), ("ekey", "mlo")]
+
+    @patch.dict("os.environ", {"ENCORE_API_KEY": "ekey", "ENCORE_COURSE_IDS": "mlo"}, clear=True)
+    @patch("hrd_api.config.FUNNEL_EXTRA_COURSES", [("ENCORE_API_KEY", "mlo")])
+    def test_no_duplicate_when_already_in_env(self):
+        from hrd_api import get_funnel_institutions
+        assert get_funnel_institutions() == [("ekey", "mlo")]
+
+    @patch("hrd_api.fetch_all_course_history")
+    @patch("hrd_api.get_institutions")
+    def test_history_uses_given_pairs(self, mock_inst, mock_hist):
+        mock_hist.return_value = (pd.DataFrame({"TRPR_ID": ["x"]}), None)
+        df, source, err = get_course_history_with_fallback([("k", "x")])
+        assert source == "API" and df["TRPR_ID"].tolist() == ["x"]
+        mock_inst.assert_not_called()
+        mock_hist.assert_called_once_with([("k", "x")])
+
+    def test_real_config_extra_courses_have_short_names(self):
+        import config
+        for _, cid in config.FUNNEL_EXTRA_COURSES:
+            assert cid in config.COURSE_SHORT_NAMES

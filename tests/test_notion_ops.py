@@ -97,8 +97,11 @@ class TestCourseGroup:
         ("데이터 분석 & AI 머신러닝 1기", "MLE"),
         ("[엔코아] LLM 지식 그래프 기반 신뢰형 GraphRAG … 머신러닝 엔지니어 양성 과정", "MLE"),
         ("한화시스템 BEYOND SW 캠프 - “어쩌구”", "한화"),
-        ("SK네트웍스 Family AI 캠프 35기", None),
-        ("AI Ready Data 데이터 엔지니어링 캠프 1기", None),
+        ("SK네트웍스 Family AI 캠프 35기", "SKN"),
+        ("sk네트웍스 Family AI 캠프 37기", "SKN"),        # 노션 실제 표기 (소문자)
+        ("AI Ready Data 데이터 엔지니어링 캠프 1기", "MLO"),
+        ("[엔코아] AI Ready Data 기반 Cloud·Native 자동화를 위한 MLOps 엔지니어 양성 과정", "MLO"),
+        ("업무 성과 향상을 위한 현업 데이터 기반 데이터 분석", None),
         (None, None),
     ])
     def test_maps_keywords(self, name, expected):
@@ -135,9 +138,9 @@ class TestParseOpsPages:
         assert mle["현재인원"] == 21 - 4                # 17
         assert mle["이탈합계"] == 6 + 4
 
-    def test_untracked_course_has_no_group(self, notion_pages):
-        df = parse_ops_pages(notion_pages)
-        assert df[df["과정명"].str.startswith("SK")]["그룹"].isna().all()
+    def test_untracked_course_has_no_group(self):
+        df = parse_ops_pages([_page("업무 성과 향상을 위한 현업 데이터 분석 1기", "2025-10-21", "2025-11-08", 15, 0, 0, 0)])
+        assert df["그룹"].isna().all()
 
     def test_empty(self):
         df = parse_ops_pages([])
@@ -242,13 +245,13 @@ class TestCompareOps:
         notion = parse_ops_pages(notion_pages)
         cmp = compare_ops(hrd_history, notion, today="2026-09-08")
 
-        # 회차 0 제외, SK(그룹 없음) 제외 → AIO1(양쪽), MLE1(양쪽), AIO3(HRD만)
-        assert len(cmp) == 3
+        # 회차 0 제외 → AIO1(양쪽), MLE1(양쪽), AIO3(HRD만), SKN35(노션만 — HRD 이력에 없음)
+        assert len(cmp) == 4
         by = cmp.set_index(["그룹", "개강일"])
         assert by.loc[("AIO", "2026-07-09"), "매칭"] == "양쪽"
         assert by.loc[("MLE", "2026-07-16"), "매칭"] == "양쪽"
         assert by.loc[("AIO", "2026-09-15"), "매칭"] == "HRD만"
-        assert "SK" not in " ".join(cmp["노션_과정명"].dropna())
+        assert by.loc[("SKN", "2026-07-07"), "매칭"] == "노션만"
 
     def test_confirmed_match_and_mismatch(self, hrd_history, notion_pages):
         cmp = compare_ops(hrd_history, parse_ops_pages(notion_pages), today="2026-09-08")

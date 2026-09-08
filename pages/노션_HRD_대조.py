@@ -7,7 +7,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import check_password, page_error_boundary
-from hrd_api import get_course_history_with_fallback, get_active_data_with_fallback, _get_secret
+from hrd_api import get_course_history_with_fallback, get_active_data_with_fallback, get_funnel_institutions, _get_secret
 from notion_ops import (
     NotionFetchError, fetch_ops_table, load_ops_csv, compare_ops, roster_current_counts,
 )
@@ -26,7 +26,7 @@ with page_error_boundary():
 
     @st.cache_data(ttl=CACHE_TTL_API, show_spinner="HRD-Net 과정 이력 조회 중…")
     def load_history():
-        return get_course_history_with_fallback()
+        return get_course_history_with_fallback(get_funnel_institutions())
 
     @st.cache_data(ttl=CACHE_TTL_API, show_spinner="노션 운영현황표 조회 중…")
     def load_notion(token):
@@ -123,7 +123,7 @@ with page_error_boundary():
     n_skipped = int((notion_df["그룹"].isna()).sum())
     st.caption(
         f"대조 키 = 과정 그룹({', '.join(groups)}) + 개강일 · "
-        f"그룹에 안 걸리는 노션 과정 {n_skipped}개(SK네트웍스·AI Ready 등 HRD 미추적)는 제외"
+        f"그룹에 안 걸리는 노션 과정 {n_skipped}개(HRD 미추적 단기 과정 등)는 제외"
     )
 
     if view.empty:

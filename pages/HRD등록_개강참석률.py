@@ -8,7 +8,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import check_password, page_error_boundary, calc_recruit_rate
-from hrd_api import get_course_history_with_fallback, get_institutions, fetch_all_roster_counts
+from hrd_api import get_course_history_with_fallback, get_funnel_institutions, fetch_all_roster_counts
 from config import CACHE_TTL_API, COURSE_SHORT_NAMES
 
 st.set_page_config(page_title="HRD 등록 대비 개강 참석률", page_icon="🎯", layout="wide")
@@ -26,7 +26,8 @@ with page_error_boundary():
     @st.cache_data(ttl=CACHE_TTL_API, show_spinner="HRD-Net 과정 이력 조회 중…")
     def load_history():
         # 실패 사유는 캐시 대상 안에서 함께 반환 — 캐시 히트 시 모듈 변수는 이미 비어 있다
-        return get_course_history_with_fallback()
+        # 퍼널은 운영 현황보다 넓게 본다: 기본 기관 쌍 + config.FUNNEL_EXTRA_COURSES(SKN·MLO)
+        return get_course_history_with_fallback(get_funnel_institutions())
 
     history_df, data_source, history_error = load_history()
 
@@ -97,7 +98,7 @@ with page_error_boundary():
 
     @st.cache_data(ttl=CACHE_TTL_API, show_spinner="HRD-Net 명부 조회 중… (회차별 이탈 인원)")
     def load_roster_counts(rounds):
-        return fetch_all_roster_counts(get_institutions(), list(rounds))
+        return fetch_all_roster_counts(get_funnel_institutions(), list(rounds))
 
     rounds = tuple(
         (r.TRPR_ID, int(r.TRPR_DEGR))
@@ -278,7 +279,7 @@ with page_error_boundary():
     st.caption("이 페이지가 무엇을 어떻게 가공했는지, 대조할 때 무엇을 봐야 하는지, 그 결과로 무엇을 결정해야 하는지를 한곳에 모았습니다.")
 
     n_courses = history_df['TRPR_ID'].nunique()
-    pairs = get_institutions()
+    pairs = get_funnel_institutions()
     pre_open = df[(df['상태'] == '개설예정') & (df['TOT_PAR_MKS'] > 0)]
     over_capacity = df[df['TOT_TRP_CNT'] > df['TOT_FXNUM']]
     fx_values = sorted(df['TOT_FXNUM'].unique().tolist())
