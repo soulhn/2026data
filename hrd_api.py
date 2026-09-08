@@ -57,42 +57,31 @@ def _get_secret(name):
         return None
 
 
-def get_institutions():
-    """운영기관별 (인증키, 과정ID) 쌍 목록.
+def get_institutions(course_ids=None):
+    """과정 목록 → (인증키, 과정ID) 쌍. 기본은 `config.OPS_COURSE_IDS`(운영 현황 범위).
 
     명부/출결 API는 인증키가 소속 기관의 과정만 조회하도록 막혀 있어
     (`요청하신 훈련기관에서 운영하는 과정만 조회가 가능합니다`)
-    기관마다 키와 과정 ID를 짝지어야 한다. 과정 목록 API는 이 제약이 없다.
+    과정마다 소속 기관(`config.COURSES`)의 키(`config.INSTITUTIONS[...]["key_env"]`)를 짝지어야 한다.
+    과정 ID는 코드(config)에서, 키만 환경변수/secrets에서 온다. 키가 없는 기관의 과정은 조용히 빠진다.
     """
-    pairs = []
-    hanwha_key = _get_secret("HRD_API_KEY")
-    hanwha_course = _get_secret("HANWHA_COURSE_ID")
-    if hanwha_key and hanwha_course:
-        pairs.append((hanwha_key, hanwha_course))
-
-    encore_key = _get_secret("ENCORE_API_KEY")
-    if encore_key:
-        for cid in (_get_secret("ENCORE_COURSE_IDS") or "").split(","):
-            cid = cid.strip()
-            if cid:
-                pairs.append((encore_key, cid))
+    if course_ids is None:
+        course_ids = config.OPS_COURSE_IDS
+    pairs, seen = [], set()
+    for cid in course_ids:
+        if cid in seen or cid not in config.COURSES:
+            continue
+        inst = config.COURSES[cid][0]
+        key = _get_secret(config.INSTITUTIONS[inst]["key_env"])
+        if key:
+            pairs.append((key, cid))
+            seen.add(cid)
     return pairs
 
 
 def get_funnel_institutions():
-    """모집 퍼널·노션 대조용 (인증키, 과정ID) 쌍 — `get_institutions()` + `config.FUNNEL_EXTRA_COURSES`.
-
-    추가 과정(SKN·MLO)은 과정 ID를 코드에 두고 키만 기존 환경변수에서 가져온다.
-    키가 없는 항목은 조용히 빠지고, 이미 있는 과정 ID는 중복 추가하지 않는다.
-    """
-    pairs = list(get_institutions())
-    known = {cid for _, cid in pairs}
-    for key_name, cid in config.FUNNEL_EXTRA_COURSES:
-        key = _get_secret(key_name)
-        if key and cid not in known:
-            pairs.append((key, cid))
-            known.add(cid)
-    return pairs
+    """모집 퍼널·노션 대조용 쌍 — 등록된 과정 전부(`config.FUNNEL_COURSE_IDS`)."""
+    return get_institutions(config.FUNNEL_COURSE_IDS)
 
 
 # ── 개별 API 함수 ──────────────────────────────────────────────────────
@@ -458,7 +447,7 @@ def get_active_data_with_fallback():
             "DB"          — API 키/과정 ID 미설정 → 정상적인 DB 조회
             "DB_FALLBACK" — 실시간 조회 실패로 인한 폴백
 
-    `"DB"`와 `"DB_FALLBACK"`을 구분하는 이유: ETL이 `HANWHA_COURSE_ID` 하나만 수집하므로
+    `"DB"`와 `"DB_FALLBACK"`을 구분하는 이유: ETL이 `config.ETL_COURSE_ID` 하나만 수집하므로
     엔코아 등 다른 기관 과정은 DB에 없다. 폴백 결과가 비어 있을 때 이를 "운영 중인 과정 없음"
     으로 표시하면 실제로는 기수가 돌고 있는데도 거짓 안내를 하게 된다.
     """

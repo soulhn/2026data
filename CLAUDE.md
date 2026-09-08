@@ -59,7 +59,7 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
   **`with ThreadPoolExecutor` 사용 금지** — `shutdown(wait=True)`라 상한을 넘겨도 끝까지 기다림
 - `get_active_data_with_fallback()` source 3종: `"API"` / `"DB"`(키 미설정) / `"DB_FALLBACK"`(API 실패)
 - **운영 현황은 응답 속도를 위해 실시간 API를 주 경로로 삼는다 (의도된 설계).** DB 폴백은
-  보조 수단이며, `hrd_etl.py`가 `HANWHA_COURSE_ID` 하나만 수집하므로 엔코아 등 타 기관 과정은
+  보조 수단이며, `hrd_etl.py`가 `config.ETL_COURSE_ID`(한화) 하나만 수집하므로 엔코아 등 타 기관 과정은
   DB에 없다 — **폴백이 비는 것은 정상**이고, ETL 확장으로 메울 대상이 아니다
 - 따라서 폴백이 비었을 때 "운영 중인 과정 없음"으로 표시하면 거짓 안내가 된다.
   `DB_FALLBACK`·`realtime_error`를 구분해 "실시간 조회 실패"임을 명확히 알릴 것
@@ -275,10 +275,12 @@ Fix: Correct completion rate calculation (수료율 계산 오류 수정)
 
 ## 환경 변수
 
-- `HRD_API_KEY` — HRD-Net API 인증키, 한화(플레이데이터) 기관 소속 (GitHub Actions + Streamlit secrets 양쪽 등록 시 운영 현황 실시간 API 활성화)
-- `HANWHA_COURSE_ID` — 한화 관리 대상 과정 ID (GitHub Actions + Streamlit secrets 양쪽 등록 필요)
-- `ENCORE_API_KEY` — 엔코아 자체 운영기관 HRD-Net 인증키 (Streamlit secrets 등록). **명부/출결 API는 인증키 소속 기관의 과정만 조회 가능** → 기관마다 키·과정 쌍 필요 (`hrd_api.get_institutions()`)
-- `ENCORE_COURSE_IDS` — 엔코아 과정 ID 목록, 콤마 구분 (예: `AIG...382,AIG...396`)
+- `HRD_API_KEY` — 플레이데이터평생교육원 기관 인증키 (한화·SKN 과정). GitHub Actions + Streamlit secrets 양쪽 등록
+- `ENCORE_API_KEY` — (주)엔코아 기관 인증키 (MLE·AIO·MLO 과정). Streamlit secrets 등록. **명부/출결 API는 인증키 소속 기관의 과정만 조회 가능**
+- **과정 ID는 환경변수가 아니라 `config.py`에서 관리** (2026-09-08 통일): `INSTITUTIONS`(기관 → 키 환경변수 이름) · `COURSES`(과정 ID → 기관·약칭) ·
+  용도별 범위 `ETL_COURSE_ID`(DB 수집, 한화 1개) / `OPS_COURSE_IDS`(운영 현황) / `FUNNEL_COURSE_IDS`(개강 참석률·노션 대조, 전체).
+  `hrd_api.get_institutions(course_ids)`가 과정마다 소속 기관 키를 붙여 (키, 과정ID) 쌍을 만든다. 과정 추가 = `COURSES`에 한 줄 + 범위 목록에 추가.
+  구 변수 `HANWHA_COURSE_ID`·`ENCORE_COURSE_IDS`는 더 이상 읽지 않음 (시크릿에 남아 있어도 무해)
 - `DATABASE_URL` — PostgreSQL 연결 문자열 (**필수**. 미설정 시 `get_connection()`이 `DatabaseNotConfiguredError`)
 - `SARAMIN_API_KEY` — 사람인 채용공고 API 키 (GitHub Actions + Streamlit secrets 등록)
 - `ETL_FULL_REFRESH` — `=1`이면 market_etl이 증분(12개월) 대신 2023-01-01부터 전체 재수집. GitHub Actions 수동 실행의 `full_refresh` 입력으로 전달 (`gh workflow run market_etl.yml -f full_refresh=true`)

@@ -239,7 +239,7 @@ class TestFallback:
         mock_db.assert_called_once()
 
     # clear=True 필수: 실제 .env의 ENCORE_* 가 새어들어오면 기관 쌍이 늘어 결과가 달라짐
-    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
+    @patch.dict("os.environ", {"HRD_API_KEY": "key"}, clear=True)
     @patch("hrd_api.fetch_active_data_realtime")
     @patch("hrd_api._get_active_data_from_db")
     def test_fallback_on_api_failure(self, mock_db, mock_api):
@@ -252,7 +252,7 @@ class TestFallback:
         assert source == "DB_FALLBACK"
         mock_db.assert_called_once()
 
-    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
+    @patch.dict("os.environ", {"HRD_API_KEY": "key"}, clear=True)
     @patch("hrd_api.fetch_active_data_realtime")
     @patch("hrd_api._get_active_data_from_db")
     def test_fallback_with_empty_db_is_distinguishable(self, mock_db, mock_api):
@@ -265,7 +265,7 @@ class TestFallback:
 
         assert c is None and source == "DB_FALLBACK"
 
-    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
+    @patch.dict("os.environ", {"HRD_API_KEY": "key"}, clear=True)
     @patch("hrd_api.fetch_active_data_realtime")
     def test_api_success(self, mock_api):
         mock_api.return_value = (
@@ -284,22 +284,34 @@ class TestFallback:
 
 
 class TestInstitutions:
-    """명부/출결 API는 인증키 소속 기관의 과정만 허용 → (키, 과정ID) 쌍으로 관리."""
+    """명부/출결 API는 인증키 소속 기관의 과정만 허용 → (키, 과정ID) 쌍. 과정 ID는 config, 키는 환경변수."""
 
-    @patch.dict("os.environ", {
-        "HRD_API_KEY": "hkey", "HANWHA_COURSE_ID": "hcid",
-        "ENCORE_API_KEY": "ekey", "ENCORE_COURSE_IDS": "e1, e2",
-    }, clear=True)
+    _COURSES = {
+        "hcid": ("PLAYDATA", "한화", ""), "e1": ("ENCORE", "MLE", ""), "e2": ("ENCORE", "AIO", ""),
+    }
+
+    @patch.dict("os.environ", {"HRD_API_KEY": "hkey", "ENCORE_API_KEY": "ekey"}, clear=True)
+    @patch("hrd_api.config.COURSES", _COURSES)
+    @patch("hrd_api.config.OPS_COURSE_IDS", ["hcid", "e1", "e2"])
     def test_pairs_key_bound_to_own_courses(self):
         assert get_institutions() == [("hkey", "hcid"), ("ekey", "e1"), ("ekey", "e2")]
 
-    @patch.dict("os.environ", {"ENCORE_API_KEY": "ekey", "ENCORE_COURSE_IDS": ""}, clear=True)
-    def test_key_without_course_ids_yields_no_pairs(self):
+    @patch.dict("os.environ", {"ENCORE_API_KEY": "ekey"}, clear=True)
+    @patch("hrd_api.config.COURSES", _COURSES)
+    @patch("hrd_api.config.OPS_COURSE_IDS", ["hcid", "e1"])
+    def test_course_without_its_institution_key_is_skipped(self):
+        assert get_institutions() == [("ekey", "e1")]
+
+    @patch.dict("os.environ", {}, clear=True)
+    @patch("hrd_api.config.COURSES", _COURSES)
+    @patch("hrd_api.config.OPS_COURSE_IDS", ["hcid", "e1"])
+    def test_no_keys_yields_no_pairs(self):
         assert get_institutions() == []
 
-    @patch.dict("os.environ", {"ENCORE_COURSE_IDS": "e1"}, clear=True)
-    def test_course_ids_without_key_yields_no_pairs(self):
-        assert get_institutions() == []
+    @patch.dict("os.environ", {"HRD_API_KEY": "hkey"}, clear=True)
+    @patch("hrd_api.config.COURSES", _COURSES)
+    def test_explicit_course_list_dedupes_and_ignores_unregistered(self):
+        assert get_institutions(["hcid", "hcid", "unknown"]) == [("hkey", "hcid")]
 
     @patch("hrd_api.fetch_active_data_realtime")
     def test_partial_failure_keeps_surviving_course(self, mock_api):
@@ -405,7 +417,7 @@ class TestRealtimeFailureReason:
         assert "ConnectionError" in str(ei.value)
         assert "Max retries exceeded" in str(ei.value)
 
-    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
+    @patch.dict("os.environ", {"HRD_API_KEY": "key"}, clear=True)
     @patch("hrd_api.fetch_active_data_realtime")
     @patch("hrd_api._get_active_data_from_db")
     def test_reason_exposed_after_fallback(self, mock_db, mock_api):
@@ -417,7 +429,7 @@ class TestRealtimeFailureReason:
         reason = get_last_realtime_error()
         assert reason and "ConnectionError" in reason
 
-    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
+    @patch.dict("os.environ", {"HRD_API_KEY": "key"}, clear=True)
     @patch("hrd_api.fetch_active_data_realtime")
     def test_reason_cleared_on_success(self, mock_api):
         mock_api.return_value = _course_frames("A")
@@ -549,7 +561,7 @@ class TestCourseHistoryFallback:
         assert source == "DB" and error is None
         mock_db.assert_called_once()
 
-    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
+    @patch.dict("os.environ", {"HRD_API_KEY": "key"}, clear=True)
     @patch("hrd_api.fetch_all_course_history")
     @patch("hrd_api._get_course_history_from_db")
     def test_api_failure_falls_back_with_reason(self, mock_db, mock_api):
@@ -559,7 +571,7 @@ class TestCourseHistoryFallback:
         df, source, error = get_course_history_with_fallback()
         assert source == "DB_FALLBACK" and "RuntimeError" in error
 
-    @patch.dict("os.environ", {"HRD_API_KEY": "key", "HANWHA_COURSE_ID": "cid"}, clear=True)
+    @patch.dict("os.environ", {"HRD_API_KEY": "key"}, clear=True)
     @patch("hrd_api.fetch_all_course_history")
     def test_api_success_passes_partial_error_through(self, mock_api):
         mock_api.return_value = (pd.DataFrame({"TRPR_ID": ["H"]}), "E1 → Timeout")
@@ -571,28 +583,21 @@ class TestCourseHistoryFallback:
 
 
 class TestFunnelInstitutions:
-    """퍼널 페이지 전용 과정 추가(config.FUNNEL_EXTRA_COURSES) — 키만 환경변수, 과정 ID는 코드."""
+    """퍼널·노션 대조는 등록된 과정 전부(config.FUNNEL_COURSE_IDS), 운영 현황은 OPS_COURSE_IDS."""
 
-    @patch.dict("os.environ", {
-        "HRD_API_KEY": "hkey", "HANWHA_COURSE_ID": "hcid",
-        "ENCORE_API_KEY": "ekey", "ENCORE_COURSE_IDS": "e1",
-    }, clear=True)
-    @patch("hrd_api.config.FUNNEL_EXTRA_COURSES", [("HRD_API_KEY", "skn"), ("ENCORE_API_KEY", "mlo")])
-    def test_appends_extra_courses_with_matching_keys(self):
-        from hrd_api import get_funnel_institutions
-        assert get_funnel_institutions() == [("hkey", "hcid"), ("ekey", "e1"), ("hkey", "skn"), ("ekey", "mlo")]
+    _COURSES = {
+        "hcid": ("PLAYDATA", "한화", ""), "skn": ("PLAYDATA", "SKN", ""),
+        "e1": ("ENCORE", "MLE", ""), "mlo": ("ENCORE", "MLO", ""),
+    }
 
-    @patch.dict("os.environ", {"ENCORE_API_KEY": "ekey", "ENCORE_COURSE_IDS": "e1"}, clear=True)
-    @patch("hrd_api.config.FUNNEL_EXTRA_COURSES", [("HRD_API_KEY", "skn"), ("ENCORE_API_KEY", "mlo")])
-    def test_skips_extra_course_when_key_missing(self):
+    @patch.dict("os.environ", {"HRD_API_KEY": "hkey", "ENCORE_API_KEY": "ekey"}, clear=True)
+    @patch("hrd_api.config.COURSES", _COURSES)
+    @patch("hrd_api.config.OPS_COURSE_IDS", ["hcid", "e1"])
+    @patch("hrd_api.config.FUNNEL_COURSE_IDS", ["hcid", "skn", "e1", "mlo"])
+    def test_funnel_is_superset_of_ops(self):
         from hrd_api import get_funnel_institutions
-        assert get_funnel_institutions() == [("ekey", "e1"), ("ekey", "mlo")]
-
-    @patch.dict("os.environ", {"ENCORE_API_KEY": "ekey", "ENCORE_COURSE_IDS": "mlo"}, clear=True)
-    @patch("hrd_api.config.FUNNEL_EXTRA_COURSES", [("ENCORE_API_KEY", "mlo")])
-    def test_no_duplicate_when_already_in_env(self):
-        from hrd_api import get_funnel_institutions
-        assert get_funnel_institutions() == [("ekey", "mlo")]
+        assert get_institutions() == [("hkey", "hcid"), ("ekey", "e1")]
+        assert get_funnel_institutions() == [("hkey", "hcid"), ("hkey", "skn"), ("ekey", "e1"), ("ekey", "mlo")]
 
     @patch("hrd_api.fetch_all_course_history")
     @patch("hrd_api.get_institutions")
@@ -603,7 +608,13 @@ class TestFunnelInstitutions:
         mock_inst.assert_not_called()
         mock_hist.assert_called_once_with([("k", "x")])
 
-    def test_real_config_extra_courses_have_short_names(self):
+    def test_real_config_is_consistent(self):
+        """실제 config: 모든 범위가 등록된 과정 안에 있고, 기관·약칭·그룹 키가 서로 맞아야 한다."""
         import config
-        for _, cid in config.FUNNEL_EXTRA_COURSES:
-            assert cid in config.COURSE_SHORT_NAMES
+        assert config.ETL_COURSE_ID in config.COURSES
+        assert set(config.OPS_COURSE_IDS) <= set(config.COURSES)
+        assert set(config.FUNNEL_COURSE_IDS) == set(config.COURSES)
+        for cid, (inst, short, _) in config.COURSES.items():
+            assert inst in config.INSTITUTIONS
+            assert short in config.COURSE_GROUP_KEYWORDS
+        assert config.COURSE_SHORT_NAMES == {cid: v[1] for cid, v in config.COURSES.items()}

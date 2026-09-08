@@ -26,7 +26,7 @@ with page_error_boundary():
     @st.cache_data(ttl=CACHE_TTL_API, show_spinner="HRD-Net 과정 이력 조회 중…")
     def load_history():
         # 실패 사유는 캐시 대상 안에서 함께 반환 — 캐시 히트 시 모듈 변수는 이미 비어 있다
-        # 퍼널은 운영 현황보다 넓게 본다: 기본 기관 쌍 + config.FUNNEL_EXTRA_COURSES(SKN·MLO)
+        # 퍼널은 운영 현황보다 넓게 본다: config.FUNNEL_COURSE_IDS(등록된 과정 전부)
         return get_course_history_with_fallback(get_funnel_institutions())
 
     history_df, data_source, history_error = load_history()

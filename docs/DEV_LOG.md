@@ -1,5 +1,24 @@
 # 개발 일지
 
+## 2026-09-08 — 과정 ID 관리 통일: 전부 config, 시크릿에는 인증키만
+
+### 배경
+- 직전 커밋에서 SKN·MLO만 config(`FUNNEL_EXTRA_COURSES`)에 두고 한화·MLE·AIO는 환경변수(`HANWHA_COURSE_ID`·`ENCORE_COURSE_IDS`)에 남겨 두 군데로 갈라짐 — 사용자 지적으로 통일
+
+### 결정 사항
+- `config.INSTITUTIONS`(기관 → 키 환경변수 이름·기관코드) + `config.COURSES`(과정 ID → 기관·약칭·설명)를 단일 원천으로.
+  `COURSE_SHORT_NAMES`는 `COURSES`에서 파생
+- 용도별 범위를 코드에 명시: `ETL_COURSE_ID`(한화 1개 — 늘리면 종료과정 성과·매출·홈 스냅샷 숫자가 바뀜) / `OPS_COURSE_IDS`(한화·MLE·AIO, 기존 환경변수 범위 그대로) / `FUNNEL_COURSE_IDS`(전체)
+- `hrd_api.get_institutions(course_ids=None)`: 과정마다 소속 기관 키를 `_get_secret`으로 붙임. 키 없는 기관 과정은 제외, 미등록 ID 무시, 중복 제거
+- `hrd_etl.COURSE_ID = config.ETL_COURSE_ID`, 워크플로 `hrd_etl.yml`에서 `HANWHA_COURSE_ID` 전달 제거
+- 구 환경변수 두 개는 코드 어디서도 읽지 않음 → 로컬 `.env`·Streamlit Cloud·GitHub Actions 시크릿에서 삭제 가능 (남아 있어도 무해)
+
+### 영향 범위
+- 수정: config.py, hrd_api.py, hrd_etl.py, .github/workflows/hrd_etl.yml, tests/test_hrd_api.py, README.md, CLAUDE.md
+- 화면 변화: 개강 참석률 과정 라벨이 "한화시스템 BEYOND SW 캠프" → "한화" (약칭 통일). 그 외 페이지 범위 변화 없음
+
+---
+
 ## 2026-09-08 — 개강 참석률 페이지에 SKN·MLO 과정 추가 (과정 ID를 코드 설정으로)
 
 ### 배경

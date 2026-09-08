@@ -14,6 +14,7 @@ from utils import (
 )
 from init_db import init_all_tables
 from config import (
+    ETL_COURSE_ID,
     ETL_BATCH_PAGE_SIZE, ETL_UPDATE_CUTOFF_DAYS, ETL_FULL_SKIP_MONTHS,
     ETL_FAILED_ROW_SAMPLE, CacheKey,
 )
@@ -104,7 +105,7 @@ def batch_execute(cursor, sql, data_list):
 load_dotenv()
 
 API_KEY = os.getenv("HRD_API_KEY")
-COURSE_ID = os.getenv("HANWHA_COURSE_ID")
+COURSE_ID = ETL_COURSE_ID   # DB 수집 대상 과정 (한화 1개, config에서 관리 — 시크릿에는 키만)
 
 def get_month_list(start_date_str, end_date_str):
     if not start_date_str or not end_date_str: return []
@@ -119,7 +120,7 @@ def get_month_list(start_date_str, end_date_str):
 
 def run_etl():
     if not API_KEY or not COURSE_ID:
-        logger.error("HRD_API_KEY 또는 HANWHA_COURSE_ID 환경변수가 설정되지 않았습니다.")
+        logger.error("HRD_API_KEY 환경변수 또는 config.ETL_COURSE_ID가 설정되지 않았습니다.")
         return
     init_all_tables()
     conn = get_connection(timeout=30, dict_rows=True)  # 컬럼명 접근용 RealDictCursor

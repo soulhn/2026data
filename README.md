@@ -152,11 +152,9 @@ pip install -r requirements.txt
 ### 2. 환경 변수 설정 (`.env` 파일 생성)
 
 ```ini
-HRD_API_KEY="발급받은_인증키"
-HANWHA_COURSE_ID="관리할_내부_과정_ID"
-ENCORE_API_KEY="엔코아_기관_인증키"        # AI캠퍼스 운영 현황 (기관별 키 필수)
-ENCORE_COURSE_IDS="과정ID1,과정ID2"       # 엔코아 과정 ID (콤마 구분)
-# 모집 퍼널 페이지에만 추가되는 과정(SKN·MLO)은 환경변수가 아니라 config.FUNNEL_EXTRA_COURSES 에 과정 ID로 등록 — 키는 위 두 개 재사용
+HRD_API_KEY="플레이데이터_기관_인증키"    # 한화·SKN 과정 (플레이데이터평생교육원)
+ENCORE_API_KEY="엔코아_기관_인증키"        # MLE·AIO·MLO 과정 (기관별 키 필수 — 명부/출결 API는 소속 기관 과정만 조회 가능)
+# 과정 ID는 시크릿이 아니라 config.py 의 COURSES / ETL_COURSE_ID / OPS_COURSE_IDS / FUNNEL_COURSE_IDS 에서 관리
 DATABASE_URL="postgresql://..."   # Supabase 연결 (필수 — 미설정 시 DB 접근 시점에 즉시 에러)
 SARAMIN_API_KEY="사람인_API_키"  # 채용공고 수집 (선택사항)
 OPENAI_API_KEY="OpenAI_API_키"   # AI 리포트 기능 (선택사항)
@@ -193,10 +191,8 @@ streamlit run home.py
 Secrets 설정:
 ```toml
 DATABASE_URL = "postgresql://..."
-HRD_API_KEY = "HRD-Net_API_키"
-HANWHA_COURSE_ID = "관리_대상_과정_ID"
+HRD_API_KEY = "플레이데이터_기관_인증키"
 ENCORE_API_KEY = "엔코아_기관_인증키"
-ENCORE_COURSE_IDS = "과정ID1,과정ID2"
 
 [passwords]
 admin = "비밀번호"
@@ -206,7 +202,6 @@ admin = "비밀번호"
 
 Repository Secrets에 등록:
 - `HRD_API_KEY`
-- `HANWHA_COURSE_ID`
 - `DATABASE_URL`
 - `SARAMIN_API_KEY`
 

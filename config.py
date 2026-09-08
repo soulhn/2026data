@@ -234,20 +234,30 @@ DAILY_TRAINING_FEE = 145_200        # 일 훈련비 단가 (원)
 REVENUE_FULL_THRESHOLD = 0.80       # 전액 청구 최소 출석률
 
 # ── 과정 축약명 (운영 현황 사이드바 표시용, 내부 호칭) ──
-COURSE_SHORT_NAMES = {
-    "AIG20260000578382": "MLE",   # [엔코아] LLM 지식 그래프 기반 신뢰형 GraphRAG … 머신러닝 엔지니어 양성 과정
-    "AIG20260000578396": "AIO",   # [엔코아] 멀티 에이전트 워크플로우 기반 AI 오케스트레이션 … 개발자 양성 과정
-    "AIG20260000578340": "MLO",   # [엔코아] AI Ready Data 기반 Cloud·Native 자동화를 위한 MLOps 엔지니어 양성 과정
-    "AIG20240000459068": "SKN",   # SK네트웍스 Family AI 캠프 (플레이데이터평생교육원, 한화와 같은 기관)
+# ── 기관·과정 등록 ──
+# 과정 ID는 HRD-Net에 공개된 값이라 비밀이 아니다 → 여기서 관리한다. 시크릿(환경변수)에는 **인증키만** 둔다.
+# 명부/출결 API는 인증키 소속 기관의 과정만 열리므로 과정마다 어느 기관 키로 부를지 적어 둔다.
+INSTITUTIONS = {
+    "PLAYDATA": {"key_env": "HRD_API_KEY",    "name": "플레이데이터평생교육원", "inst_ino": "200200543"},
+    "ENCORE":   {"key_env": "ENCORE_API_KEY", "name": "(주)엔코아",           "inst_ino": "202510290"},
 }
 
-# 모집 퍼널 페이지(HRD등록_개강참석률)와 노션 대조에만 추가로 붙는 과정 — (인증키 환경변수 이름, 과정 ID).
-# 과정 ID는 비밀이 아니라 코드에 둔다. 키는 기존 환경변수를 그대로 쓰므로 시크릿 변경이 필요 없다.
-# 운영 현황 페이지·hrd_etl(DB 수집)에는 영향을 주지 않는다 — 그쪽은 HANWHA_COURSE_ID·ENCORE_COURSE_IDS 그대로.
-FUNNEL_EXTRA_COURSES = [
-    ("HRD_API_KEY", "AIG20240000459068"),     # SKN — 플레이데이터 기관 키(한화 키)로 조회 가능 (기관코드 200200543 동일)
-    ("ENCORE_API_KEY", "AIG20260000578340"),  # MLO — 엔코아 키
+# 과정 ID → (기관, 약칭, 설명). 약칭은 화면·노션 대조 그룹 키로 쓰인다 (COURSE_GROUP_KEYWORDS와 일치할 것).
+COURSES = {
+    "AIG20230000455635": ("PLAYDATA", "한화", "한화시스템 BEYOND SW 캠프"),
+    "AIG20240000459068": ("PLAYDATA", "SKN",  "SK네트웍스 Family AI 캠프"),
+    "AIG20260000578382": ("ENCORE",   "MLE",  "[엔코아] LLM 지식 그래프 기반 신뢰형 GraphRAG … 머신러닝 엔지니어 양성 과정"),
+    "AIG20260000578396": ("ENCORE",   "AIO",  "[엔코아] 멀티 에이전트 워크플로우 기반 AI 오케스트레이션 … 개발자 양성 과정"),
+    "AIG20260000578340": ("ENCORE",   "MLO",  "[엔코아] AI Ready Data 기반 Cloud·Native 자동화를 위한 MLOps 엔지니어 양성 과정"),
+}
+COURSE_SHORT_NAMES = {cid: short for cid, (_, short, _) in COURSES.items()}
+
+# 용도별 범위 — 어느 화면·작업이 어느 과정을 보는지 여기서만 정한다.
+ETL_COURSE_ID = "AIG20230000455635"                # hrd_etl → DB. 한화 1개만 (종료과정 성과·매출·홈 스냅샷 기준. 늘리면 그 숫자들이 바뀜)
+OPS_COURSE_IDS = [                                  # 현재_운영_현황 (AI캠퍼스 운영 현황) + DB 폴백
+    "AIG20230000455635", "AIG20260000578382", "AIG20260000578396",
 ]
+FUNNEL_COURSE_IDS = list(COURSES)                   # HRD등록_개강참석률 · 노션_HRD_대조: 등록된 과정 전부
 
 # ── 취업률 특수값 코드 매핑 ──
 # EI_EMPL_RATE_3 / EI_EMPL_RATE_6 / HRD_EMPL_RATE_6 (TB_COURSE_MASTER TEXT 컬럼)
