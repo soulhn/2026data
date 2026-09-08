@@ -301,3 +301,21 @@ class CacheKey:
     # 보존 삭제 후에도 남아야 하는 시계열과 수집 현황만 캐시한다.
     SARAMIN_TRACK_MONTHLY = "saramin_track_monthly"   # TRACK('ALL' 포함), YEAR_MONTH, CNT, ENTRY_CNT — 누적 병합
     SARAMIN_QUERY_HITS = "saramin_query_hits"         # SEARCH_KEYWORD, CNT — 수집 쿼리별 보유 공고
+
+
+# ── 노션 운영현황표 대조 (pages/노션_HRD_대조.py) ──
+# 회사 노션 "운영현황표 (매일 10시 기준)" 데이터베이스. 읽기 전용으로만 조회한다.
+NOTION_OPS_DB_ID = "3e899143fd714dc28eb4af8c58e50e48"
+NOTION_API_BASE = "https://api.notion.com/v1"
+NOTION_API_VERSION = "2022-06-28"
+NOTION_TIMEOUT = 20            # 초, 요청당
+NOTION_PAGE_SIZE = 100         # Notion API 최대값
+NOTION_OPS_SINCE = "2023-01-01"  # 이 날짜 이후 개강 행만 조회 (한화 1회차 2023-10-30)
+
+# 노션 과정명·HRD-Net 과정명을 같은 그룹으로 묶는 키워드. 앞에서부터 먼저 맞는 그룹을 택한다.
+# 그룹 + 개강일이 같으면 같은 기수(회차)로 본다. 어느 키워드에도 안 걸리는 과정은 대조 대상이 아니다.
+COURSE_GROUP_KEYWORDS = {
+    "AIO": ("오케스트레이션",),
+    "MLE": ("머신러닝",),
+    "한화": ("한화", "BEYOND"),
+}

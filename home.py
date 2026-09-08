@@ -271,6 +271,7 @@ pg = st.navigation({
         st.Page("pages/현재_운영_현황.py", title="AI캠퍼스 운영 현황", icon="📋"),
         st.Page("pages/매출_분석.py", title="매출 분석", icon="💰"),
         st.Page("pages/HRD등록_개강참석률.py", title="HRD 등록 대비 개강 참석률", icon="🎯"),
+        st.Page("pages/노션_HRD_대조.py", title="노션 운영현황 × HRD-Net 대조", icon="🔁"),
     ],
     "외부 동향": [
         st.Page("pages/시장_분석.py", title="시장 분석", icon="📈"),
