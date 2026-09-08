@@ -109,11 +109,13 @@ with page_error_boundary():
     else:
         df['DROPOUT_CNT'] = pd.NA
         df['PARTIAL_FINI_CNT'] = pd.NA
+        df['EARLY_EMPL_CNT'] = pd.NA
     # 명부를 못 읽은 종료 회차는 개강 인원 − 수료로 대신한다. HRD 수료(finiCnt)에 조기취업이 빠져 있어
     # 조기취업자가 있는 회차는 실제 이탈보다 그만큼 크게 잡힌다 (한화 18회차: 27 − 24 = 3, 명부 중도탈락 1 + 조기취업 2)
     ended_fallback = (df['TOT_PAR_MKS'] - df['FINI_CNT']).where(df['상태'] == '종료')
     df['이탈 인원'] = df['DROPOUT_CNT'].astype('Float64').fillna(ended_fallback.astype('Float64')).astype('Int64')
     df['80%이상수료'] = df['PARTIAL_FINI_CNT'].astype('Float64').astype('Int64')
+    df['조기취업'] = df['EARLY_EMPL_CNT'].astype('Float64').astype('Int64')
     df['이탈률'] = (df['이탈 인원'].astype('Float64')
                   / df['TOT_PAR_MKS'].astype('Float64').replace(0, pd.NA) * 100).round(1)
 
@@ -233,11 +235,12 @@ with page_error_boundary():
     st.caption(
         "HRD-Net 훈련일정 상세 API 집계값 + 명부 상태 집계(이탈 인원·80%이상수료). "
         "이탈 인원 = 개강 후 확정 인원 중 중도탈락·제적. 80%이상수료는 수료에 포함된 인원이라 이탈이 아닙니다. "
+        "조기취업은 HRD 수료(finiCnt)에 들어가지 않아 따로 표시합니다 (종료 회차: 개강 인원 = 이탈 + 수료 + 조기취업). "
         "표 우측 상단에서 CSV로 내려받아 회사 페이지와 대조할 수 있습니다."
     )
 
     table_cols = ['과정', '회차', '상태', 'TR_STA_DT', 'TR_END_DT',
-                  'TOT_FXNUM', 'TOT_TRP_CNT', 'TOT_PAR_MKS', '신청 이탈', '이탈 인원', 'FINI_CNT', '80%이상수료',
+                  'TOT_FXNUM', 'TOT_TRP_CNT', 'TOT_PAR_MKS', '신청 이탈', '이탈 인원', 'FINI_CNT', '80%이상수료', '조기취업',
                   '개강 참석률', '모집률', '정원 충원율', '수료율', '이탈률']
     st.dataframe(
         view.sort_values(['TR_STA_DT', 'TRPR_DEGR'], ascending=False)[table_cols],
@@ -253,6 +256,8 @@ with page_error_boundary():
             "FINI_CNT":    st.column_config.NumberColumn("수료", format="%d명", help="HRD-Net finiCnt = 정상수료 + 80%이상수료. 조기취업은 포함되지 않음"),
             "80%이상수료":  st.column_config.NumberColumn("80%이상수료", format="%d명",
                                                        help="수료에 포함된 인원 중 80%이상수료 상태. 회사 운영표의 '80%수료(비용O)' 항목과 대응"),
+            "조기취업":     st.column_config.NumberColumn("조기취업", format="%d명",
+                                                       help="명부 상태 조기취업. HRD 수료(finiCnt)에 포함되지 않는 별도 결과 — 이탈도 수료도 아님"),
             "개강 참석률":  st.column_config.ProgressColumn("개강 참석률(%)", format="%.1f%%", min_value=0, max_value=100),
             "모집률":       st.column_config.ProgressColumn("모집률(%)", format="%.1f%%", min_value=0, max_value=100),
             "정원 충원율":  st.column_config.ProgressColumn("정원 충원율(%)", format="%.1f%%", min_value=0, max_value=100),
@@ -292,6 +297,7 @@ with page_error_boundary():
 | 수료 | `finiCnt` | 수료 인원 = 정상수료 + 80%이상수료. **조기취업은 빠져 있음** (명부 실측: 한화 3회차 정상 22 + 80% 1 = 23 = finiCnt, 조기취업 1 제외). 진행중 회차는 0으로 내려옴 |
 | 이탈 인원 | 명부 API(`_4.jsp`) `trneeSttusNm` | 회차별 명부에서 **중도탈락·제적** 상태를 센 값. 개강 후 확정 인원 기준 이탈이며, 회사 운영표의 **중도이탈**과 같은 단계 (개강 전 초기이탈은 명부에 없어 안 잡힘) |
 | 80%이상수료 | 명부 API `trneeSttusNm` | 수료 중 `80%이상수료` 상태만 센 값. 이탈이 아니라 수료에 포함되며, 회사 운영표의 '80%수료(비용O)' 항목 대조용 |
+| 조기취업 | 명부 API `trneeSttusNm` | `조기취업` 상태 인원. HRD 수료(`finiCnt`)에 들어가지 않고 이탈도 아닌 별도 결과. 이 컬럼이 있어야 종료 회차의 개강 인원 = 이탈 + 수료 + 조기취업 이 맞아떨어짐 |
 | 상태 | `trStaDt`/`trEndDt` | 오늘(KST) 기준으로 개설예정 · 진행중 · 종료를 이 화면이 계산 |
 
 **제외한 것**

@@ -96,7 +96,7 @@
 ### 주요 응답 필드 (훈련생 목록 `trneList`)
 
 **`trneeSttusNm` 실측 상태값 (2026-09-08)**: `훈련중` · `중도탈락` · `정상수료` · `80%이상수료` (그 외 `제적`·`조기취업` 가능).
-회차별 이탈 인원 = `중도탈락|제적`, 80%이상수료 = `80%` 포함 — `hrd_api.summarize_roster_status()` / `fetch_all_roster_counts()`.
+회차별 이탈 인원 = `중도탈락|제적`, 80%이상수료 = `80%` 포함, 조기취업 = `조기취업` 포함 — `hrd_api.summarize_roster_status()` / `fetch_all_roster_counts()`.
 명부에는 확정자만 있어 개강 전 이탈(회사 운영표의 초기이탈)은 보이지 않는다. 종료 회차의 `totParMks − finiCnt`는 중도탈락 + **조기취업** (한화 18회차 27 − 24 = 3 = 중도탈락 1 + 조기취업 2). 조기취업이 없는 회차만 중도탈락과 같다.
 `CSTMR_ID`, `CSTMR_NM`, `STTUS_NM`(상태), `TRANEE_TRACSE_SE`(유형), `ATEND_CNT`(출석), `ABSENT_CNT`(결석), `VCATN_CNT`(휴가), `OFLHD_CNT`(공가), `TRANING_DE_CNT`(훈련일수)
 

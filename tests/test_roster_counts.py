@@ -38,6 +38,8 @@ class TestSummarizeRosterStatus:
         assert out.loc[("H", 25), "PARTIAL_FINI_CNT"] == 1
         assert out.loc[("A", 1), "DROPOUT_CNT"] == 2          # 중도탈락 + 제적, 조기취업은 이탈 아님
         assert out.loc[("A", 1), "PARTIAL_FINI_CNT"] == 0
+        assert out.loc[("A", 1), "EARLY_EMPL_CNT"] == 1        # 조기취업은 별도 집계
+        assert out.loc[("H", 25), "EARLY_EMPL_CNT"] == 0
         assert out["DROPOUT_CNT"].dtype.kind == "i"
 
     def test_partial_completion_is_not_counted_as_dropout(self):
@@ -104,9 +106,11 @@ class TestFetchAllRosterCounts:
 
 
 @pytest.mark.parametrize("statuses,expected", [
-    (["정상수료", "80%이상수료", "중도탈락"], (1, 1)),
-    (["훈련중"] * 4, (0, 0)),
+    (["정상수료", "80%이상수료", "중도탈락"], (1, 1, 0)),
+    (["훈련중"] * 4, (0, 0, 0)),
+    # 한화 18회차 실측: 정상수료 24 · 조기취업 2 · 중도탈락 1 → finiCnt 24, 확정 − 수료 = 3 ≠ 이탈 1
+    (["정상수료"] * 24 + ["조기취업"] * 2 + ["중도탈락"], (1, 0, 2)),
 ])
-def test_dropout_partial_pairs(statuses, expected):
+def test_dropout_partial_early_triples(statuses, expected):
     out = summarize_roster_status(_roster("X", 1, statuses)).iloc[0]
-    assert (out["DROPOUT_CNT"], out["PARTIAL_FINI_CNT"]) == expected
+    assert (out["DROPOUT_CNT"], out["PARTIAL_FINI_CNT"], out["EARLY_EMPL_CNT"]) == expected
