@@ -17,9 +17,14 @@
 - 마이그레이션 `scripts/migrate_market_db.py`: `copy`(서버 커서 5만 행 단위 → 임시 테이블 COPY → ON CONFLICT DO NOTHING, 재실행 안전) → `verify`(행 수·기간·연도 분포 비교) → `drop`(`DROP` 타이핑 확인 후 메인 삭제 + VACUUM)
 - 워크플로 3개(hrd·market·saramin)에 `DATABASE_URL_MARKET` 전달 추가
 
+### 실행 결과 (2026-09-15 같은 날)
+- 두 번째 프로젝트 `2026data-market`(soulhn's Org, ap-northeast-2, Nano, Data API 끔) 생성. Supabase 청구 문서로 **DB 용량 한도는 프로젝트별 500 MB** 확인 (조직 패널은 합산 표시만)
+- `copy` 466,027행 170초 → `verify` 행 수·기간·연도 분포 일치 → `drop` + VACUUM. **메인 DB 352 MB → 37 MB**, 시장 DB 193 MB(죽은 행 없이 재적재, 183 MB 테이블)
+- Streamlit·GitHub 시크릿 등록 후 drop 순서로 진행 (거꾸로 하면 폴백이 메인에 빈 시장 테이블을 되살림)
+
 ### 남은 것
-- 사용자: 회사 조직에 두 번째 Supabase 프로젝트 생성 → `.env`·Streamlit secrets·GitHub secrets에 `DATABASE_URL_MARKET` 등록 → `copy → verify → drop` 실행
-- 후속: 시장 원본 24개월 보존 정책(그 전 연도는 캐시 집계 + 압축 파일) — 시장 DB도 언젠가 차므로
+- 후속: 시장 원본 24개월 보존 정책(그 전 연도는 캐시 집계 + 압축 파일) — 시장 DB도 연 85 MB씩 늘어 3년 안에 참
+- 조직 요약 패널의 Database size는 프로젝트별 한도를 반영하지 않으니 프로젝트 각각의 Reports에서 확인할 것
 
 ### 영향 범위
 - 수정: utils.py, init_db.py, market_etl.py, hrd_etl.py, saramin_etl.py, build_home_snapshot.py, pages/시장_분석.py, pages/DB_명세.py, pages/SQL_Playground.py, .github/workflows 3개, CLAUDE.md, README.md, .claude/rules/database.md
