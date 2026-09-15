@@ -94,7 +94,66 @@ def _prop_value(prop):
         if ft == "date":
             return (f.get("date") or {}).get("start")
         return f.get(ft) if ft else None
+    if t == "checkbox":
+        return bool(prop.get("checkbox"))
+    if t == "status":
+        st = prop.get("status")
+        return st.get("name") if st else None
+    # people·phone_number·email 등 개인 식별 속성은 의도적으로 None — 가져오지 않는다
     return None
+
+
+prop_value = _prop_value
+
+
+def query_database(token, db_id, filter=None, sorts=None, session=None, what="데이터베이스"):
+    """노션 데이터베이스 조회 (읽기 전용, 페이지네이션) → 페이지 객체 목록.
+
+    Args:
+        token: Notion 내부 통합 토큰. 대상 DB에 통합이 연결돼 있어야 한다.
+        filter/sorts: Notion API 형식 그대로. None이면 전량.
+        what: 오류 메시지에 쓸 대상 이름.
+
+    Raises:
+        NotionFetchError: 인증·권한·네트워크 실패. 메시지는 화면 안내용 한글.
+    """
+    http = session or requests
+    url = f"{config.NOTION_API_BASE}/databases/{db_id}/query"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Notion-Version": config.NOTION_API_VERSION,
+        "Content-Type": "application/json",
+    }
+    body = {"page_size": config.NOTION_PAGE_SIZE}
+    if filter:
+        body["filter"] = filter
+    if sorts:
+        body["sorts"] = sorts
+
+    pages, cursor = [], None
+    while True:
+        payload = dict(body, **({"start_cursor": cursor} if cursor else {}))
+        try:
+            resp = http.post(url, headers=headers, json=payload, timeout=config.NOTION_TIMEOUT)
+        except requests.RequestException as e:
+            raise NotionFetchError(f"노션 API 연결 실패: {type(e).__name__}") from e
+        if resp.status_code == 401:
+            raise NotionFetchError("노션 토큰이 유효하지 않습니다 (401). NOTION_TOKEN을 확인하세요.")
+        if resp.status_code in (403, 404):
+            raise NotionFetchError(
+                f"{what}를 찾을 수 없거나 통합에 공유되지 않았습니다 "
+                f"({resp.status_code}). 노션에서 {what} → 연결(Connections)에 통합을 추가하세요."
+            )
+        if resp.status_code != 200:
+            raise NotionFetchError(f"노션 API 오류 {resp.status_code}: {resp.text[:200]}")
+        data = resp.json()
+        pages.extend(data.get("results") or [])
+        if not data.get("has_more"):
+            break
+        cursor = data.get("next_cursor")
+        if not cursor:
+            break
+    return pages
 
 
 def parse_ops_pages(pages):
@@ -122,42 +181,11 @@ def fetch_ops_table(token, db_id=None, since=None, session=None):
     """
     db_id = db_id or config.NOTION_OPS_DB_ID
     since = since or config.NOTION_OPS_SINCE
-    http = session or requests
-    url = f"{config.NOTION_API_BASE}/databases/{db_id}/query"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Notion-Version": config.NOTION_API_VERSION,
-        "Content-Type": "application/json",
-    }
-    body = {
-        "page_size": config.NOTION_PAGE_SIZE,
-        "filter": {"property": "개강일", "date": {"on_or_after": since}},
-        "sorts": [{"property": "개강일", "direction": "descending"}],
-    }
-
-    pages, cursor = [], None
-    while True:
-        payload = dict(body, **({"start_cursor": cursor} if cursor else {}))
-        try:
-            resp = http.post(url, headers=headers, json=payload, timeout=config.NOTION_TIMEOUT)
-        except requests.RequestException as e:
-            raise NotionFetchError(f"노션 API 연결 실패: {type(e).__name__}") from e
-        if resp.status_code == 401:
-            raise NotionFetchError("노션 토큰이 유효하지 않습니다 (401). NOTION_TOKEN을 확인하세요.")
-        if resp.status_code in (403, 404):
-            raise NotionFetchError(
-                "운영현황표를 찾을 수 없거나 통합에 공유되지 않았습니다 "
-                f"({resp.status_code}). 노션에서 운영현황표 → 연결(Connections)에 통합을 추가하세요."
-            )
-        if resp.status_code != 200:
-            raise NotionFetchError(f"노션 API 오류 {resp.status_code}: {resp.text[:200]}")
-        data = resp.json()
-        pages.extend(data.get("results") or [])
-        if not data.get("has_more"):
-            break
-        cursor = data.get("next_cursor")
-        if not cursor:
-            break
+    pages = query_database(
+        token, db_id, session=session, what="운영현황표",
+        filter={"property": "개강일", "date": {"on_or_after": since}},
+        sorts=[{"property": "개강일", "direction": "descending"}],
+    )
     logger.info(f"노션 운영현황표 {len(pages)}행 조회 (since={since})")
     return parse_ops_pages(pages)
 

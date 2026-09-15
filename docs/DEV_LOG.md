@@ -1,5 +1,27 @@
 # 개발 일지
 
+## 2026-09-15 — 모집 KPI 1단계: 회차 스냅샷 ETL + 노션 신청자 폴링 ETL
+
+### 배경
+- 담당 KPI를 개인 단위(신청 → HRD신청 → HRD등록 → 개강 참석)로 관리하기 위한 첫 구현. 기획은 `~/Desktop/New_work/recruit-kpi/docs/PLAN.md`
+- 실측: 노션 `HRD등록` 인원 = HRD-Net 승인(totParMks) 8개 기수 전부 일치. 놓침(API 수강신청 − 노션 HRD신청+등록)은 기수당 0~8명
+
+### 결정 사항
+- **회차 스냅샷** `kpi_etl.py` → `TB_COURSE_SNAPSHOT`: 매시간 회차별 수강신청·승인·수료·명부 상태를 읽어 직전과 다를 때만 저장(하루 1회 생존 신호). 첫 수집 72회차(5개 과정). `summarize_roster_status`에 ROSTER_CNT·ACTIVE_CNT 추가
+- **신청자 폴링** `notion_applicants_etl.py` → `TB_APPLICANT`(현재 상태) + `TB_APPLICANT_STATUS_LOG`(추적 필드 전이) + `TB_SYNC_STATE`. `last_edited_time` 증분(10분 되감기), 첫 실행 전량. `notion_ops.query_database()`로 조회 공통화
+- 개인 매칭 키 = 이름 sha256 해시 + 최종기수 (연락처·people 속성은 읽지도 않음). 개강 참석 = 신규 속성 `개강 참석일` (담당자 요청, 생기면 자동 반영)
+- 워크플로 `hrd_etl.yml` 3단계(hrd → kpi → notion), 뒤 둘은 `if: always()`. `ENCORE_API_KEY`를 GitHub 시크릿에 추가(엔코아 명부용)
+
+### 남은 것
+- 사용자: 노션 읽기 통합 발급 → `NOTION_TOKEN` 등록 (GitHub + Streamlit). 담당자에게 `개강 참석일`·`HRD 신청 일시` 속성과 상태 변경 자동화 요청
+- 다음: 노션 "모집 KPI" 페이지 쓰기(쓰기 통합 별도, 관리자 개인 페이지 아래), 기수별 정합성·사람별 정합성 표
+
+### 영향 범위
+- 신규: kpi_etl.py, notion_applicants_etl.py, tests/test_kpi_etl.py, tests/test_notion_applicants_etl.py
+- 수정: hrd_api.py, init_db.py(테이블 4개), notion_ops.py, config.py, .github/workflows/hrd_etl.yml, CLAUDE.md, docs/api/notion.md
+
+---
+
 ## 2026-09-15 — 시장 동향 테이블을 두 번째 Supabase 프로젝트로 분리
 
 ### 배경

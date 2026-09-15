@@ -178,6 +178,54 @@ def init_main_tables():
     ''')
 
     # ==========================================
+    # [KPI] 노션 신청자 리스트 미러 — notion_applicants_etl.py 가 매시간 증분 폴링
+    # 한 사람 한 줄(노션 페이지 ID가 키). 이름은 sha256 해시·마스킹만, 연락처는 저장하지 않는다.
+    # ==========================================
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS TB_APPLICANT (
+            NOTION_PAGE_ID TEXT PRIMARY KEY,
+            NOTION_URL TEXT,
+            NAME_HASH TEXT,                  -- sha256(이름). HRD 명부 이름을 즉석 해시해 대조
+            NAME_MASKED TEXT,                -- 홍*동
+            COHORT TEXT,                     -- 최종기수 (AIO1 …)
+            COHORT_TEXT TEXT,                -- 기수 (자유 입력)
+            STATUS TEXT,                     -- 최종결과 (HRD신청 · HRD등록 · 합격취소 …)
+            PROCESS_RESULT TEXT,             -- 처리결과
+            APPLIED_AT TEXT,                 -- 신청일시 (원문)
+            SOURCE TEXT,                     -- 유입경로
+            INTERVIEW_AT TEXT, INTERVIEW_GRADE TEXT,
+            PASS_NOTICE_AT TEXT, PASS_REG_AT TEXT, PASS_REG INTEGER,
+            HRD_APPLY_AT TEXT,               -- HRD 신청 일시 (신규 속성, 없으면 NULL)
+            HRD_REG_AT TEXT,                 -- HRD 등록 일시
+            HRD_ONSITE INTEGER,              -- HRD 신청(현장)
+            OT_ATTEND TEXT,                  -- OT참석 O/X
+            ATTEND_DT TEXT,                  -- 개강 참석일 (신규 속성, 없으면 NULL)
+            CANCEL_REASON TEXT, TRANSFER_TO TEXT,
+            NOTION_CREATED_AT TEXT, NOTION_EDITED_AT TEXT,
+            SYNCED_AT TIMESTAMP
+        )
+    ''')
+    # 상태 전이 로그 — 추적 필드가 바뀔 때마다 한 줄. 노션 API엔 이력이 없어 스냅샷 차분이 유일한 이력
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS TB_APPLICANT_STATUS_LOG (
+            NOTION_PAGE_ID TEXT NOT NULL,
+            DETECTED_AT TIMESTAMP NOT NULL,  -- 우리가 감지한 시각 (폴링 주기 단위)
+            FIELD TEXT NOT NULL,             -- STATUS · COHORT · HRD_REG_AT · ATTEND_DT …
+            OLD_VALUE TEXT, NEW_VALUE TEXT,
+            NOTION_EDITED_AT TEXT,           -- 그 시점 노션 last_edited_time
+            PRIMARY KEY (NOTION_PAGE_ID, DETECTED_AT, FIELD)
+        )
+    ''')
+    # 동기화 상태 — 마지막 폴링 시각 등 작은 키·값
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS TB_SYNC_STATE (
+            SYNC_KEY TEXT PRIMARY KEY,
+            SYNC_VALUE TEXT,
+            UPDATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # ==========================================
     # [캐시] 집계 캐시 — 시장·출결·채용 ETL 3종이 공유하므로 메인 DB에 둔다
     # ==========================================
     cursor.execute('''
@@ -210,6 +258,9 @@ def init_main_tables():
         ('IDX_COURSE_END_DT', 'TB_COURSE_MASTER',  'TR_END_DT'),
         ('IDX_COURSE_STA_DT', 'TB_COURSE_MASTER',  'TR_STA_DT'),
         ('IDX_SNAP_AT',       'TB_COURSE_SNAPSHOT', 'SNAP_AT'),
+        ('IDX_APPLICANT_COHORT', 'TB_APPLICANT', 'COHORT'),
+        ('IDX_APPLICANT_STATUS', 'TB_APPLICANT', 'STATUS'),
+        ('IDX_APPLOG_DETECTED',  'TB_APPLICANT_STATUS_LOG', 'DETECTED_AT'),
         ('IDX_JOB_JOB_CD',       'TB_JOB_POSTING', 'JOB_CD'),
         ('IDX_JOB_JOB_MID_CD',   'TB_JOB_POSTING', 'JOB_MID_CD'),
         ('IDX_JOB_LOC_CD',       'TB_JOB_POSTING', 'LOC_CD'),

@@ -77,3 +77,20 @@
 
 `config.COURSE_GROUP_KEYWORDS`(AIO·MLE·한화)로 과정명을 그룹으로 묶고, **그룹 + 개강일** 일치를 같은 기수로 본다.
 HRD 회차 번호와 노션 기수 번호는 체계가 달라 키로 쓰지 않는다. 키워드에 안 걸리는 노션 과정(SK네트웍스, AI Ready Data 등)은 대조 대상에서 뺀다.
+
+---
+
+## 신청자 리스트 폴링 (notion_applicants_etl.py, 2026-09-15)
+
+| 항목 | 값 |
+|---|---|
+| 대상 DB | `375d943bcac280e7ba18cd107d5e40d2` (`config.NOTION_APPLICANTS_DB_ID`) — 사업관리 › 엔코아 AI 캠퍼스 › 신청자 리스트 |
+| 주기 | 평일 매시간 (`hrd_etl.yml` 3번째 단계). `NOTION_TOKEN` 없으면 건너뜀 |
+| 증분 | `last_edited_time on_or_after (마지막 동기화 − 10분)`. 첫 실행은 전량. 동기화 시각은 `TB_SYNC_STATE` |
+| 저장 | `TB_APPLICANT`(현재 상태, 노션 페이지 ID 키) · `TB_APPLICANT_STATUS_LOG`(추적 필드 전이) |
+| 추적 필드 | 최종결과 · 최종기수 · 처리결과 · HRD 신청 일시 · HRD 등록 일시 · 개강 참석일 · OT참석 |
+| 개인정보 | 이름은 sha256 해시 + 마스킹만, 연락처·담당자(people)는 읽지 않음 (`notion_ops.prop_value`가 people/phone을 None 처리) |
+| 신규 속성 | `개강 참석일`·`HRD 신청 일시`(`config.NOTION_ATTEND_PROP` / `NOTION_HRD_APPLY_PROP`)는 담당자가 추가하면 자동으로 읽힘 |
+
+한계: 노션 API에 변경 이력이 없어 한 시간 안에 두 번 바뀌면 중간 값은 놓친다. 정확한 시각이 필요하면 담당자가
+노션 자동화로 "상태 변경 로그" DB를 만들고 이 ETL이 그것도 읽는 방식으로 확장한다 (2단계).

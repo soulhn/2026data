@@ -74,7 +74,7 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
   `DB_FALLBACK`·`realtime_error`를 구분해 "실시간 조회 실패"임을 명확히 알릴 것
 
 ### ETL 자동화
-- `hrd_etl.yml` — 평일 KST 09:00~18:00 매시간
+- `hrd_etl.yml` — 평일 KST 09:00~18:00 매시간. 3단계: `hrd_etl.py`(한화 출결) → `kpi_etl.py`(회차 스냅샷 TB_COURSE_SNAPSHOT, 변화 시만 기록) → `notion_applicants_etl.py`(신청자 리스트 미러 TB_APPLICANT + 전이 로그, NOTION_TOKEN 필요). 뒤 둘은 `if: always()`
 - `market_etl.yml` — 매일 KST 21:00
 - `saramin_etl.yml` — 매일 KST 04:43 (사람인 채용공고, 정각 회피로 지연 최소화)
 
@@ -292,6 +292,7 @@ Fix: Correct completion rate calculation (수료율 계산 오류 수정)
   구 변수 `HANWHA_COURSE_ID`·`ENCORE_COURSE_IDS`는 더 이상 읽지 않음 (시크릿에 남아 있어도 무해)
 - `DATABASE_URL` — PostgreSQL 연결 문자열 (**필수**. 미설정 시 `get_connection()`이 `DatabaseNotConfiguredError`)
 - `DATABASE_URL_MARKET` — 시장 DB(두 번째 Supabase 프로젝트) 연결 문자열. GitHub Actions 3개 워크플로 + Streamlit secrets 등록. 미설정 시 메인으로 폴백
+- `NOTION_TOKEN` — 노션 내부 통합 토큰(읽기 전용). 신청자 리스트·운영현황표에 통합 연결 필요. GitHub Actions(신청자 폴링) + Streamlit secrets(노션 대조 페이지). 없으면 폴링은 건너뛰고 대조 페이지는 CSV 업로드로 대체
 - `SARAMIN_API_KEY` — 사람인 채용공고 API 키 (GitHub Actions + Streamlit secrets 등록)
 - `ETL_FULL_REFRESH` — `=1`이면 market_etl이 증분(12개월) 대신 2023-01-01부터 전체 재수집. GitHub Actions 수동 실행의 `full_refresh` 입력으로 전달 (`gh workflow run market_etl.yml -f full_refresh=true`)
 

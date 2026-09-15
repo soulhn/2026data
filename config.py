@@ -341,3 +341,10 @@ COURSE_GROUP_KEYWORDS = {
     "SKN": ("SK네트웍스",),          # 노션엔 소문자 "sk네트웍스"도 있어 대소문자 무시로 비교
     "한화": ("한화", "BEYOND"),
 }
+
+# ── 노션 신청자 리스트 폴링 (notion_applicants_etl.py, 모집 KPI 1단계) ──
+# "엔코아 AI 캠퍼스 신청자 리스트" 데이터베이스. 읽기 전용. 이름은 해시·마스킹만 저장, 연락처는 저장하지 않는다.
+NOTION_APPLICANTS_DB_ID = "375d943bcac280e7ba18cd107d5e40d2"
+NOTION_ATTEND_PROP = "개강 참석일"        # 담당자에게 추가 요청한 날짜 속성. 생기면 ETL이 자동으로 읽는다
+NOTION_HRD_APPLY_PROP = "HRD 신청 일시"   # 위와 같음 — HRD 신청 후 취소돼도 신청 사실이 남도록
+NOTION_SYNC_OVERLAP_MIN = 10              # 증분 폴링 시 마지막 동기화 시각에서 이만큼 되감아 조회 (시계 오차·지연 흡수)
