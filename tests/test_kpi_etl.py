@@ -79,7 +79,7 @@ class TestSave:
 
 
 class TestFetch:
-    @patch("kpi_etl.fetch_all_roster_counts")
+    @patch("kpi_etl.fetch_all_rosters")
     @patch("kpi_etl.fetch_all_course_history")
     def test_merges_history_and_roster(self, mock_hist, mock_roster):
         mock_hist.return_value = (pd.DataFrame([
@@ -90,24 +90,25 @@ class TestFetch:
             {"TRPR_ID": "A", "TRPR_DEGR": "4", "TRPR_NM": "x", "TR_STA_DT": "2026-10-14", "TR_END_DT": "2027-04-06",
              "TOT_FXNUM": "30", "TOT_TRP_CNT": "0", "TOT_PAR_MKS": None, "FINI_CNT": "0", "INST_INO": "1"},
         ]), None)
-        mock_roster.return_value = (pd.DataFrame([{
-            "TRPR_ID": "A", "TRPR_DEGR": 3, "DROPOUT_CNT": 0, "PARTIAL_FINI_CNT": 0, "EARLY_EMPL_CNT": 0,
-            "ROSTER_CNT": 9, "ACTIVE_CNT": 9}]), None)
+        roster = pd.DataFrame([{"TRPR_ID": "A", "TRPR_DEGR": 3, "TRNEE_ID": f"t{i}", "TRNEE_NM": "홍*동", "TRNEE_STATUS": "훈련중"}
+                               for i in range(9)])
+        mock_roster.return_value = (roster, None, {("A", 3)})
 
-        df, err = fetch_round_snapshots([("k", "A")])
+        df, roster_out, err = fetch_round_snapshots([("k", "A")])
 
         assert err is None and list(df.columns) == SNAPSHOT_COLUMNS
         assert df["TRPR_DEGR"].tolist() == [3, 4]                       # 회차 0 제외
         mock_roster.assert_called_once_with([("k", "A")], [("A", 3)])   # 승인 인원 0인 4회차는 명부 호출 안 함
         r3 = df[df["TRPR_DEGR"] == 3].iloc[0]
-        assert r3["ROSTER_CNT"] == 9 and r3["TOT_PAR_MKS"] == 9
+        assert r3["ROSTER_CNT"] == 9 and r3["ACTIVE_CNT"] == 9 and r3["TOT_PAR_MKS"] == 9
         assert pd.isna(df[df["TRPR_DEGR"] == 4].iloc[0]["ROSTER_CNT"])
+        assert len(roster_out) == 9 and roster_out.attrs["done_rounds"] == {("A", 3)}
 
-    @patch("kpi_etl.fetch_all_roster_counts")
+    @patch("kpi_etl.fetch_all_rosters")
     @patch("kpi_etl.fetch_all_course_history")
     def test_errors_are_joined(self, mock_hist, mock_roster):
         mock_hist.return_value = (pd.DataFrame(columns=["TRPR_ID", "TRPR_DEGR", "TRPR_NM", "TR_STA_DT", "TR_END_DT",
                                                         "TOT_FXNUM", "TOT_TRP_CNT", "TOT_PAR_MKS", "FINI_CNT", "INST_INO"]), "B → timeout")
-        mock_roster.return_value = (pd.DataFrame(), None)
-        df, err = fetch_round_snapshots([("k", "A")])
+        mock_roster.return_value = (pd.DataFrame(), None, set())
+        df, roster_out, err = fetch_round_snapshots([("k", "A")])
         assert df.empty and err == "B → timeout"

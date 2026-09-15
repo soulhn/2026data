@@ -600,6 +600,66 @@ def summarize_roster_status(trainees_df):
     return out[ROSTER_COUNT_COLUMNS]
 
 
+def _fetch_rounds_parallel(fetch_fn, pairs, targets, columns, label, deadline=None):
+    """(과정ID, 회차[, 추가 인자…]) 목록을 기관 키로 **병렬** 조회해 DataFrame으로 합침.
+
+    Returns:
+        (df, error_detail, done) — 실패·미완료 회차는 빠지고 사유를 문자열로. done은 성공한 (과정ID, 회차) 집합.
+        전부 실패해도 예외를 던지지 않는다 (보조 데이터가 화면·ETL을 멈추면 안 됨).
+    """
+    if deadline is None:
+        deadline = config.API_TOTAL_DEADLINE
+    key_of = {cid: key for key, cid in pairs}
+    targets = [t for t in targets if t[0] in key_of]
+    if not targets:
+        return pd.DataFrame(columns=columns), None, set()
+
+    session = get_retry_session(retries=2, backoff_factor=0.5)
+    frames, reasons, done = [], {}, set()
+    executor = ThreadPoolExecutor(max_workers=config.API_MAX_WORKERS)
+    try:
+        future_map = {
+            executor.submit(fetch_fn, session, key_of[t[0]], *t): t for t in targets
+        }
+        try:
+            for future in as_completed(future_map, timeout=deadline):
+                t = future_map[future]
+                try:
+                    df = future.result()
+                except Exception as e:
+                    logger.warning(f"{label}({t[0]} {t[1]}회차) 조회 실패, 건너뜀: {e}")
+                    reasons[t] = f"{type(e).__name__}: {str(e).strip().splitlines()[0][:120]}"
+                    continue
+                done.add((t[0], t[1]))
+                if not df.empty:
+                    frames.append(df)
+        except FuturesTimeoutError:
+            pending = [k for f, k in future_map.items() if not f.done()]
+            logger.warning(f"{label} 조회 {deadline}초 초과 — 미완료 회차 건너뜀: {pending}")
+            for k in pending:
+                reasons[k] = f"전체 상한 {deadline}초 초과 (응답 지연)"
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    error_detail = None
+    if reasons:
+        error_detail = " / ".join(f"{t[0]} {t[1]}회차 → {msg}" for t, msg in reasons.items())
+    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=columns)
+    return df, error_detail, done
+
+
+def fetch_all_rosters(pairs, rounds, deadline=None):
+    """회차 목록의 명부(개인 행)를 병렬 조회. 반환: (roster_df, error_detail, 성공한 회차 집합)."""
+    targets = [(cid, int(degr)) for cid, degr in rounds]
+    return _fetch_rounds_parallel(fetch_trainee_roster, pairs, targets, ROSTER_COLUMNS, "명부", deadline)
+
+
+def fetch_all_attendance(pairs, round_months, deadline=None):
+    """(과정ID, 회차, YYYYMM) 목록의 월별 출결을 병렬 조회. 반환: (attend_df, error_detail, 성공 집합)."""
+    targets = [(cid, int(degr), str(ym)) for cid, degr, ym in round_months]
+    return _fetch_rounds_parallel(fetch_attendance_month, pairs, targets, ATTEND_COLUMNS, "출결", deadline)
+
+
 def fetch_all_roster_counts(pairs, rounds, deadline=None):
     """회차 목록의 명부를 **병렬** 조회해 이탈·80%이상수료·조기취업 인원을 집계.
 
@@ -612,42 +672,5 @@ def fetch_all_roster_counts(pairs, rounds, deadline=None):
         (counts_df, error_detail) — 실패한 회차는 결과에서 빠지고 사유를 문자열로 돌려준다.
         전부 실패해도 예외를 던지지 않는다 (이 집계는 퍼널 페이지의 보조 컬럼이라 화면을 멈추면 안 됨).
     """
-    if deadline is None:
-        deadline = config.API_TOTAL_DEADLINE
-    key_of = {cid: key for key, cid in pairs}
-    targets = [(cid, int(degr)) for cid, degr in rounds if cid in key_of]
-    if not targets:
-        return pd.DataFrame(columns=ROSTER_COUNT_COLUMNS), None
-
-    session = get_retry_session(retries=2, backoff_factor=0.5)
-    frames, reasons = [], {}
-    executor = ThreadPoolExecutor(max_workers=config.API_MAX_WORKERS)
-    try:
-        future_map = {
-            executor.submit(fetch_trainee_roster, session, key_of[cid], cid, degr): (cid, degr)
-            for cid, degr in targets
-        }
-        try:
-            for future in as_completed(future_map, timeout=deadline):
-                cid, degr = future_map[future]
-                try:
-                    df = future.result()
-                except Exception as e:
-                    logger.warning(f"명부({cid} {degr}회차) 조회 실패, 건너뜀: {e}")
-                    reasons[(cid, degr)] = f"{type(e).__name__}: {str(e).strip().splitlines()[0][:120]}"
-                    continue
-                if not df.empty:
-                    frames.append(df)
-        except FuturesTimeoutError:
-            pending = [k for f, k in future_map.items() if not f.done()]
-            logger.warning(f"명부 조회 {deadline}초 초과 — 미완료 회차 건너뜀: {pending}")
-            for k in pending:
-                reasons[k] = f"전체 상한 {deadline}초 초과 (응답 지연)"
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
-
-    error_detail = None
-    if reasons:
-        error_detail = " / ".join(f"{cid} {degr}회차 → {msg}" for (cid, degr), msg in reasons.items())
-    roster = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=ROSTER_COLUMNS)
+    roster, error_detail, _ = fetch_all_rosters(pairs, rounds, deadline)
     return summarize_roster_status(roster), error_detail

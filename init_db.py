@@ -178,6 +178,35 @@ def init_main_tables():
     ''')
 
     # ==========================================
+    # [KPI] 명부 사람 단위 스냅샷 — kpi_etl.py 가 매시간. 승인 감지 시각·상태 변화·첫 참석일을 사람마다 남긴다
+    # 이름은 해시·마스킹만 (HRD 명부 원본 이름은 TB_TRAINEE_INFO에 이미 있으나 KPI 테이블엔 복제하지 않음)
+    # ==========================================
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS TB_ROSTER_MEMBER (
+            TRPR_ID TEXT NOT NULL, TRPR_DEGR INTEGER NOT NULL, TRNEE_ID TEXT NOT NULL,
+            NAME_HASH TEXT, NAME_MASKED TEXT,
+            TR_STA_DT TEXT,                  -- 회차 개강일 (등록 지연 일수 계산용)
+            STATUS TEXT,                     -- 현재 명부 상태 (훈련중·중도탈락·정상수료 …)
+            FIRST_SEEN_AT TIMESTAMP,         -- 명부에 처음 나타난 시각 = HRD 승인 감지
+            LAST_SEEN_AT TIMESTAMP,          -- 마지막으로 명부에 있었던 시각
+            GONE_AT TIMESTAMP,               -- 명부에서 사라진 것을 감지한 시각 (승인 취소 등)
+            STATUS_CHANGED_AT TIMESTAMP,     -- 마지막 상태 변화 감지 시각
+            FIRST_ATTEND_DT TEXT,            -- 첫 참석일 (YYYYMMDD). 입실 시간이 있거나 출석 계열 상태
+            FIRST_IN_TIME TEXT,              -- 첫 참석일 입실 시각
+            PRIMARY KEY (TRPR_ID, TRPR_DEGR, TRNEE_ID)
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS TB_ROSTER_MEMBER_LOG (
+            TRPR_ID TEXT NOT NULL, TRPR_DEGR INTEGER NOT NULL, TRNEE_ID TEXT NOT NULL,
+            DETECTED_AT TIMESTAMP NOT NULL,
+            EVENT TEXT NOT NULL,             -- JOINED · STATUS · FIRST_ATTEND · LEFT
+            OLD_VALUE TEXT, NEW_VALUE TEXT,
+            PRIMARY KEY (TRPR_ID, TRPR_DEGR, TRNEE_ID, DETECTED_AT, EVENT)
+        )
+    ''')
+
+    # ==========================================
     # [KPI] 노션 신청자 리스트 미러 — notion_applicants_etl.py 가 매시간 증분 폴링
     # 한 사람 한 줄(노션 페이지 ID가 키). 이름은 sha256 해시·마스킹만, 연락처는 저장하지 않는다.
     # ==========================================
@@ -258,6 +287,8 @@ def init_main_tables():
         ('IDX_COURSE_END_DT', 'TB_COURSE_MASTER',  'TR_END_DT'),
         ('IDX_COURSE_STA_DT', 'TB_COURSE_MASTER',  'TR_STA_DT'),
         ('IDX_SNAP_AT',       'TB_COURSE_SNAPSHOT', 'SNAP_AT'),
+        ('IDX_ROSTER_MEMBER_NAME', 'TB_ROSTER_MEMBER', 'NAME_HASH'),
+        ('IDX_ROSTER_LOG_DETECTED', 'TB_ROSTER_MEMBER_LOG', 'DETECTED_AT'),
         ('IDX_APPLICANT_COHORT', 'TB_APPLICANT', 'COHORT'),
         ('IDX_APPLICANT_STATUS', 'TB_APPLICANT', 'STATUS'),
         ('IDX_APPLOG_DETECTED',  'TB_APPLICANT_STATUS_LOG', 'DETECTED_AT'),

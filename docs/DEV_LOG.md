@@ -8,17 +8,21 @@
 
 ### 결정 사항
 - **회차 스냅샷** `kpi_etl.py` → `TB_COURSE_SNAPSHOT`: 매시간 회차별 수강신청·승인·수료·명부 상태를 읽어 직전과 다를 때만 저장(하루 1회 생존 신호). 첫 수집 72회차(5개 과정). `summarize_roster_status`에 ROSTER_CNT·ACTIVE_CNT 추가
+- **명부 사람 스냅샷** `kpi_etl.py` → `TB_ROSTER_MEMBER` + `_LOG`: 사람마다 명부 첫 등장 시각(= HRD 승인 감지), 상태 변화, 첫 참석일·입실 시각. 이벤트 JOINED·STATUS·FIRST_ATTEND·LEFT. 이름은 해시·마스킹만. `hrd_api._fetch_rounds_parallel`로 명부·출결 병렬 조회 공통화
+- **참석 판정 = 입실 시간이 있거나 출석 계열 상태** (`kpi_etl.is_attended`). 실측(2026-09-15 AIO 3기 개강일): 퇴실 전에는 입실 시간이 찍혀도 상태가 `결석`으로 옴 → 상태만 보면 개강일 참석이 0명으로 보임. 운영 현황 페이지의 '입실중' 규칙과 동일
+- 개강 참석일은 노션 속성이 아니라 **HRD 최초 참석일**로 확정 (사용자 지적). 담당자 요청에서 `개강 참석일` 속성은 제외. MLO 2기 실측: 명부 14명 전원 출결 있음, 첫 출석 8/28 11명·8/31·9/1·9/2 각 1명. HRD 출결은 등록된 날부터 쌓이고 등록 전 출석은 소급되지 않음 → 등록 전 출석자만 노션 OT참석으로 판단
+- 출결 조회 범위: 진행중 회차의 이번 달(+개강이 지난달이면 지난달)만 — 첫 참석일은 한 번 정해지면 안 바뀌므로
 - **신청자 폴링** `notion_applicants_etl.py` → `TB_APPLICANT`(현재 상태) + `TB_APPLICANT_STATUS_LOG`(추적 필드 전이) + `TB_SYNC_STATE`. `last_edited_time` 증분(10분 되감기), 첫 실행 전량. `notion_ops.query_database()`로 조회 공통화
 - 개인 매칭 키 = 이름 sha256 해시 + 최종기수 (연락처·people 속성은 읽지도 않음). 개강 참석 = 신규 속성 `개강 참석일` (담당자 요청, 생기면 자동 반영)
 - 워크플로 `hrd_etl.yml` 3단계(hrd → kpi → notion), 뒤 둘은 `if: always()`. `ENCORE_API_KEY`를 GitHub 시크릿에 추가(엔코아 명부용)
 
 ### 남은 것
 - 사용자: 노션 읽기 통합 발급 → `NOTION_TOKEN` 등록 (GitHub + Streamlit). 담당자에게 `개강 참석일`·`HRD 신청 일시` 속성과 상태 변경 자동화 요청
-- 다음: 노션 "모집 KPI" 페이지 쓰기(쓰기 통합 별도, 관리자 개인 페이지 아래), 기수별 정합성·사람별 정합성 표
+- 다음: 노션 "모집 KPI" 페이지 쓰기(쓰기 통합 별도, 관리자 개인 페이지 아래), 기수별 정합성·사람별 정합성 표(TB_APPLICANT ↔ TB_ROSTER_MEMBER를 (NAME_HASH, 기수)로 조인)
 
 ### 영향 범위
-- 신규: kpi_etl.py, notion_applicants_etl.py, tests/test_kpi_etl.py, tests/test_notion_applicants_etl.py
-- 수정: hrd_api.py, init_db.py(테이블 4개), notion_ops.py, config.py, .github/workflows/hrd_etl.yml, CLAUDE.md, docs/api/notion.md
+- 신규: kpi_etl.py, notion_applicants_etl.py, tests/test_kpi_etl.py, tests/test_notion_applicants_etl.py, tests/test_roster_members.py
+- 수정: hrd_api.py, init_db.py(테이블 6개: COURSE_SNAPSHOT·ROSTER_MEMBER·_LOG·APPLICANT·_STATUS_LOG·SYNC_STATE), notion_ops.py, config.py, .github/workflows/hrd_etl.yml, CLAUDE.md, docs/api/notion.md
 
 ---
 
