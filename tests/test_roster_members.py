@@ -58,8 +58,8 @@ class TestAttendanceRule:
 
     def test_attendance_months(self):
         assert attendance_months("2026-09-15", date(2026, 9, 15)) == ["202609"]
-        assert attendance_months("2026-08-28", date(2026, 9, 15)) == ["202608", "202609"]   # 개강이 지난달
-        assert attendance_months("2026-07-09", date(2026, 9, 15)) == ["202609"]             # 오래된 회차는 이번 달만
+        assert attendance_months("2026-08-28", date(2026, 9, 15)) == ["202608", "202609"]   # 개강 달 + 이번 달
+        assert attendance_months("2026-07-09", date(2026, 9, 15)) == ["202607", "202609"]   # 개강 달은 항상 포함 (첫 참석일)
         assert attendance_months(None, date(2026, 9, 15)) == ["202609"]
 
 

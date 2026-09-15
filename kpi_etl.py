@@ -160,13 +160,15 @@ def is_attended(status, in_time):
 
 
 def attendance_months(tr_sta_dt, today):
-    """진행중 회차에 대해 읽을 출결 월 목록: 이번 달 + (개강이 지난달 이후면 개강 달부터)."""
+    """진행중 회차에 대해 읽을 출결 월: 개강 달 + 이번 달.
+
+    개강 달이 있어야 원래 멤버의 첫 참석일이 맞고, 이번 달이 있어야 늦게 승인된 사람의 첫 참석이 잡힌다.
+    (그 사이 달에 합류한 사람은 첫 참석일이 비는데, 승인은 대개 개강 전후 며칠이라 드물다.)
+    """
     sta = _s(tr_sta_dt)
-    cur = today.strftime("%Y%m")
-    prev = (today.replace(day=1) - timedelta(days=1)).strftime("%Y%m")
-    months = {cur}
-    if sta and len(sta) >= 7 and sta[:7].replace("-", "") == prev:
-        months.add(prev)
+    months = {today.strftime("%Y%m")}
+    if sta and len(sta) >= 7:
+        months.add(sta[:7].replace("-", ""))
     return sorted(months)
 
 
