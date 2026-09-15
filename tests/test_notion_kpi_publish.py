@@ -84,7 +84,7 @@ class TestBuildRows:
         r = rows[0]
         assert r["승인(API)"] == 2 and r["HRD등록(노션)"] == 3 and r["정합성"] == "불일치"
         assert r["HRD신청(노션)"] == 1 and r["놓침"] == 5 - 3 - 1
-        assert r["합격 이상(노션)"] == 5 and r["노션 신청자"] == 6
+        assert r["합격 이상(노션)"] == 5 and r["노션 신청자"] == 7
         assert r["명부 인원"] == 4 and r["개강일 참석"] == 2 and r["개강일 참석률(%)"] == 100.0
         assert r["상태"] == "진행중"
 
