@@ -17,7 +17,8 @@
 - 워크플로 `hrd_etl.yml` 3단계(hrd → kpi → notion), 뒤 둘은 `if: always()`. `ENCORE_API_KEY`를 GitHub 시크릿에 추가(엔코아 명부용)
 
 ### 남은 것
-- 사용자: 노션 읽기 통합 발급 → `NOTION_TOKEN` 등록 (GitHub + Streamlit). 담당자에게 `개강 참석일`·`HRD 신청 일시` 속성과 상태 변경 자동화 요청
+- 노션 속성: 기존 `HRD 등록 일시`가 실제로는 신청 시점 입력(미승인·취소자에게도 값)이라 `HRD 신청 일시`로 이름 변경해 재사용(값 36건 유지). 승인 시각은 명부 스냅샷 FIRST_SEEN_AT. `개강 참석일` 속성은 만들지 않음
+- 사용자: 노션 읽기 통합 — 워크스페이스가 멤버 연결 생성을 제한해 관리자 요청 중 → 허용되면 `NOTION_TOKEN` 등록 (GitHub + Streamlit). 담당자에게 슬랙 알림 자동화 요청
 - 다음: 노션 "모집 KPI" 페이지 쓰기(쓰기 통합 별도, 관리자 개인 페이지 아래), 기수별 정합성·사람별 정합성 표(TB_APPLICANT ↔ TB_ROSTER_MEMBER를 (NAME_HASH, 기수)로 조인)
 
 ### 영향 범위

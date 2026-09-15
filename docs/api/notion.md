@@ -90,7 +90,8 @@ HRD 회차 번호와 노션 기수 번호는 체계가 달라 키로 쓰지 않�
 | 저장 | `TB_APPLICANT`(현재 상태, 노션 페이지 ID 키) · `TB_APPLICANT_STATUS_LOG`(추적 필드 전이) |
 | 추적 필드 | 최종결과 · 최종기수 · 처리결과 · HRD 신청 일시 · HRD 등록 일시 · 개강 참석일 · OT참석 |
 | 개인정보 | 이름은 sha256 해시 + 마스킹만, 연락처·담당자(people)는 읽지 않음 (`notion_ops.prop_value`가 people/phone을 None 처리) |
-| 신규 속성 | `개강 참석일`·`HRD 신청 일시`(`config.NOTION_ATTEND_PROP` / `NOTION_HRD_APPLY_PROP`)는 담당자가 추가하면 자동으로 읽힘 |
+| `HRD 신청 일시` | 2026-09-15 기존 `HRD 등록 일시`를 이름 변경한 것(값 유지). 담당자가 신청 시점에 입력하던 칸이라 의미가 맞음. `HRD 등록 일시`는 더 이상 없음 → `HRD_REG_AT`는 NULL. **승인 시각은 TB_ROSTER_MEMBER.FIRST_SEEN_AT**(명부 첫 등장) |
+| `개강 참석일` | 만들지 않음 — HRD 출결 첫 참석일(`TB_ROSTER_MEMBER.FIRST_ATTEND_DT`)로 대체. 속성이 생기면 `config.NOTION_ATTEND_PROP`으로 읽히긴 함 |
 
 한계: 노션 API에 변경 이력이 없어 한 시간 안에 두 번 바뀌면 중간 값은 놓친다. 정확한 시각이 필요하면 담당자가
 노션 자동화로 "상태 변경 로그" DB를 만들고 이 ETL이 그것도 읽는 방식으로 확장한다 (2단계).
