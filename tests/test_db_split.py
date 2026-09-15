@@ -98,3 +98,25 @@ class TestCacheAggregationTwoConnections:
         assert seen[:2] == [MARKET_DB, MAIN_DB]
         cur.execute("SELECT COUNT(*) AS cnt FROM TB_MARKET_CACHE")
         assert cur.fetchone()[0] >= 5
+
+
+class TestSecretCleaning:
+    """시크릿에 따옴표·접두어가 섞여 들어와도 접속 문자열만 남겨야 한다 (GitHub Actions 실패 재발 방지)."""
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("postgresql://u:p@h:5432/db", "postgresql://u:p@h:5432/db"),
+        ('"postgresql://u:p@h:5432/db"', "postgresql://u:p@h:5432/db"),
+        ("'postgresql://u:p@h:5432/db'", "postgresql://u:p@h:5432/db"),
+        ("  postgresql://u:p@h:5432/db\n", "postgresql://u:p@h:5432/db"),
+        ('DATABASE_URL_MARKET="postgresql://u:p@h:5432/db"', "postgresql://u:p@h:5432/db"),
+        ("postgresql://u:p%3D@h:5432/db?sslmode=require", "postgresql://u:p%3D@h:5432/db?sslmode=require"),  # 쿼리스트링의 = 는 보존
+        ("", None),
+        (None, None),
+    ])
+    def test_clean(self, raw, expected):
+        assert utils._clean_secret(raw) == expected
+
+    def test_env_value_is_cleaned(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL_MARKET", '"postgres://market"')
+        monkeypatch.setenv("DATABASE_URL", "postgres://main")
+        assert get_database_url(MARKET_DB) == "postgres://market"

@@ -34,13 +34,28 @@ MARKET_TABLES = frozenset({"TB_MARKET_TREND"})
 _DB_ENV = {MAIN_DB: "DATABASE_URL", MARKET_DB: "DATABASE_URL_MARKET"}
 
 
+def _clean_secret(val):
+    """GitHub/Streamlit 시크릿에 따옴표·공백·`KEY=` 접두어가 딸려 들어온 값을 정리.
+
+    .env의 `DATABASE_URL_MARKET="postgresql://…"` 를 그대로 붙여 넣으면 값에 따옴표가 남아
+    psycopg2가 `invalid dsn: missing "="` 로 거부한다 (2026-09-15 GitHub Actions 실패 원인)."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    if "=" in s.split("://")[0] and not s.startswith("postgres"):
+        s = s.split("=", 1)[1].strip()          # "DATABASE_URL_MARKET=postgresql://…" 형태
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+        s = s[1:-1].strip()
+    return s or None
+
+
 def _secret(name):
     val = os.getenv(name)
     if val:
-        return val
+        return _clean_secret(val)
     try:
         import streamlit as st
-        return st.secrets.get(name)
+        return _clean_secret(st.secrets.get(name))
     except Exception:
         return None
 
