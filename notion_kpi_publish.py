@@ -116,7 +116,7 @@ PERSON_SCHEMA = {
     "HRD 신청 일시": {"date": {}},
     "HRD 승인": {"checkbox": {}}, "승인 감지": {"date": {}}, "명부 상태": {"rich_text": {}},
     "첫 참석일": {"date": {}}, "첫 입실": {"rich_text": {}}, "등록 지연(일)": _num(),
-    "정합성": {"select": {"options": [{"name": n} for n in ("일치", "노션만 등록", "HRD만 승인", "동명이인 확인", "대기")]}},
+    "정합성": {"select": {"options": [{"name": n} for n in ("일치", "노션만 등록", "HRD만 승인", "동명이인 확인", "대기", "취소")]}},
     "변경 시각": {"date": {}},
     "메모": {"rich_text": {}},   # 담당자 입력 열 — 파이프라인은 절대 쓰지 않는다
 }
@@ -288,8 +288,12 @@ def build_person_rows(today=None):
                 delay = (datetime.fromisoformat(seen[:10]) - datetime.fromisoformat(str(m.TR_STA_DT)[:10])).days
                 row["등록 지연(일)"] = max(delay, 0)
             row["정합성"] = "일치" if a.STATUS == "HRD등록" else "HRD만 승인"
+        elif a.STATUS == "HRD등록":
+            row["정합성"] = "노션만 등록"
+        elif str(a.STATUS).startswith("합격취소"):
+            row["정합성"] = "취소"          # 합격 후 취소, 명부에도 없음 — 정상 종료
         else:
-            row["정합성"] = "노션만 등록" if a.STATUS == "HRD등록" else "대기"
+            row["정합성"] = "대기"          # 합격~HRD신청 단계, 승인 전
         rows.append(row)
     return rows
 

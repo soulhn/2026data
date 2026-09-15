@@ -43,6 +43,7 @@ def _seed(conn):
                                      ("p3", "h_lee", "HRD신청", "2026-09-10"),      # HRD만 승인 (지연 승인 9/16)
                                      ("p4", "h_choi", "합격안내", None),            # 대기
                                      ("p5", "h_dup", "HRD등록", None),              # 동명이인 확인
+                                     ("p7", "h_can", "합격취소(신청자 요청)", None),  # 취소
                                      ("p6", "h_no", "신청취소(본인요청)", None)]:   # 대상 아님
         cur.execute("INSERT INTO TB_APPLICANT (NOTION_PAGE_ID, NAME_HASH, NAME_MASKED, COHORT, STATUS, HRD_APPLY_AT) VALUES (?, ?, '홍*동', 'AIO3', ?, ?)",
                     [pid, h, status, apply_at])
@@ -91,7 +92,8 @@ class TestBuildRows:
         monkeypatch.setattr(pub, "load_data", lambda q, params=None, db=None: utils.load_data(q, params=params))
         _seed(db)
         rows = {r["KEY"]: r for r in build_person_rows(today="2026-09-16")}
-        assert set(rows) == {"p1", "p2", "p3", "p4", "p5"}
+        assert set(rows) == {"p1", "p2", "p3", "p4", "p5", "p7"}
+        assert rows["p7"]["정합성"] == "취소"
         assert rows["p1"]["정합성"] == "일치" and rows["p1"]["HRD 승인"] is True and rows["p1"]["첫 참석일"] == "20260915"
         assert rows["p2"]["정합성"] == "노션만 등록" and rows["p2"]["HRD 승인"] is False
         assert rows["p3"]["정합성"] == "HRD만 승인" and rows["p3"]["등록 지연(일)"] == 1     # 9/16 승인, 개강 9/15
