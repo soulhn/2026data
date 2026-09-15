@@ -245,6 +245,17 @@ def init_main_tables():
             PRIMARY KEY (NOTION_PAGE_ID, DETECTED_AT, FIELD)
         )
     ''')
+    # 노션 KPI 페이지 발행 기록 — 행별 노션 페이지 ID와 내용 해시. 내용이 같으면 API 호출을 건너뛴다
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS TB_NOTION_PUBLISH (
+            DB_KEY TEXT NOT NULL,            -- 'cohort' | 'person'
+            ROW_KEY TEXT NOT NULL,           -- 기수 또는 신청자 페이지 ID
+            NOTION_PAGE_ID TEXT,
+            CONTENT_HASH TEXT,
+            UPDATED_AT TIMESTAMP,
+            PRIMARY KEY (DB_KEY, ROW_KEY)
+        )
+    ''')
     # 동기화 상태 — 마지막 폴링 시각 등 작은 키·값
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS TB_SYNC_STATE (

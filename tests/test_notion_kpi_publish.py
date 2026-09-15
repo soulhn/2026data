@@ -1,0 +1,155 @@
+"""notion_kpi_publish.py — 속성 변환·행 생성(정합성 판정)·해시 기반 upsert 테스트 (인메모리 SQLite, 노션 API 모킹)"""
+from datetime import datetime
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+import config
+import init_db
+import notion_kpi_publish as pub
+import utils
+from notion_kpi_publish import (
+    COHORT_SCHEMA, PERSON_SCHEMA, build_cohort_rows, build_person_rows, content_hash, ensure_databases,
+    publish, to_properties,
+)
+
+
+@pytest.fixture
+def db(monkeypatch, mock_db_connection):
+    monkeypatch.setattr(pub, "adapt_query", utils.adapt_query)
+    import notion_applicants_etl
+    monkeypatch.setattr(notion_applicants_etl, "adapt_query", utils.adapt_query)
+    init_db.init_all_tables(include_market=False)
+    return mock_db_connection
+
+
+def _seed(conn):
+    """AIO 3회차: 승인 2명(명부), 신청자 4명 — 일치 / 노션만 등록 / HRD만 승인 / 대기 + 동명이인 케이스."""
+    cur = conn.cursor()
+    cur.execute("INSERT INTO TB_COURSE_SNAPSHOT (TRPR_ID, TRPR_DEGR, SNAP_AT, TR_STA_DT, TR_END_DT, TOT_FXNUM, TOT_TRP_CNT, TOT_PAR_MKS, FINI_CNT, "
+                "ROSTER_CNT, ACTIVE_CNT, DROPOUT_CNT, PARTIAL_FINI_CNT, EARLY_EMPL_CNT, CHANGED) "
+                "VALUES ('AIG20260000578396', 3, '2026-09-15 08:00:00', '2026-09-15', '2027-03-12', 30, 5, 2, 0, 2, 2, 0, 0, 0, 'first')")
+    cur.execute("INSERT INTO TB_COURSE_SNAPSHOT (TRPR_ID, TRPR_DEGR, SNAP_AT, TR_STA_DT, TR_END_DT, TOT_FXNUM, TOT_TRP_CNT, TOT_PAR_MKS, FINI_CNT, "
+                "ROSTER_CNT, ACTIVE_CNT, DROPOUT_CNT, PARTIAL_FINI_CNT, EARLY_EMPL_CNT, CHANGED) "
+                "VALUES ('AIG20240000459068', 37, '2026-09-15 08:00:00', '2026-09-04', '2027-03-03', 30, 22, 21, 0, 21, 21, 0, 0, 0, 'first')")  # SKN → 제외
+    for tid, h, status, seen, fa in [("t1", "h_kim", "훈련중", "2026-09-15 08:00:00", "20260915"),
+                                     ("t2", "h_lee", "훈련중", "2026-09-16 09:00:00", None),
+                                     ("t3", "h_dup", "훈련중", "2026-09-15 08:00:00", "20260915"),
+                                     ("t4", "h_dup", "훈련중", "2026-09-15 08:00:00", None)]:
+        cur.execute("INSERT INTO TB_ROSTER_MEMBER (TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, TR_STA_DT, STATUS, FIRST_SEEN_AT, LAST_SEEN_AT, FIRST_ATTEND_DT, FIRST_IN_TIME) "
+                    "VALUES ('AIG20260000578396', 3, ?, ?, 'x', '2026-09-15', ?, ?, ?, ?, '09:00')", [tid, h, status, seen, seen, fa])
+    for pid, h, status, apply_at in [("p1", "h_kim", "HRD등록", "2026-09-01"),      # 일치
+                                     ("p2", "h_park", "HRD등록", "2026-09-02"),     # 노션만 등록
+                                     ("p3", "h_lee", "HRD신청", "2026-09-10"),      # HRD만 승인 (지연 승인 9/16)
+                                     ("p4", "h_choi", "합격안내", None),            # 대기
+                                     ("p5", "h_dup", "HRD등록", None),              # 동명이인 확인
+                                     ("p6", "h_no", "신청취소(본인요청)", None)]:   # 대상 아님
+        cur.execute("INSERT INTO TB_APPLICANT (NOTION_PAGE_ID, NAME_HASH, NAME_MASKED, COHORT, STATUS, HRD_APPLY_AT) VALUES (?, ?, '홍*동', 'AIO3', ?, ?)",
+                    [pid, h, status, apply_at])
+    conn.commit()
+
+
+class TestProperties:
+    def test_to_properties_types(self):
+        props = to_properties(PERSON_SCHEMA, {"이름": "홍*동 · AIO3", "KEY": "p1", "신청자": "p1", "기수": "AIO3", "노션 상태": "HRD등록",
+                                              "HRD 신청 일시": "2026-09-01", "HRD 승인": True, "승인 감지": "2026-09-15T08:00:00",
+                                              "첫 참석일": "20260915", "첫 입실": "09:02", "등록 지연(일)": 0, "정합성": "일치",
+                                              "변경 시각": "2026-09-15T09:00:00Z", "메모": "지워지면 안 됨"})
+        assert props["이름"]["title"][0]["text"]["content"] == "홍*동 · AIO3"
+        assert props["신청자"] == {"relation": [{"id": "p1"}]}
+        assert props["첫 참석일"] == {"date": {"start": "2026-09-15"}}        # YYYYMMDD → ISO
+        assert props["승인 감지"] == {"date": {"start": "2026-09-15T08:00:00"}}
+        assert props["HRD 승인"] == {"checkbox": True} and props["등록 지연(일)"] == {"number": 0.0}
+        assert props["정합성"] == {"select": {"name": "일치"}}
+        assert "메모" not in props                                             # 담당자 열은 절대 안 씀
+
+    def test_missing_and_null_values(self):
+        props = to_properties(COHORT_SCHEMA, {"기수": "AIO3", "KEY": "AIO3", "정합성": None, "개강일": None, "놓침": None})
+        assert props["정합성"] == {"select": None} and props["개강일"] == {"date": None} and props["놓침"] == {"number": None}
+        assert "회차" not in props
+
+    def test_hash_ignores_change_time(self):
+        a = {"KEY": "x", "값": 1, "변경 시각": "t1"}
+        b = {"KEY": "x", "값": 1, "변경 시각": "t2"}
+        assert content_hash(a) == content_hash(b) and content_hash(a) != content_hash({**a, "값": 2})
+
+
+class TestBuildRows:
+    def test_cohort_rows(self, db, monkeypatch):
+        monkeypatch.setattr(pub, "load_data", lambda q, params=None, db=None: utils.load_data(q, params=params))
+        _seed(db)
+        rows = build_cohort_rows(today="2026-09-15")
+        assert [r["기수"] for r in rows] == ["AIO3"]                    # SKN 회차는 제외
+        r = rows[0]
+        assert r["승인(API)"] == 2 and r["HRD등록(노션)"] == 3 and r["정합성"] == "불일치"
+        assert r["HRD신청(노션)"] == 1 and r["놓침"] == 5 - 3 - 1
+        assert r["합격 이상(노션)"] == 5 and r["노션 신청자"] == 6
+        assert r["명부 인원"] == 4 and r["개강일 참석"] == 2 and r["개강일 참석률(%)"] == 100.0
+        assert r["상태"] == "진행중"
+
+    def test_person_rows_consistency(self, db, monkeypatch):
+        monkeypatch.setattr(pub, "load_data", lambda q, params=None, db=None: utils.load_data(q, params=params))
+        _seed(db)
+        rows = {r["KEY"]: r for r in build_person_rows(today="2026-09-16")}
+        assert set(rows) == {"p1", "p2", "p3", "p4", "p5"}
+        assert rows["p1"]["정합성"] == "일치" and rows["p1"]["HRD 승인"] is True and rows["p1"]["첫 참석일"] == "20260915"
+        assert rows["p2"]["정합성"] == "노션만 등록" and rows["p2"]["HRD 승인"] is False
+        assert rows["p3"]["정합성"] == "HRD만 승인" and rows["p3"]["등록 지연(일)"] == 1     # 9/16 승인, 개강 9/15
+        assert rows["p1"]["등록 지연(일)"] is None                                          # 첫 스냅샷 날 승인 → 시점 불명
+        assert rows["p4"]["정합성"] == "대기"
+        assert rows["p5"]["정합성"] == "동명이인 확인"
+        assert rows["p1"]["신청자"] == "p1" and rows["p1"]["이름"] == "홍*동 · AIO3"
+
+
+class TestPublish:
+    def _fake_session(self):
+        session = MagicMock()
+        counter = {"n": 0}
+
+        def request(method, url, headers=None, json=None, timeout=None):
+            resp = MagicMock(); resp.status_code = 200; resp.headers = {}
+            counter["n"] += 1
+            resp.json.return_value = {"id": f"page-{counter['n']}"}
+            return resp
+        session.request.side_effect = request
+        return session
+
+    def test_create_then_skip_then_update(self, db, monkeypatch):
+        monkeypatch.setattr(config, "NOTION_WRITE_INTERVAL", 0)
+        session = self._fake_session()
+        rows = [{"KEY": "AIO3", "기수": "AIO3", "승인(API)": 2, "변경 시각": "t1"}]
+        assert publish("tok", db, "cohort", "db1", COHORT_SCHEMA, rows, session=session, now=datetime(2026, 9, 15, 9)) == (1, 0, 0)
+        assert session.request.call_args.args[:2] == ("POST", f"{config.NOTION_API_BASE}/pages")
+        rows[0]["변경 시각"] = "t2"
+        assert publish("tok", db, "cohort", "db1", COHORT_SCHEMA, rows, session=session) == (0, 0, 1)   # 내용 같음 → 건너뜀
+        rows[0]["승인(API)"] = 3
+        assert publish("tok", db, "cohort", "db1", COHORT_SCHEMA, rows, session=session) == (0, 1, 0)
+        assert session.request.call_args.args[:2] == ("PATCH", f"{config.NOTION_API_BASE}/pages/page-1")
+
+    def test_ensure_databases_creates_once(self, db, monkeypatch):
+        monkeypatch.setattr(config, "NOTION_WRITE_INTERVAL", 0)
+        session = self._fake_session()
+        ids = ensure_databases("tok", db, session=session)
+        assert ids == ("page-1", "page-2")
+        posts = [c.args[:2] for c in session.request.call_args_list]
+        assert posts.count(("POST", f"{config.NOTION_API_BASE}/databases")) == 2
+        body = session.request.call_args_list[0].kwargs["json"]
+        assert body["parent"] == {"type": "page_id", "page_id": config.NOTION_KPI_PARENT_PAGE_ID}
+        # 두 번째 호출: 존재 확인(GET)만 하고 다시 만들지 않는다
+        ids2 = ensure_databases("tok", db, session=session)
+        assert ids2 == ids
+        assert [c.args[:2] for c in session.request.call_args_list][-2:] == [
+            ("GET", f"{config.NOTION_API_BASE}/databases/page-1"), ("GET", f"{config.NOTION_API_BASE}/databases/page-2")]
+
+    def test_person_relation_is_one_way(self):
+        rel = PERSON_SCHEMA["신청자"]["relation"]
+        assert rel["database_id"] == config.NOTION_APPLICANTS_DB_ID and "single_property" in rel   # 담당자 DB에 열을 추가하지 않는다
+
+    @patch("notion_kpi_publish.time.sleep")
+    def test_429_retries(self, _sleep, monkeypatch):
+        monkeypatch.setattr(config, "NOTION_WRITE_INTERVAL", 0)
+        session = MagicMock()
+        r429 = MagicMock(); r429.status_code = 429; r429.headers = {"Retry-After": "1"}
+        r200 = MagicMock(); r200.status_code = 200; r200.headers = {}; r200.json.return_value = {"id": "ok"}
+        session.request.side_effect = [r429, r200]
+        assert pub._request("tok", "GET", "/databases/x", session=session)["id"] == "ok"
