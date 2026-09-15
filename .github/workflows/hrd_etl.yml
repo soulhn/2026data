@@ -32,3 +32,11 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_URL_MARKET: ${{ secrets.DATABASE_URL_MARKET }}
         run: python -u hrd_etl.py
+
+      - name: Run KPI round snapshot ETL
+        if: always()   # 출결 ETL이 실패해도 스냅샷은 남긴다
+        env:
+          HRD_API_KEY: ${{ secrets.HRD_API_KEY }}
+          ENCORE_API_KEY: ${{ secrets.ENCORE_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -u kpi_etl.py

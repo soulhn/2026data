@@ -569,18 +569,21 @@ def get_course_history_with_fallback(pairs=None):
 
 # ── 회차별 명부 상태 집계 (이탈 인원·80%이상수료) ─────────────────────
 
-ROSTER_COUNT_COLUMNS = ["TRPR_ID", "TRPR_DEGR", "DROPOUT_CNT", "PARTIAL_FINI_CNT", "EARLY_EMPL_CNT"]
-_ROSTER_COUNT_FIELDS = ["DROPOUT_CNT", "PARTIAL_FINI_CNT", "EARLY_EMPL_CNT"]
+ROSTER_COUNT_COLUMNS = ["TRPR_ID", "TRPR_DEGR", "DROPOUT_CNT", "PARTIAL_FINI_CNT", "EARLY_EMPL_CNT",
+                        "ROSTER_CNT", "ACTIVE_CNT"]
+_ROSTER_COUNT_FIELDS = ["DROPOUT_CNT", "PARTIAL_FINI_CNT", "EARLY_EMPL_CNT", "ROSTER_CNT", "ACTIVE_CNT"]
 
 
 def summarize_roster_status(trainees_df):
-    """명부 → (TRPR_ID, TRPR_DEGR)별 이탈 인원·80%이상수료·조기취업 인원.
+    """명부 → (TRPR_ID, TRPR_DEGR)별 이탈 인원·80%이상수료·조기취업 인원 + 명부 크기·훈련중 인원.
 
     DROPOUT_CNT      = 상태에 '중도탈락' 또는 '제적' 포함 (개강 후 확정 인원 기준 이탈)
     PARTIAL_FINI_CNT = 상태에 '80%' 포함 ('80%이상수료'). 수료에 포함되는 값이며 이탈이 아니다 —
                        회사 운영표가 '80%수료(비용O)'를 따로 관리해 옆에 나란히 보여주기 위한 컬럼
     EARLY_EMPL_CNT   = 상태에 '조기취업' 포함. HRD `finiCnt`(수료)에 들어가지 않으므로 따로 세야
                        개강 인원 = 이탈 + 수료 + 조기취업 + 훈련중 이 맞아떨어진다
+    ROSTER_CNT       = 명부 행 수 (= 승인 인원, totParMks와 같아야 정상)
+    ACTIVE_CNT       = 상태에 '훈련중' 포함 (현재 재원)
     """
     if trainees_df is None or trainees_df.empty:
         return pd.DataFrame(columns=ROSTER_COUNT_COLUMNS)
@@ -589,6 +592,8 @@ def summarize_roster_status(trainees_df):
     t["DROPOUT_CNT"] = status.str.contains("중도탈락|제적", na=False)
     t["PARTIAL_FINI_CNT"] = status.str.contains("80%", na=False)
     t["EARLY_EMPL_CNT"] = status.str.contains("조기취업", na=False)
+    t["ROSTER_CNT"] = True
+    t["ACTIVE_CNT"] = status.str.contains("훈련중", na=False)
     t["TRPR_DEGR"] = pd.to_numeric(t["TRPR_DEGR"], errors="coerce").fillna(0).astype(int)
     out = t.groupby(["TRPR_ID", "TRPR_DEGR"])[_ROSTER_COUNT_FIELDS].sum().reset_index()
     out[_ROSTER_COUNT_FIELDS] = out[_ROSTER_COUNT_FIELDS].astype(int)

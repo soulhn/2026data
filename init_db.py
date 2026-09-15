@@ -154,6 +154,30 @@ def init_main_tables():
     ''')
 
     # ==========================================
+    # [KPI] 회차별 HRD-Net 집계 스냅샷 — kpi_etl.py 가 매시간 수집, 값이 바뀔 때만 행 추가
+    # 수강신청·승인·명부 상태의 시간별 변화를 남긴다 (모집 KPI 1단계, recruit-kpi/docs/PLAN.md)
+    # ==========================================
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS TB_COURSE_SNAPSHOT (
+            TRPR_ID TEXT NOT NULL,
+            TRPR_DEGR INTEGER NOT NULL,
+            SNAP_AT TIMESTAMP NOT NULL,      -- 수집 시각 (UTC)
+            TR_STA_DT TEXT, TR_END_DT TEXT,
+            TOT_FXNUM INTEGER,               -- 정원
+            TOT_TRP_CNT INTEGER,             -- 수강신청 (HRD 등록)
+            TOT_PAR_MKS INTEGER,             -- 승인 = 확정 신고 인원
+            FINI_CNT INTEGER,                -- 수료
+            ROSTER_CNT INTEGER,              -- 명부 행 수
+            ACTIVE_CNT INTEGER,              -- 훈련중
+            DROPOUT_CNT INTEGER,             -- 중도탈락·제적
+            PARTIAL_FINI_CNT INTEGER,        -- 80%이상수료
+            EARLY_EMPL_CNT INTEGER,          -- 조기취업
+            CHANGED TEXT,                    -- 'first' | 'daily' | 직전 대비 바뀐 컬럼 목록 (쉼표)
+            PRIMARY KEY (TRPR_ID, TRPR_DEGR, SNAP_AT)
+        )
+    ''')
+
+    # ==========================================
     # [캐시] 집계 캐시 — 시장·출결·채용 ETL 3종이 공유하므로 메인 DB에 둔다
     # ==========================================
     cursor.execute('''
@@ -185,6 +209,7 @@ def init_main_tables():
         ('IDX_TRAINEE_DEGR',  'TB_TRAINEE_INFO',   'TRPR_DEGR'),
         ('IDX_COURSE_END_DT', 'TB_COURSE_MASTER',  'TR_END_DT'),
         ('IDX_COURSE_STA_DT', 'TB_COURSE_MASTER',  'TR_STA_DT'),
+        ('IDX_SNAP_AT',       'TB_COURSE_SNAPSHOT', 'SNAP_AT'),
         ('IDX_JOB_JOB_CD',       'TB_JOB_POSTING', 'JOB_CD'),
         ('IDX_JOB_JOB_MID_CD',   'TB_JOB_POSTING', 'JOB_MID_CD'),
         ('IDX_JOB_LOC_CD',       'TB_JOB_POSTING', 'LOC_CD'),
