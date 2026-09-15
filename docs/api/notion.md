@@ -12,7 +12,7 @@
 |---|---|
 | Base | `https://api.notion.com/v1` (`config.NOTION_API_BASE`) |
 | 버전 헤더 | `Notion-Version: 2022-06-28` (`config.NOTION_API_VERSION`) |
-| 인증 | `Authorization: Bearer <NOTION_TOKEN>` — 내부 통합(Internal integration) 시크릿 |
+| 인증 | `Authorization: Bearer <NOTION_TOKEN>` — 내부 통합 시크릿 또는 **개인 액세스 토큰**(2026-09-15부터 사용, 워크스페이스가 통합 생성을 제한해서). 개인 토큰은 만료(1년)가 있고 사용자 권한 그대로이므로 갱신·보관 주의 |
 | 대상 DB | `3e899143fd714dc28eb4af8c58e50e48` (`config.NOTION_OPS_DB_ID`) — 사업관리 › 운영현황 › 운영현황표 |
 | 시간 제한 | 요청당 20초 (`config.NOTION_TIMEOUT`), 페이지 100행 (`config.NOTION_PAGE_SIZE`) |
 
