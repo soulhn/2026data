@@ -34,5 +34,6 @@ jobs:
         env:
           HRD_API_KEY: ${{ secrets.HRD_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_MARKET: ${{ secrets.DATABASE_URL_MARKET }}
           ETL_FULL_REFRESH: ${{ inputs.full_refresh && '1' || '' }}
         run: python -u market_etl.py

@@ -702,7 +702,7 @@ def compute_and_cache_aggregations():
 
 # ── 메인 ──
 def main():
-    init_all_tables()
+    init_all_tables(include_market=False)
     _t0 = time.monotonic()
 
     if not API_KEY:
@@ -743,7 +743,7 @@ def main():
 
 def cleanup_only():
     """API 수집 없이 보존 삭제 + 트랙 태깅 + 캐시 재집계만 수행 (일일 API 쿼터 소모 없음)."""
-    init_all_tables()
+    init_all_tables(include_market=False)
     cleanup_old_postings()
     tag_tracks()
     compute_and_cache_aggregations()
@@ -751,7 +751,7 @@ def cleanup_only():
 
 def tag_only():
     """API 수집·삭제 없이 트랙 태깅 + 캐시 재집계만 수행 (규칙 조정 후 소급 반영용)."""
-    init_all_tables()
+    init_all_tables(include_market=False)
     tag_tracks()
     compute_and_cache_aggregations()
 

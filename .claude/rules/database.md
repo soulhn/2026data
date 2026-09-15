@@ -22,6 +22,14 @@ WHERE 절 날짜 파라미터는 반드시 `strftime('%Y-%m-%d')` 사용.
 - 컬럼명 소문자 반환 → `load_data()`에서 대문자 변환 처리됨 (직접 처리 불필요)
 - PG 읽기: `@st.cache_resource` 커넥션 풀링 (`_get_pg_pool()`)으로 TCP 재연결 방지
 
+## DB 두 개 (2026-09 시장 DB 분리)
+
+`TB_MARKET_TREND`만 시장 DB(`DATABASE_URL_MARKET`)에 있다. 나머지와 `TB_MARKET_CACHE`는 메인.
+- 시장 테이블을 읽는 코드는 `load_data(sql, db=MARKET_DB)` 또는 `get_connection(db=MARKET_DB)`.
+  `load_data`는 db 생략 시 SQL 본문으로 자동 판단하지만 명시를 권장
+- **시장 테이블과 메인 테이블을 한 SQL에서 JOIN·서브쿼리 금지** — 메인에서 키를 뽑아 파라미터로 넘길 것
+- 시장 DDL은 `init_market_tables()`, 메인은 `init_main_tables()`. ETL이 시장 테이블을 안 쓰면 `init_all_tables(include_market=False)`
+
 ## DB 연결 (PostgreSQL 단일)
 
 런타임은 PostgreSQL 전용. `DATABASE_URL` 없으면 `get_connection()`이

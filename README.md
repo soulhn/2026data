@@ -156,6 +156,7 @@ HRD_API_KEY="플레이데이터_기관_인증키"    # 한화·SKN 과정 (플�
 ENCORE_API_KEY="엔코아_기관_인증키"        # MLE·AIO·MLO 과정 (기관별 키 필수 — 명부/출결 API는 소속 기관 과정만 조회 가능)
 # 과정 ID는 시크릿이 아니라 config.py 의 COURSES / ETL_COURSE_ID / OPS_COURSE_IDS / FUNNEL_COURSE_IDS 에서 관리
 DATABASE_URL="postgresql://..."   # Supabase 연결 (필수 — 미설정 시 DB 접근 시점에 즉시 에러)
+DATABASE_URL_MARKET="postgresql://..."  # 시장 동향(TB_MARKET_TREND) 전용 두 번째 Supabase 프로젝트. 없으면 메인 DB 사용
 SARAMIN_API_KEY="사람인_API_키"  # 채용공고 수집 (선택사항)
 OPENAI_API_KEY="OpenAI_API_키"   # AI 리포트 기능 (선택사항)
 ```
@@ -191,6 +192,7 @@ streamlit run home.py
 Secrets 설정:
 ```toml
 DATABASE_URL = "postgresql://..."
+DATABASE_URL_MARKET = "postgresql://..."
 HRD_API_KEY = "플레이데이터_기관_인증키"
 ENCORE_API_KEY = "엔코아_기관_인증키"
 
@@ -203,6 +205,7 @@ admin = "비밀번호"
 Repository Secrets에 등록:
 - `HRD_API_KEY`
 - `DATABASE_URL`
+- `DATABASE_URL_MARKET`
 - `SARAMIN_API_KEY`
 
 | 워크플로우 | 스케줄 | 소요 시간 |
@@ -230,7 +233,7 @@ Repository Secrets에 등록:
 
 ## 기술적 특징
 
-- **DB 단일화:** PostgreSQL(Supabase) 단일 소스. `DATABASE_URL` 미설정 시 조용한 폴백 없이 즉시 실패(fail-fast). 테스트만 인메모리 SQLite 사용 (`adapt_query()`가 쿼리 호환 담당)
+- **DB 두 개 (2026-09):** 메인 Supabase + 시장 동향 전용 Supabase(`DATABASE_URL_MARKET`, 46만 행 분리로 무료 한도 확보). 그 외는 PostgreSQL 단일 소스. `DATABASE_URL` 미설정 시 조용한 폴백 없이 즉시 실패(fail-fast). 테스트만 인메모리 SQLite 사용 (`adapt_query()`가 쿼리 호환 담당)
 - **ETL 자동화:** GitHub Actions cron으로 무인 데이터 갱신
 - **Smart Update:** 종료 과정 중복 수집 방지, 증분 수집 지원
 - **Robustness:** 자동 재시도(Retry), 배치 실패 시 row-by-row 폴백, ETL Summary 리포트

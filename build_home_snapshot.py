@@ -115,10 +115,15 @@ def build_benchmark():
         if not scor.empty:
             bench['mkt_satis'] = round(scor.mean() / 100, 2)
 
-    df_our = load_data(
-        "SELECT STDG_SCOR FROM TB_MARKET_TREND "
-        "WHERE TRPR_ID IN (SELECT DISTINCT TRPR_ID FROM TB_COURSE_MASTER)"
-    )
+    # 시장 테이블은 별도 DB라 TB_COURSE_MASTER 서브쿼리를 같은 SQL에 쓸 수 없다 → 과정 ID를 먼저 뽑아 넘김
+    our_ids = load_data("SELECT DISTINCT TRPR_ID FROM TB_COURSE_MASTER")["TRPR_ID"].dropna().tolist()
+    if our_ids:
+        df_our = load_data(
+            "SELECT STDG_SCOR FROM TB_MARKET_TREND WHERE TRPR_ID IN (" + ",".join("?" * len(our_ids)) + ")",
+            params=our_ids,
+        )
+    else:
+        df_our = pd.DataFrame(columns=["STDG_SCOR"])
     if not df_our.empty:
         our = pd.to_numeric(df_our['STDG_SCOR'], errors='coerce')
         our = our[our > 0]

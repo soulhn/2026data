@@ -1,5 +1,32 @@
 # 개발 일지
 
+## 2026-09-15 — 시장 동향 테이블을 두 번째 Supabase 프로젝트로 분리
+
+### 배경
+- 메인 DB 352 MB / 500 MB(무료). `tb_market_trend`가 315 MB(46.6만 행, 인덱스 71 MB)로 90%를 차지하고 연 85 MB씩 늘어 1년 반 안에 한도 도달 예정
+- 모집 KPI 프로젝트(recruit-kpi)를 메인 DB에 얹어야 하는데(연 10 MB 미만) 시장 테이블 때문에 자리가 없음. 무료 플랜 유지가 조건
+
+### 결정 사항
+- **`TB_MARKET_TREND`만** 두 번째 무료 프로젝트(`DATABASE_URL_MARKET`)로. `TB_MARKET_CACHE`는 hrd·saramin·market ETL 3종이 공유하므로 메인에 유지
+- `utils`: `get_database_url(db)`·`get_connection(db=)`·`load_data(db=)`·`_get_pg_pool(db=)`, `db_for_table()`·`db_for_sql()`.
+  `load_data`는 db 생략 시 SQL 본문의 시장 테이블 참조로 자동 라우팅 → 페이지 수정 최소화
+- **미설정 폴백**: `DATABASE_URL_MARKET`이 없으면 메인 URL 사용. 로컬·CI·마이그레이션 전 환경이 그대로 동작. `is_market_db_separate()`로 구분
+- `init_db`: `init_main_tables()` / `init_market_tables()` 분리. hrd·saramin ETL은 `include_market=False` — 시장 URL 없는 환경에서 메인에 빈 시장 테이블을 되살리지 않도록
+- `market_etl.compute_and_cache_aggregations`: 시장 DB에서 읽고 메인 DB 캐시에 쓰는 2-커넥션 구조
+- 교차 DB 쿼리 제거: `build_home_snapshot`의 `TB_MARKET_TREND WHERE TRPR_ID IN (SELECT … FROM TB_COURSE_MASTER)` → 메인에서 ID를 뽑아 파라미터로. DB 명세 페이지 COUNT UNION은 DB별로 분할. SQL 플레이그라운드는 자동 라우팅 + JOIN 불가 안내
+- 마이그레이션 `scripts/migrate_market_db.py`: `copy`(서버 커서 5만 행 단위 → 임시 테이블 COPY → ON CONFLICT DO NOTHING, 재실행 안전) → `verify`(행 수·기간·연도 분포 비교) → `drop`(`DROP` 타이핑 확인 후 메인 삭제 + VACUUM)
+- 워크플로 3개(hrd·market·saramin)에 `DATABASE_URL_MARKET` 전달 추가
+
+### 남은 것
+- 사용자: 회사 조직에 두 번째 Supabase 프로젝트 생성 → `.env`·Streamlit secrets·GitHub secrets에 `DATABASE_URL_MARKET` 등록 → `copy → verify → drop` 실행
+- 후속: 시장 원본 24개월 보존 정책(그 전 연도는 캐시 집계 + 압축 파일) — 시장 DB도 언젠가 차므로
+
+### 영향 범위
+- 수정: utils.py, init_db.py, market_etl.py, hrd_etl.py, saramin_etl.py, build_home_snapshot.py, pages/시장_분석.py, pages/DB_명세.py, pages/SQL_Playground.py, .github/workflows 3개, CLAUDE.md, README.md, .claude/rules/database.md
+- 신규: scripts/migrate_market_db.py, tests/test_db_split.py
+
+---
+
 ## 2026-09-08 — 과정 ID 관리 통일: 전부 config, 시크릿에는 인증키만
 
 ### 배경

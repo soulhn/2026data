@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-from utils import get_connection, safe_float, safe_int, get_retry_session, adapt_query, is_pg
+from utils import get_connection, safe_float, safe_int, get_retry_session, adapt_query, is_pg, MARKET_DB, is_market_db_separate
 from init_db import init_all_tables
 from config import ETL_ARCHIVE_START, ETL_REFRESH_MONTHS, ETL_PAGE_SIZE, ETL_MAX_WORKERS, ETL_BATCH_SIZE, ETL_BATCH_PAGE_SIZE, ETL_FUTURE_DAYS, ETL_FULL_REFRESH, CacheKey
 
@@ -75,7 +75,7 @@ def get_collect_range():
 
     refresh_start = today - dt.timedelta(days=REFRESH_MONTHS * 30)
 
-    conn = get_connection()
+    conn = get_connection(db=MARKET_DB)
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*), MIN(TR_STA_DT) FROM TB_MARKET_TREND")
@@ -250,7 +250,7 @@ def save_rows(rows):
     """수집된 rows를 DB에 배치 저장합니다."""
     if not rows:
         return 0
-    conn = get_connection()
+    conn = get_connection(db=MARKET_DB)
     cursor = conn.cursor()
     upsert_query = adapt_query(_UPSERT_QUERY_RAW)
     try:
@@ -277,10 +277,16 @@ def save_rows(rows):
 # 5. 집계 캐시 (ETL 완료 후 자동 실행)
 # ==========================================
 def compute_and_cache_aggregations():
-    """ETL 완료 후 주요 집계를 TB_MARKET_CACHE에 저장합니다."""
+    """ETL 완료 후 주요 집계를 TB_MARKET_CACHE에 저장합니다.
+
+    읽기는 시장 DB(TB_MARKET_TREND), 쓰기는 메인 DB(TB_MARKET_CACHE) — DB가 분리돼 있으므로
+    커넥션을 둘 쓴다. 분리 전 환경에선 둘 다 같은 DB를 가리켜 예전과 동일하게 동작한다.
+    """
     logger.info("시장 데이터 집계 시작...")
-    conn = get_connection()
+    conn = get_connection(db=MARKET_DB)      # 읽기: 시장 DB
     cursor = conn.cursor()
+    cache_conn = get_connection()            # 쓰기: 메인 DB의 TB_MARKET_CACHE
+    cache_cursor = cache_conn.cursor()
 
     upsert_sql = adapt_query("""
         INSERT INTO TB_MARKET_CACHE (CACHE_KEY, CACHE_DATA, COMPUTED_AT)
@@ -290,6 +296,10 @@ def compute_and_cache_aggregations():
             COMPUTED_AT=excluded.COMPUTED_AT
     """)
 
+    def save_cache(key, data_json):
+        cache_cursor.execute(upsert_sql, (key, data_json))
+        cache_conn.commit()
+
     def run_agg(key, sql, params=()):
         try:
             if params:
@@ -298,15 +308,14 @@ def compute_and_cache_aggregations():
                 cursor.execute(sql)
             cols = [d[0].upper() for d in cursor.description]
             rows = [dict(zip(cols, row)) for row in cursor.fetchall()]
-            data_json = json.dumps(rows, ensure_ascii=False, default=str)
-            cursor.execute(upsert_sql, (key, data_json))
-            conn.commit()
+            save_cache(key, json.dumps(rows, ensure_ascii=False, default=str))
             logger.info(f"[캐시] {key}: {len(rows)}행 저장")
             return True
         except Exception as e:
             logger.error(f"[캐시] {key} 실패: {e}")
             if is_pg():
                 conn.rollback()
+                cache_conn.rollback()
             return False
 
     aggs = [
@@ -461,17 +470,17 @@ def compute_and_cache_aggregations():
                 })
             growth_rows.sort(key=lambda x: x['증가율(%)'], reverse=True)
 
-            data_json = json.dumps(growth_rows, ensure_ascii=False, default=str)
-            cursor.execute(upsert_sql, (CacheKey.NCS_GROWTH, data_json))
-            conn.commit()
+            save_cache(CacheKey.NCS_GROWTH, json.dumps(growth_rows, ensure_ascii=False, default=str))
             logger.info(f"[캐시] ncs_growth: {len(growth_rows)}행 저장")
             saved_count += 1
         except Exception as e:
             logger.error(f"[캐시] ncs_growth 실패: {e}")
             if is_pg():
                 conn.rollback()
+                cache_conn.rollback()
 
     conn.close()
+    cache_conn.close()
     logger.info(f"[집계 캐시] {saved_count}개 집계 완료")
 
 
@@ -479,6 +488,8 @@ def compute_and_cache_aggregations():
 # 6. 메인 실행
 # ==========================================
 def main():
+    if not is_market_db_separate():
+        logger.warning("DATABASE_URL_MARKET 미설정 — 시장 동향을 메인 DB에 저장합니다 (분리 전 동작)")
     init_all_tables()
     _t0 = time.monotonic()
     start_date, end_date = get_collect_range()

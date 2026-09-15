@@ -28,8 +28,8 @@ HRD-Net 공공데이터 기반 훈련 과정 성과 분석 대시보드 (Streaml
 
 ```
 [GitHub Actions]                [Supabase]              [Streamlit Cloud]
-hrd_etl.py (평일 매시간)  →   PostgreSQL DB    ←    대시보드 (읽기 전용)
-market_etl.py (매일 21시) →                    ←    https://playdata.streamlit.app
+hrd_etl.py (평일 매시간)  →   메인 DB          ←    대시보드 (읽기 전용)
+market_etl.py (매일 21시) →   시장 DB(TB_MARKET_TREND) ← https://playdata.streamlit.app
 saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_api.py로 API 직접 호출
                                                      (기관 병렬 조회, 전체 상한 120초, 실패 시 DB 폴백)
 ```
@@ -40,9 +40,18 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 - 벤치마크(60.5·85.7·90.3)·누적 매출 헤드라인(104.1억)은 원장 확정값 고정(`LEDGER_*` 상수) — 시장 데이터 증가에 따른 재계산 드리프트 방지
 - 상세 페이지(pages/)는 기존대로 DB 동적 조회
 
-### DB 연결 (PostgreSQL 단일, 2026-07 폴백 제거)
+### DB 연결 (PostgreSQL, 2026-07 폴백 제거 · 2026-09 시장 DB 분리)
 - 런타임은 PostgreSQL (Supabase) 전용. `DATABASE_URL`이 없으면 `utils.get_connection()`이
   `DatabaseNotConfiguredError`로 즉시 실패 — 빈 SQLite 파일을 만들던 조용한 폴백은 제거됨
+- **DB는 둘**: 메인(`DATABASE_URL`)과 시장(`DATABASE_URL_MARKET`). `TB_MARKET_TREND`(46만 행, 무료 한도의 90%)만
+  두 번째 Supabase 프로젝트에 산다. `TB_MARKET_CACHE`는 ETL 3종이 공유하므로 메인에 남김 (`utils.MARKET_TABLES`)
+  - `get_connection(db=)`·`load_data(db=)`·`_get_pg_pool(db=)`. `load_data`는 db 생략 시 쿼리 본문에
+    시장 테이블이 있으면 자동으로 시장 DB — **시장 테이블과 다른 테이블의 JOIN·서브쿼리는 불가** (build_home_snapshot 참고)
+  - `DATABASE_URL_MARKET` 미설정이면 메인으로 폴백 → 로컬·CI·분리 전 환경은 예전 단일 DB로 동작.
+    `is_market_db_separate()`로 실제 분리 여부 판단 (market_etl이 경고 로그)
+  - `init_all_tables(include_market=True)`: hrd_etl·saramin_etl은 `include_market=False` — 시장 URL 없는 환경에서
+    메인 DB에 빈 TB_MARKET_TREND를 되살리지 않기 위함. 시장 DDL은 `init_market_tables()`
+  - 마이그레이션: `scripts/migrate_market_db.py copy → verify → drop` (docs/DEV_LOG.md 2026-09-15)
 - **`is_pg()`·`adapt_query()`·ETL의 `execute_batch` vs `executemany` 분기는 유지 — 제거 금지.**
   pytest가 인메모리 SQLite로 돌기 때문에 `?` 플레이스홀더 패스스루가 필요함
 - `adapt_query()`: `?` → `%s`, `INSERT OR IGNORE` → `ON CONFLICT DO NOTHING` 자동 변환
@@ -282,6 +291,7 @@ Fix: Correct completion rate calculation (수료율 계산 오류 수정)
   `hrd_api.get_institutions(course_ids)`가 과정마다 소속 기관 키를 붙여 (키, 과정ID) 쌍을 만든다. 과정 추가 = `COURSES`에 한 줄 + 범위 목록에 추가.
   구 변수 `HANWHA_COURSE_ID`·`ENCORE_COURSE_IDS`는 더 이상 읽지 않음 (시크릿에 남아 있어도 무해)
 - `DATABASE_URL` — PostgreSQL 연결 문자열 (**필수**. 미설정 시 `get_connection()`이 `DatabaseNotConfiguredError`)
+- `DATABASE_URL_MARKET` — 시장 DB(두 번째 Supabase 프로젝트) 연결 문자열. GitHub Actions 3개 워크플로 + Streamlit secrets 등록. 미설정 시 메인으로 폴백
 - `SARAMIN_API_KEY` — 사람인 채용공고 API 키 (GitHub Actions + Streamlit secrets 등록)
 - `ETL_FULL_REFRESH` — `=1`이면 market_etl이 증분(12개월) 대신 2023-01-01부터 전체 재수집. GitHub Actions 수동 실행의 `full_refresh` 입력으로 전달 (`gh workflow run market_etl.yml -f full_refresh=true`)
 

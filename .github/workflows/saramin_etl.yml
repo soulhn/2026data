@@ -29,4 +29,5 @@ jobs:
         env:
           SARAMIN_API_KEY: ${{ secrets.SARAMIN_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_MARKET: ${{ secrets.DATABASE_URL_MARKET }}
         run: python -u saramin_etl.py

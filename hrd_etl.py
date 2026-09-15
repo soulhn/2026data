@@ -122,7 +122,7 @@ def run_etl():
     if not API_KEY or not COURSE_ID:
         logger.error("HRD_API_KEY 환경변수 또는 config.ETL_COURSE_ID가 설정되지 않았습니다.")
         return
-    init_all_tables()
+    init_all_tables(include_market=False)
     conn = get_connection(timeout=30, dict_rows=True)  # 컬럼명 접근용 RealDictCursor
     cursor = conn.cursor()
     session = get_retry_session()

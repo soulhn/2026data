@@ -4,7 +4,7 @@ import pandas as pd
 import sys, os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, load_data, get_connection, load_cache_json, page_error_boundary
+from utils import check_password, load_data, get_connection, load_cache_json, page_error_boundary, db_for_table
 from config import CACHE_TTL_DEFAULT, CacheKey
 
 
@@ -249,7 +249,7 @@ with page_error_boundary():
                     )
             sql = f"SELECT COUNT(*) AS _TOTAL, {', '.join(exprs)} FROM {tbl}"
             try:
-                conn = get_connection()
+                conn = get_connection(db=db_for_table(tbl))
                 cur = conn.cursor()
                 cur.execute(sql)
                 row = cur.fetchone()
@@ -275,10 +275,11 @@ with page_error_boundary():
         missing = {t: c for t, c in SAMPLE_COLS.items() if t not in out}
         if not missing:
             return out
-        conn = get_connection()
-        cur = conn.cursor()
         for tbl, cols in missing.items():
             out[tbl] = {}
+            # 테이블이 사는 DB(메인/시장)로 각각 접속
+            conn = get_connection(db=db_for_table(tbl))
+            cur = conn.cursor()
             for col in cols:
                 try:
                     cur.execute(
@@ -289,30 +290,34 @@ with page_error_boundary():
                     out[tbl][col] = [str(r[0]) for r in cur.fetchall()]
                 except Exception:
                     out[tbl][col] = []
-        conn.close()
+            conn.close()
         return out
 
 
     @st.cache_data(ttl=CACHE_TTL_DEFAULT)
     def load_db_counts():
         s = {}
-        # 테이블별 COUNT를 단일 UNION ALL 쿼리로 묶어 왕복 횟수를 줄임 (콜드 로드 가속)
-        try:
-            union_sql = " UNION ALL ".join(
-                f"SELECT '{tbl}' AS TBL, COUNT(*) AS CNT FROM {tbl}" for tbl in SCHEMAS
-            )
-            df = load_data(union_sql)
-            counts = {r["TBL"]: int(r["CNT"]) for _, r in df.iterrows()}
-            for tbl in SCHEMAS:
-                s[tbl] = counts.get(tbl)
-        except Exception:
-            # 일부 테이블 부재 등으로 통합 쿼리 실패 시 테이블별 폴백
-            for tbl in SCHEMAS:
-                try:
-                    df = load_data(f"SELECT COUNT(*) as CNT FROM {tbl}")
-                    s[tbl] = int(df["CNT"].iloc[0]) if not df.empty else 0
-                except Exception:
-                    s[tbl] = None
+        # 테이블별 COUNT를 DB(메인/시장)별로 UNION ALL 한 번에 묶어 왕복 횟수를 줄임 (콜드 로드 가속)
+        by_db = {}
+        for tbl in SCHEMAS:
+            by_db.setdefault(db_for_table(tbl), []).append(tbl)
+        for db, tbls in by_db.items():
+            try:
+                union_sql = " UNION ALL ".join(
+                    f"SELECT '{tbl}' AS TBL, COUNT(*) AS CNT FROM {tbl}" for tbl in tbls
+                )
+                df = load_data(union_sql, db=db)
+                counts = {r["TBL"]: int(r["CNT"]) for _, r in df.iterrows()}
+                for tbl in tbls:
+                    s[tbl] = counts.get(tbl)
+            except Exception:
+                # 일부 테이블 부재 등으로 통합 쿼리 실패 시 테이블별 폴백
+                for tbl in tbls:
+                    try:
+                        df = load_data(f"SELECT COUNT(*) as CNT FROM {tbl}", db=db)
+                        s[tbl] = int(df["CNT"].iloc[0]) if not df.empty else 0
+                    except Exception:
+                        s[tbl] = None
 
         s["market_type"] = _load_cached_dist(CacheKey.DB_MARKET_TYPE, ['훈련유형', '건수'])
         if s["market_type"] is None:

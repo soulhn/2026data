@@ -9,7 +9,7 @@ import os
 
 # 🚀 상위 폴더의 utils.py를 가져오기 위한 경로 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, get_connection, load_data as _load_data, adapt_query, calc_recruit_rate, page_error_boundary
+from utils import check_password, get_connection, load_data as _load_data, adapt_query, calc_recruit_rate, page_error_boundary, MARKET_DB
 from config import CACHE_TTL_MARKET, NCS_MIN_COURSES, CacheKey
 
 # ==========================================
@@ -106,8 +106,8 @@ def build_where_clause(start_dt, end_dt, region, ncs, types, wkends, grades, key
 
 
 def _sql_query(sql, params=None):
-    """adapt_query를 거친 SQL 쿼리 실행."""
-    return _load_data(sql, params=params)
+    """adapt_query를 거친 SQL 쿼리 실행 — 시장 동향은 시장 DB(DATABASE_URL_MARKET)에서 읽는다."""
+    return _load_data(sql, params=params, db=MARKET_DB)
 
 
 

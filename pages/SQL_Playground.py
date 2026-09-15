@@ -210,6 +210,7 @@ with page_error_boundary():
 
     # ── SQL 입력 ──
     st.subheader("🖊️ SQL 쿼리 입력")
+    st.caption("TB_MARKET_TREND는 별도 시장 DB에 있습니다. 쿼리에 이 테이블이 있으면 자동으로 시장 DB에서 실행되며, 다른 테이블과 JOIN은 되지 않습니다.")
     sql_input = st.text_area(
         "SQL 쿼리",
         value=st.session_state.get("sql_input", ""),

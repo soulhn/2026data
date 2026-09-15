@@ -26,21 +26,57 @@ def get_openai_api_key():
         return None
 
 
-def get_database_url():
-    """os.getenv → st.secrets 순으로 DATABASE_URL을 매번 동적 탐색"""
-    url = os.getenv("DATABASE_URL")
-    if url:
-        return url
+MAIN_DB = "main"
+MARKET_DB = "market"
+# 시장 DB(DATABASE_URL_MARKET)에 사는 테이블. 2026-09 분리 — 46만 행 시장 동향이 무료 한도의 90%를 차지해
+# 별도 Supabase 프로젝트로 옮김. TB_MARKET_CACHE는 ETL 3종이 공유하므로 메인 DB에 남긴다.
+MARKET_TABLES = frozenset({"TB_MARKET_TREND"})
+_DB_ENV = {MAIN_DB: "DATABASE_URL", MARKET_DB: "DATABASE_URL_MARKET"}
+
+
+def _secret(name):
+    val = os.getenv(name)
+    if val:
+        return val
     try:
         import streamlit as st
-        return st.secrets.get("DATABASE_URL")
+        return st.secrets.get(name)
     except Exception:
         return None
+
+
+def get_database_url(db=MAIN_DB):
+    """os.getenv → st.secrets 순으로 접속 문자열을 매번 동적 탐색.
+
+    db="market"은 DATABASE_URL_MARKET을 찾고, 없으면 메인 URL로 폴백한다 —
+    시장 DB를 아직 분리하지 않은 환경(로컬·CI)에서 기존 단일 DB 동작을 그대로 유지하기 위함.
+    """
+    if db == MARKET_DB:
+        return _secret(_DB_ENV[MARKET_DB]) or _secret(_DB_ENV[MAIN_DB])
+    return _secret(_DB_ENV[MAIN_DB])
 
 
 def is_pg():
     """현재 PostgreSQL 모드인지 반환"""
     return get_database_url() is not None
+
+
+def is_market_db_separate():
+    """시장 DB가 메인과 다른 프로젝트로 실제 분리돼 있는지."""
+    return bool(_secret(_DB_ENV[MARKET_DB])) and _secret(_DB_ENV[MARKET_DB]) != _secret(_DB_ENV[MAIN_DB])
+
+
+def db_for_table(table):
+    """테이블이 사는 DB 이름 ("main" / "market")."""
+    return MARKET_DB if str(table).upper() in MARKET_TABLES else MAIN_DB
+
+
+_MARKET_TABLE_RE = re.compile(r"\b(" + "|".join(sorted(MARKET_TABLES)) + r")\b", re.IGNORECASE)
+
+
+def db_for_sql(sql):
+    """SQL이 시장 테이블을 참조하면 "market", 아니면 "main". 두 DB를 한 쿼리에서 JOIN할 수는 없다."""
+    return MARKET_DB if _MARKET_TABLE_RE.search(sql or "") else MAIN_DB
 
 
 def adapt_query(sql):
@@ -94,39 +130,40 @@ def page_error_boundary():
         st.info("다른 페이지를 이용하거나 잠시 후 다시 시도해주세요.")
 
 
-def _get_pg_pool(recreate=False):
-    """PG 읽기 전용 커넥션을 캐싱하여 반환 (Streamlit 환경에서만 캐싱).
+def _get_pg_pool(recreate=False, db=MAIN_DB):
+    """PG 읽기 전용 커넥션을 캐싱하여 반환 (Streamlit 환경에서만 캐싱). DB별로 따로 캐시한다.
 
     recreate=True면 캐시를 비우고 새 커넥션 생성 — Supabase가 유휴 커넥션을
     끊으면 캐시된 커넥션이 죽은 채 남으므로 (connection already closed) 필요.
     """
     try:
         import streamlit  # noqa: F401 — 스트림릿 가용성 프로브 (없으면 except로 폴백)
-        return _get_pg_pool_cached(recreate)
+        return _get_pg_pool_cached(recreate, db)
     except Exception:
         # Streamlit 없는 환경 (ETL, 테스트 등) → 일반 커넥션
         return None
 
 
-def _get_pg_pool_cached(recreate=False):
-    """@st.cache_resource 로 PG 커넥션 재사용."""
+def _get_pg_pool_cached(recreate=False, db=MAIN_DB):
+    """@st.cache_resource 로 PG 커넥션 재사용 (db 인자가 캐시 키)."""
     import streamlit as st
 
     @st.cache_resource
-    def _create():
+    def _create(which):
         import psycopg2
-        conn = psycopg2.connect(get_database_url(), connect_timeout=5)
+        conn = psycopg2.connect(get_database_url(which), connect_timeout=5)
         conn.autocommit = True
         return conn
 
     if recreate:
         _create.clear()
-    return _create()
+    return _create(db)
 
 
-def get_connection(timeout=5, dict_rows=False):
+def get_connection(timeout=5, dict_rows=False, db=MAIN_DB):
     """PostgreSQL 연결 객체를 반환합니다. DATABASE_URL이 없으면 즉시 예외.
 
+    db="market"이면 시장 DB(DATABASE_URL_MARKET, 미설정 시 메인)로 연결합니다.
     dict_rows=True면 컬럼명으로 접근 가능한 RealDictCursor를 사용합니다."""
     if not is_pg():
         raise DatabaseNotConfiguredError(
@@ -136,19 +173,24 @@ def get_connection(timeout=5, dict_rows=False):
         )
     import psycopg2
     import psycopg2.extras
-    conn = psycopg2.connect(get_database_url(), connect_timeout=timeout)
+    conn = psycopg2.connect(get_database_url(db), connect_timeout=timeout)
     conn.autocommit = False
     if dict_rows:
         conn.cursor_factory = psycopg2.extras.RealDictCursor
     return conn
 
-def load_data(query, params=None):
+def load_data(query, params=None, db=None):
     """SQL 쿼리를 받아 Pandas DataFrame으로 반환합니다.
-    PG 읽기 시 캐싱된 커넥션을 사용하여 TCP 연결 오버헤드를 줄입니다."""
-    pool_conn = _get_pg_pool() if is_pg() else None
+    PG 읽기 시 캐싱된 커넥션을 사용하여 TCP 연결 오버헤드를 줄입니다.
+
+    db를 생략하면 쿼리 본문으로 판단한다 — 시장 테이블(TB_MARKET_TREND)을 참조하면 시장 DB.
+    시장 테이블과 다른 테이블을 한 쿼리에서 JOIN하면 시장 DB에서 실행돼 실패한다 (설계상 불가)."""
+    if db is None:
+        db = db_for_sql(query)
+    pool_conn = _get_pg_pool(db=db) if is_pg() else None
     if pool_conn is not None and getattr(pool_conn, 'closed', 0):
         # 캐시된 커넥션이 이미 닫혀 있으면 (유휴 종료 등) 새로 생성
-        pool_conn = _get_pg_pool(recreate=True)
+        pool_conn = _get_pg_pool(recreate=True, db=db)
     if pool_conn is not None:
         try:
             df = pd.read_sql(adapt_query(query), pool_conn, params=params)
@@ -158,7 +200,7 @@ def load_data(query, params=None):
             # closed 플래그 없이 서버 측에서 끊어진 커넥션은 실행 시점에야 실패
             # (InterfaceError는 pd.errors.DatabaseError로 래핑되지 않음)
             # → 풀 재생성 후 1회 재시도. 진짜 SQL 오류라면 아래 폴백에서 다시 발생.
-            pool_conn = _get_pg_pool(recreate=True)
+            pool_conn = _get_pg_pool(recreate=True, db=db)
             if pool_conn is not None:
                 try:
                     df = pd.read_sql(adapt_query(query), pool_conn, params=params)
@@ -166,7 +208,7 @@ def load_data(query, params=None):
                     return df
                 except Exception:
                     pass
-    conn = get_connection()
+    conn = get_connection(db=db)
     try:
         df = pd.read_sql(adapt_query(query), conn, params=params)
         df.columns = [c.upper() for c in df.columns]
