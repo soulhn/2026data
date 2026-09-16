@@ -9,8 +9,8 @@ import init_db
 import notion_kpi_publish as pub
 import utils
 from notion_kpi_publish import (
-    COHORT_SCHEMA, PERSON_SCHEMA, build_cohort_rows, build_person_rows, content_hash, ensure_databases,
-    publish, to_properties,
+    COHORT_GUIDE, COHORT_SCHEMA, PERSON_GUIDE, PERSON_SCHEMA, build_cohort_rows, build_person_rows, content_hash,
+    ensure_database_layout, ensure_databases, ensure_page_guide, guide_blocks, publish, to_properties,
 )
 
 
@@ -109,7 +109,9 @@ class TestPublish:
         counter = {"n": 0}
 
         def request(method, url, headers=None, json=None, timeout=None):
-            resp = MagicMock(); resp.status_code = 200; resp.headers = {}
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.headers = {}
             counter["n"] += 1
             resp.json.return_value = {"id": f"page-{counter['n']}"}
             return resp
@@ -132,16 +134,28 @@ class TestPublish:
         monkeypatch.setattr(config, "NOTION_WRITE_INTERVAL", 0)
         session = self._fake_session()
         ids = ensure_databases("tok", db, session=session)
-        assert ids == ("page-1", "page-2")
-        posts = [c.args[:2] for c in session.request.call_args_list]
-        assert posts.count(("POST", f"{config.NOTION_API_BASE}/databases")) == 2
+        assert ids == ("page-1", "page-3")          # 생성(1) → 레이아웃 PATCH(2) → 생성(3)
+        calls = [c.args[:2] for c in session.request.call_args_list]
+        assert calls.count(("POST", f"{config.NOTION_API_BASE}/databases")) == 2
         body = session.request.call_args_list[0].kwargs["json"]
         assert body["parent"] == {"type": "page_id", "page_id": config.NOTION_KPI_PARENT_PAGE_ID}
+        # 만든 직후 인라인 표 + 설명 한 줄로 맞춘다
+        layout = [c.kwargs["json"] for c in session.request.call_args_list if c.args[:2] == ("PATCH", f"{config.NOTION_API_BASE}/databases/page-1")]
+        assert layout and layout[0]["is_inline"] is True and layout[0]["description"][0]["text"]["content"]
         # 두 번째 호출: 존재 확인(GET)만 하고 다시 만들지 않는다
-        ids2 = ensure_databases("tok", db, session=session)
-        assert ids2 == ids
-        assert [c.args[:2] for c in session.request.call_args_list][-2:] == [
-            ("GET", f"{config.NOTION_API_BASE}/databases/page-1"), ("GET", f"{config.NOTION_API_BASE}/databases/page-2")]
+        n_before = len(session.request.call_args_list)
+        assert ensure_databases("tok", db, session=session) == ids
+        later = [c.args[:2] for c in session.request.call_args_list[n_before:]]
+        assert ("POST", f"{config.NOTION_API_BASE}/databases") not in later
+        assert ("GET", f"{config.NOTION_API_BASE}/databases/page-1") in later and ("GET", f"{config.NOTION_API_BASE}/databases/page-3") in later
+
+    def test_layout_skips_when_already_inline_with_same_description(self):
+        session = self._fake_session()
+        meta = {"is_inline": True, "description": [{"plain_text": "설명"}]}
+        assert ensure_database_layout("tok", "db1", "설명", meta, session=session) is False
+        session.request.assert_not_called()
+        assert ensure_database_layout("tok", "db1", "다른 설명", meta, session=session) is True
+        assert session.request.call_args.args[:2] == ("PATCH", f"{config.NOTION_API_BASE}/databases/db1")
 
     def test_person_relation_is_one_way(self):
         rel = PERSON_SCHEMA["신청자"]["relation"]
@@ -151,7 +165,97 @@ class TestPublish:
     def test_429_retries(self, _sleep, monkeypatch):
         monkeypatch.setattr(config, "NOTION_WRITE_INTERVAL", 0)
         session = MagicMock()
-        r429 = MagicMock(); r429.status_code = 429; r429.headers = {"Retry-After": "1"}
-        r200 = MagicMock(); r200.status_code = 200; r200.headers = {}; r200.json.return_value = {"id": "ok"}
+        r429 = MagicMock()
+        r429.status_code = 429
+        r429.headers = {"Retry-After": "1"}
+        r200 = MagicMock()
+        r200.status_code = 200
+        r200.headers = {}
+        r200.json.return_value = {"id": "ok"}
         session.request.side_effect = [r429, r200]
         assert pub._request("tok", "GET", "/databases/x", session=session)["id"] == "ok"
+
+
+class TestPageGuide:
+    def _page_session(self, children):
+        """페이지 자식 GET → children, 블록 추가 PATCH → 넣은 개수만큼 새 ID, 보관 PATCH → OK."""
+        session = MagicMock()
+        counter, types = {"n": 0}, {}
+
+        def request(method, url, headers=None, json=None, timeout=None):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.headers = {}
+            if method == "GET" and "/children" in url:
+                resp.json.return_value = {"results": children, "has_more": False}
+            elif method == "PATCH" and url.endswith("/children"):
+                ids = []
+                for b in json["children"]:
+                    counter["n"] += 1
+                    ids.append({"id": f"blk-{counter['n']}", "type": b["type"]})
+                    types[f"blk-{counter['n']}"] = b["type"]
+                # 노션은 `after` 뒤에 오던 기존 형제 블록(DB 포함)까지 같이 돌려준다 — 실측 재현
+                resp.json.return_value = {"results": ids + [{"id": "pdb", "type": "child_database"}, {"id": "tail", "type": "paragraph"}]}
+            elif method == "GET" and "/blocks/" in url:
+                bid = url.rsplit("/", 1)[1]
+                resp.json.return_value = {"id": bid, "type": types.get(bid, "child_database"), "archived": False}
+            else:
+                resp.json.return_value = {"id": "ok"}
+            return resp
+        session.request.side_effect = request
+        return session
+
+    def test_guide_blocks_shape(self):
+        blocks = guide_blocks(COHORT_GUIDE)
+        assert [b["type"] for b in blocks] == ["heading_2", "callout", "table"]
+        assert len(blocks[1]["callout"]["children"]) == len(COHORT_GUIDE["first"])
+        rows = blocks[2]["table"]["children"]
+        assert len(rows) == len(COHORT_GUIDE["columns"]) + 1                    # 헤더 행 포함
+        assert rows[0]["table_row"]["cells"][0][0]["text"]["content"] == "열"
+        assert all(len(r["table_row"]["cells"]) == 3 for r in rows)
+        # 표에 적힌 열 이름은 실제 스키마 속성과 이어져야 한다 (오타·이름 변경 방지)
+        for schema, guide in ((COHORT_SCHEMA, COHORT_GUIDE), (PERSON_SCHEMA, PERSON_GUIDE)):
+            described = " ".join(c[0] for c in guide["columns"])
+            missing = [p for p in schema if p != "KEY" and p not in described]
+            assert not missing, missing
+
+    def test_writes_before_cohort_db_and_between_dbs_then_skips(self, db, monkeypatch):
+        monkeypatch.setattr(config, "NOTION_WRITE_INTERVAL", 0)
+        children = [{"id": "intro", "type": "paragraph"}, {"id": "cdb", "type": "child_database"}, {"id": "pdb", "type": "child_database"}]
+        session = self._page_session(children)
+        assert ensure_page_guide("tok", db, "cdb", "pdb", session=session) is True
+        appends = [c.kwargs["json"] for c in session.request.call_args_list if c.args[0] == "PATCH" and c.args[1].endswith("/children")]
+        assert [a.get("after") for a in appends] == ["cdb", "intro"]           # 사람별 안내 = 기수별 DB 뒤, 기수별 안내 = DB 앞
+        assert appends[0]["children"][0]["heading_2"]["rich_text"][0]["text"]["content"].startswith("2️⃣")
+        cur = db.cursor()
+        cur.execute("SELECT NOTION_PAGE_ID FROM TB_NOTION_PUBLISH WHERE DB_KEY = 'guide'")
+        stored = {r[0] for r in cur.fetchall()}
+        assert len(stored) == 6 and "pdb" not in stored and "tail" not in stored    # 뒤따라온 형제 블록은 기록하지 않는다
+        # 같은 내용이면 요청 없음
+        n = len(session.request.call_args_list)
+        assert ensure_page_guide("tok", db, "cdb", "pdb", session=session) is False
+        assert len(session.request.call_args_list) == n
+
+    def test_rewrites_and_archives_old_blocks_when_content_changes(self, db, monkeypatch):
+        monkeypatch.setattr(config, "NOTION_WRITE_INTERVAL", 0)
+        children = [{"id": "cdb", "type": "child_database"}, {"id": "pdb", "type": "child_database"}]
+        session = self._page_session(children)
+        ensure_page_guide("tok", db, "cdb", "pdb", session=session)
+        monkeypatch.setattr(pub, "guide_hash", lambda: "changed")
+        n = len(session.request.call_args_list)
+        assert ensure_page_guide("tok", db, "cdb", "pdb", session=session) is True
+        archived = [c for c in session.request.call_args_list[n:] if c.args[0] == "PATCH" and c.kwargs["json"] == {"archived": True}]
+        assert len(archived) == 6 and all("/blocks/blk-" in c.args[1] for c in archived)
+        appends = [c.kwargs["json"] for c in session.request.call_args_list[n:] if c.args[1].endswith("/children") and c.args[0] == "PATCH"]
+        assert [a.get("after") for a in appends] == ["cdb", None]              # DB가 맨 앞이면 기수별 안내는 끝에 붙는다
+
+    def test_never_archives_database_blocks(self, db, monkeypatch):
+        """기록이 잘못돼 DB 블록 ID가 들어 있어도 보관 처리하지 않는다 (DB가 통째로 사라지는 사고 방지)."""
+        monkeypatch.setattr(config, "NOTION_WRITE_INTERVAL", 0)
+        session = self._page_session([{"id": "cdb", "type": "child_database"}, {"id": "pdb", "type": "child_database"}])
+        cur = db.cursor()
+        cur.execute("INSERT INTO TB_NOTION_PUBLISH (DB_KEY, ROW_KEY, NOTION_PAGE_ID, CONTENT_HASH) VALUES ('guide', 'x', 'cdb', 'stale')")
+        db.commit()
+        ensure_page_guide("tok", db, "cdb", "pdb", session=session)
+        archived = [c for c in session.request.call_args_list if c.args[0] == "PATCH" and c.kwargs.get("json") == {"archived": True}]
+        assert archived == []

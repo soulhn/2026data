@@ -77,14 +77,30 @@ def update_page(token, page_id, properties, session=None):
     return _request(token, "PATCH", f"/pages/{page_id}", {"properties": properties}, session)["id"]
 
 
-def database_exists(token, db_id, session=None):
+def get_database(token, db_id, session=None):
+    """DB 메타(is_inline·description 포함). 없거나 접근 불가(404)면 None."""
     try:
-        _request(token, "GET", f"/databases/{db_id}", None, session)
-        return True
+        return _request(token, "GET", f"/databases/{db_id}", None, session)
     except NotionFetchError as e:
         if "404" in str(e):
-            return False
+            return None
         raise
+
+
+def database_exists(token, db_id, session=None):
+    return get_database(token, db_id, session) is not None
+
+
+def ensure_database_layout(token, db_id, description, meta=None, session=None):
+    """DB를 페이지 안에 표로 보이게(is_inline) 하고 제목 아래 한 줄 설명을 맞춘다. 이미 맞으면 요청 없음."""
+    if meta is None:
+        meta = get_database(token, db_id, session) or {}
+    current = "".join(t.get("plain_text", "") for t in meta.get("description", []))
+    if meta.get("is_inline") and current == description:
+        return False
+    _request(token, "PATCH", f"/databases/{db_id}",
+             {"is_inline": True, "description": [{"type": "text", "text": {"content": description}}]}, session)
+    return True
 
 
 # ── 스키마 ──────────────────────────────────────────────────────────
@@ -123,15 +139,18 @@ PERSON_SCHEMA = {
 
 
 def ensure_databases(token, conn, session=None):
-    """두 DB가 없으면 만들고 ID를 TB_SYNC_STATE에 저장. 반환: (cohort_db_id, person_db_id)."""
+    """두 DB가 없으면 만들고 ID를 TB_SYNC_STATE에 저장. 있으면 인라인·설명만 맞춘다. 반환: (cohort_db_id, person_db_id)."""
     ids = []
-    for key, title, schema in ((COHORT_DB_KEY, "기수별 정합성", COHORT_SCHEMA),
-                               (PERSON_DB_KEY, "사람별 정합성", PERSON_SCHEMA)):
+    for key, title, schema, desc in ((COHORT_DB_KEY, "기수별 정합성", COHORT_SCHEMA, COHORT_DB_DESC),
+                                     (PERSON_DB_KEY, "사람별 정합성", PERSON_SCHEMA, PERSON_DB_DESC)):
         db_id = get_sync_state(conn, key)
-        if db_id and database_exists(token, db_id, session):
+        meta = get_database(token, db_id, session) if db_id else None
+        if meta is not None:
+            ensure_database_layout(token, db_id, desc, meta, session)
             ids.append(db_id)
             continue
         db_id = create_database(token, config.NOTION_KPI_PARENT_PAGE_ID, title, schema, session)
+        ensure_database_layout(token, db_id, desc, {}, session)
         set_sync_state(conn, db_id, key)
         cur = conn.cursor()
         cur.execute(adapt_query("DELETE FROM TB_NOTION_PUBLISH WHERE DB_KEY = ?"), [key.split("_")[2]])
@@ -139,6 +158,179 @@ def ensure_databases(token, conn, session=None):
         logger.info(f"[KPI 발행] 노션 DB 생성: {title} ({db_id})")
         ids.append(db_id)
     return tuple(ids)
+
+
+
+# ── 페이지 안내문 (읽는 법) ─────────────────────────────────────────
+# 두 DB 위에 "무엇을 먼저 볼지 · 각 열이 무슨 뜻인지"를 적는다. 내용이 바뀌면(해시) 예전 블록을 보관 처리하고 다시 쓴다.
+# 이 파이프라인이 만든 블록만 건드린다 — 페이지에 사람이 직접 쓴 블록은 그대로 둔다.
+
+GUIDE_DB_KEY = "guide"
+
+COHORT_DB_DESC = "기수 하나가 한 줄. HRD-Net 승인 인원(API)과 노션 HRD등록 수가 같은지, 개강일에 실제로 몇 명 왔는지. 하루 2회 갱신"
+PERSON_DB_DESC = "합격 이상 신청자 한 명이 한 줄. 노션 최종결과와 HRD 명부를 이름·기수로 맞춘 결과. '메모'는 담당자 열(자동 갱신 안 함)"
+
+COHORT_GUIDE = {
+    "title": "1️⃣ 기수별 정합성 — 읽는 법",
+    "first": [
+        "정합성이 '불일치'인 기수부터 본다 → 승인(API)과 HRD등록(노션)이 다른 기수. 누가 다른지는 아래 사람별 표에서 그 기수로 필터",
+        "놓침 > 0 이면 HRD-Net에는 수강신청했는데 노션에 HRD신청·HRD등록으로 안 적힌 사람이 있다 → 담당자에게 노션 갱신 요청. "
+        "음수면 반대로 노션에 더 많다 (HRD 신청 취소가 노션에 반영 안 됐을 가능성)",
+        "개강일 참석률(%)은 승인 인원 중 개강 당일 입실한 비율. 출결이 아직 수집되지 않은 회차는 비어 있다",
+        "상태가 '개설예정'인데 승인(API)이 있는 것은 정상 — 기관 승인은 개강 전에 이뤄진다",
+    ],
+    "columns": [
+        ("기수 / 과정 / 회차", "AIO3 = 과정 약칭 + 노션 기수 번호. 회차는 HRD-Net 번호(현재 둘이 같음)", "행 식별"),
+        ("상태", "개설예정 · 진행중 · 종료 (개강일·종강일과 오늘 비교)", "진행중 기수만 보고 싶을 때 필터"),
+        ("개강일 / 종강일", "HRD-Net 훈련 기간", "—"),
+        ("정원", "HRD-Net 승인 정원 (totFxnum)", "충원율 = 승인 ÷ 정원"),
+        ("수강신청(API)", "HRD-Net에 수강신청한 인원 (totTrpCnt). 신청만 하고 미승인된 사람 포함", "놓침 계산의 기준"),
+        ("승인(API)", "기관이 승인한 인원 (totParMks) = 확정 신고 인원 = 명부 건수", "노션 HRD등록과 같아야 한다"),
+        ("노션 신청자", "그 기수로 배정된 노션 신청자 전체 (취소 포함)", "모집 규모 참고"),
+        ("합격 이상(노션)", "인터뷰합격 · 추가선발대기 · 합격안내 · 합격자등록 · HRD신청 · HRD등록", "사람별 표의 대상 인원"),
+        ("HRD신청(노션)", "노션 최종결과가 'HRD신청' — 신청은 했고 아직 승인 전", "개강 임박 시 독촉 대상"),
+        ("HRD등록(노션)", "노션 최종결과가 'HRD등록' — 기관 승인까지 끝남", "승인(API)과 비교"),
+        ("놓침", "수강신청(API) − HRD등록(노션) − HRD신청(노션)", "> 0 이면 노션 누락 의심"),
+        ("정합성", "일치 = 승인(API) = HRD등록(노션) · 불일치 · 미확인(한쪽 값 없음)", "매일 '불일치'만 확인"),
+        ("명부 인원 / 훈련중", "명부에 한 번이라도 잡힌 사람 수 / 지금 훈련중 상태인 사람 수", "명부 인원 − 훈련중 = 이탈·수료"),
+        ("중도탈락 / 조기취업 / 수료(API)", "명부 상태 집계. 수료(API)는 종료 회차만 값이 있고 조기취업은 뺀 수", "종료 기수 성과"),
+        ("개강일 참석 / 개강일 참석률(%)", "개강 당일 입실 기록이 있는 사람 수 / 승인 인원 대비 비율", "개강 다음 날 확인"),
+        ("변경 시각", "이 줄이 마지막으로 바뀐 시각(UTC). 값이 같으면 갱신하지 않는다", "오래됐으면 파이프라인 점검"),
+    ],
+}
+
+PERSON_GUIDE = {
+    "title": "2️⃣ 사람별 정합성 — 읽는 법",
+    "first": [
+        "정합성 열만 보면 된다. '일치'·'취소'는 정상, 나머지 넷이 확인 대상",
+        "노션만 등록 → 노션은 HRD등록인데 HRD 명부에 없다: 승인이 아직 안 됐거나 이름 표기가 다르다 (띄어쓰기·개명). 담당자 확인",
+        "HRD만 승인 → 명부에는 있는데 노션이 아직 HRD신청·합격 단계다: 노션 최종결과를 HRD등록으로 올려 달라고 요청",
+        "대기 → 합격~HRD신청 단계에서 승인 전. 개강이 가까우면 HRD 신청·승인 독촉 대상",
+        "동명이인 확인 → 같은 기수에 같은 이름이 둘 이상. 사람이 직접 확인",
+        "이름은 가운데를 가린 표기다. 원래 이름·연락처는 '신청자' 열을 눌러 신청자 리스트에서 본다",
+    ],
+    "columns": [
+        ("이름", "가린 이름 · 기수. 이 표에는 실명·연락처를 저장하지 않는다", "행 식별"),
+        ("신청자", "노션 신청자 리스트의 원본 페이지 링크", "클릭해서 상세 확인"),
+        ("기수", "노션 최종기수 (AIO3 등)", "기수별 표와 같은 값으로 필터"),
+        ("노션 상태", "노션 최종결과 값 그대로", "HRD등록이어야 명부와 일치"),
+        ("HRD 신청 일시", "노션 'HRD 신청 일시' 속성 (담당자 입력)", "비어 있으면 입력 요청"),
+        ("HRD 승인", "HRD 명부에 이 사람이 있으면 체크", "체크 = 기관 승인 완료"),
+        ("승인 감지", "파이프라인이 명부에서 처음 본 시각. 실제 승인 시각과 최대 반나절 차이", "등록 지연 계산 기준"),
+        ("명부 상태", "훈련중 · 중도탈락 · 정상수료 · 80%이상수료 · 조기취업 · 제적", "이탈자 확인"),
+        ("첫 참석일 / 첫 입실", "HRD 출결에서 처음 입실한 날과 시각", "개강일과 다르면 지각 개강"),
+        ("등록 지연(일)", "승인 감지일 − 개강일. 개강 전에 승인됐거나 추적 시작 전이면 비어 있음", "> 0 이면 개강 후 뒤늦게 승인"),
+        ("정합성", "일치 · 노션만 등록 · HRD만 승인 · 동명이인 확인 · 대기 · 취소", "위 '읽는 법' 참고"),
+        ("변경 시각", "이 줄이 마지막으로 바뀐 시각(UTC)", "—"),
+        ("메모", "담당자 자유 입력. 파이프라인이 절대 덮어쓰지 않는다", "확인 결과·조치 기록"),
+    ],
+}
+
+
+def _rt(text):
+    return [{"type": "text", "text": {"content": text}}]
+
+
+def guide_blocks(guide):
+    """안내 한 묶음 → 노션 블록 목록: 제목 · 먼저 볼 것(콜아웃 + 글머리) · 열 설명 표."""
+    callout = {"type": "callout", "callout": {"rich_text": _rt("먼저 볼 것"), "icon": {"type": "emoji", "emoji": "👀"},
+                                              "children": [{"type": "bulleted_list_item",
+                                                            "bulleted_list_item": {"rich_text": _rt(t)}} for t in guide["first"]]}}
+    rows = [("열", "뜻", "언제 보나")] + list(guide["columns"])
+    table = {"type": "table", "table": {"table_width": 3, "has_column_header": True, "has_row_header": False,
+                                        "children": [{"type": "table_row", "table_row": {"cells": [_rt(c) for c in r]}} for r in rows]}}
+    return [{"type": "heading_2", "heading_2": {"rich_text": _rt(guide["title"])}}, callout, table]
+
+
+def guide_hash():
+    return hashlib.sha256(json.dumps([COHORT_GUIDE, PERSON_GUIDE], ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def _page_children(token, page_id, session=None):
+    blocks, cursor = [], None
+    while True:
+        path = f"/blocks/{page_id}/children?page_size=100" + (f"&start_cursor={cursor}" if cursor else "")
+        res = _request(token, "GET", path, None, session)
+        blocks += res.get("results", [])
+        if not res.get("has_more"):
+            return blocks
+        cursor = res.get("next_cursor")
+
+
+GUIDE_BLOCK_TYPES = ("heading_2", "callout", "table")   # 안내문이 만드는 블록 종류 — 이것 외에는 절대 보관 처리하지 않는다
+
+
+def _append_blocks(token, page_id, blocks, after=None, session=None):
+    """블록을 붙이고 **우리가 만든 블록의 ID만** 돌려준다.
+
+    `after`를 쓰면 노션이 새 블록 뒤에 오는 기존 형제 블록(child_database 포함)까지 함께 돌려준다 (2026-09-16 실측).
+    그대로 저장하면 다음 갱신 때 DB 블록을 보관 처리해 버리므로, 보낸 순서·종류대로 앞에서부터만 집는다.
+    """
+    body = {"children": blocks}
+    if after:
+        body["after"] = after
+    results = _request(token, "PATCH", f"/blocks/{page_id}/children", body, session).get("results", [])
+    ids, want = [], [b["type"] for b in blocks]
+    for r in results:
+        if len(ids) == len(want):
+            break
+        if r.get("type") == want[len(ids)]:
+            ids.append(r["id"])
+    return ids
+
+
+def _archive_guide_block(token, block_id, session=None):
+    """안내문 블록만 보관 처리. 종류가 다르면(child_database 등) 건드리지 않고 경고만 남긴다."""
+    try:
+        block = _request(token, "GET", f"/blocks/{block_id}", None, session)
+    except NotionFetchError as e:
+        if "404" in str(e):
+            return
+        raise
+    if block.get("type") not in GUIDE_BLOCK_TYPES:
+        logger.warning(f"[KPI 발행] 안내문 기록에 {block.get('type')} 블록이 있어 건너뜀: {block_id}")
+        return
+    if not block.get("archived"):
+        _request(token, "PATCH", f"/blocks/{block_id}", {"archived": True}, session)
+
+
+def ensure_page_guide(token, conn, cohort_db, person_db, session=None):
+    """「모집 KPI」 페이지에 두 DB의 '읽는 법'을 쓴다. 기수별 안내는 기수별 DB 바로 위, 사람별 안내는 두 DB 사이.
+
+    내용 해시가 그대로면 아무것도 하지 않는다. 바뀌었으면 예전에 만든 블록만 보관 처리하고 다시 쓴다.
+    반환: True면 이번에 썼음.
+    """
+    h = guide_hash()
+    cur = conn.cursor()
+    cur.execute(adapt_query("SELECT ROW_KEY, NOTION_PAGE_ID, CONTENT_HASH FROM TB_NOTION_PUBLISH WHERE DB_KEY = ?"), [GUIDE_DB_KEY])
+    old = cur.fetchall()
+    if old and all(r[2] == h for r in old):
+        return False
+    for _, block_id, _ in old:
+        _archive_guide_block(token, block_id, session)
+    cur.execute(adapt_query("DELETE FROM TB_NOTION_PUBLISH WHERE DB_KEY = ?"), [GUIDE_DB_KEY])
+    conn.commit()
+
+    page = config.NOTION_KPI_PARENT_PAGE_ID
+    children = [b for b in _page_children(token, page, session) if not b.get("archived")]
+    ids = [b["id"] for b in children]
+    norm = lambda x: str(x).replace("-", "")   # noqa: E731 — 블록 ID는 하이픈 유무가 섞여 온다
+    before_cohort = None
+    for prev, cur_id in zip([None] + ids, ids):
+        if norm(cur_id) == norm(cohort_db):
+            before_cohort = prev
+            break
+    made = []
+    # 두 번째(사람별) 안내를 먼저 넣어야 첫 번째 안내가 기수별 DB 앞에 들어가도 위치가 흔들리지 않는다
+    made += [("person", i) for i in _append_blocks(token, page, guide_blocks(PERSON_GUIDE), after=cohort_db, session=session)]
+    made += [("cohort", i) for i in _append_blocks(token, page, guide_blocks(COHORT_GUIDE), after=before_cohort, session=session)]
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    for n, (kind, block_id) in enumerate(made):
+        cur.execute(adapt_query("INSERT INTO TB_NOTION_PUBLISH (DB_KEY, ROW_KEY, NOTION_PAGE_ID, CONTENT_HASH, UPDATED_AT) VALUES (?, ?, ?, ?, ?)"),
+                    [GUIDE_DB_KEY, f"{kind}-{n}", block_id, h, now])
+    conn.commit()
+    logger.info(f"[KPI 발행] 페이지 안내문 갱신: 블록 {len(made)}개")
+    return True
 
 
 # ── 값 → 노션 속성 ────────────────────────────────────────────────────
@@ -349,6 +541,7 @@ def main():
     conn = get_connection(timeout=30)
     try:
         cohort_db, person_db = ensure_databases(token, conn)
+        ensure_page_guide(token, conn, cohort_db, person_db)
         c = publish(token, conn, "cohort", cohort_db, COHORT_SCHEMA, build_cohort_rows())
         p = publish(token, conn, "person", person_db, PERSON_SCHEMA, build_person_rows())
     except NotionFetchError as e:

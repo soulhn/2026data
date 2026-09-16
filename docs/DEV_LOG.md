@@ -1,5 +1,23 @@
 # 개발 일지
 
+## 2026-09-16 — 노션 「모집 KPI」 페이지: 두 DB 인라인 + '읽는 법' 안내문 자동 관리
+
+### 요청
+- 기수별·사람별 정합성이 한 페이지에서 바로 보이고, 각 열이 무슨 뜻인지·무엇을 먼저 봐야 하는지 적혀 있으면 좋겠다
+
+### 구현 (`notion_kpi_publish.py`)
+- `ensure_database_layout`: `PATCH /databases/{id}`로 `is_inline: true` + `description` 한 줄. API로 만든 DB는 기본이 전체 페이지(링크만 보임)였음.
+  이미 맞으면 요청 없음
+- `ensure_page_guide`: 페이지에 `heading_2 → callout(먼저 볼 것) → table(열·뜻·언제 보나)`를 DB마다 하나씩. 기수별 안내는 기수별 DB 바로 앞(`after`=앞 블록),
+  사람별 안내는 두 DB 사이(`after`=기수별 DB). 내용 해시를 `TB_NOTION_PUBLISH(DB_KEY='guide')`에 저장해 같으면 건너뛰고, 바뀌면 예전 블록을 보관 처리 후 재작성
+- 안내 문구는 `COHORT_GUIDE`·`PERSON_GUIDE` 상수 — 열 이름을 바꾸면 테스트가 표에 빠진 속성을 잡아낸다
+
+### 삽질
+- **`after`로 블록을 붙이면 응답 `results`에 새 블록 뒤의 기존 형제 블록(child_database 포함)까지 같이 온다.** 그대로 기록했더니 첫 실행에서
+  DB 블록 ID가 '안내문'으로 저장됨 — 다음 갱신 때 DB를 통째로 보관 처리할 뻔. `_append_blocks`가 보낸 종류·순서대로 앞에서만 집도록 고치고,
+  `_archive_guide_block`은 GET으로 종류를 확인해 heading·callout·table 외에는 절대 보관 처리하지 않게 이중 방어. 잘못 기록된 8행은 수동 삭제
+- 페이지 맨 앞에 블록을 넣는 API가 없다(`after`만 있음). DB가 첫 블록이면 안내가 끝에 붙는다 — 현재 페이지는 앞에 소개 블록이 있어 문제 없음
+
 ## 2026-09-16 — 노션 대조: 같은 날 개강한 두 기수의 교차 매칭 수정
 
 ### 증상

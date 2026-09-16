@@ -74,7 +74,7 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
   `DB_FALLBACK`·`realtime_error`를 구분해 "실시간 조회 실패"임을 명확히 알릴 것
 
 ### ETL 자동화
-- `hrd_etl.yml` — cron은 평일 KST 09:00~18:00 매시간이지만 **GitHub 예약 실행이 지연·누락돼 실제로는 하루 2회(약 13:30·18:35 KST)만 돈다** (2026-09 실측, 2주 이상 일관). 정확한 주기가 필요하면 외부 트리거(workflow_dispatch API 호출)로 바꿀 것. 4단계: `hrd_etl.py`(한화 출결) → `kpi_etl.py`(회차 스냅샷 TB_COURSE_SNAPSHOT 변화 시만 기록 + 명부 사람 스냅샷 TB_ROSTER_MEMBER: 승인 감지·상태 변화·첫 참석일. 참석 판정 = 입실 시간 있거나 출석 계열 상태) → `notion_applicants_etl.py`(신청자 리스트 미러 TB_APPLICANT + 전이 로그) → `notion_kpi_publish.py`(우리 소유 노션 「모집 KPI」 페이지의 기수별·사람별 정합성 DB upsert, 변경분만). 뒤 셋은 `if: always()`, NOTION_TOKEN 필요. **노션 쓰기는 이 페이지 하나뿐, 담당자 DB는 항상 읽기만**
+- `hrd_etl.yml` — cron은 평일 KST 09:00~18:00 매시간이지만 **GitHub 예약 실행이 지연·누락돼 실제로는 하루 2회(약 13:30·18:35 KST)만 돈다** (2026-09 실측, 2주 이상 일관). 정확한 주기가 필요하면 외부 트리거(workflow_dispatch API 호출)로 바꿀 것. 4단계: `hrd_etl.py`(한화 출결) → `kpi_etl.py`(회차 스냅샷 TB_COURSE_SNAPSHOT 변화 시만 기록 + 명부 사람 스냅샷 TB_ROSTER_MEMBER: 승인 감지·상태 변화·첫 참석일. 참석 판정 = 입실 시간 있거나 출석 계열 상태) → `notion_applicants_etl.py`(신청자 리스트 미러 TB_APPLICANT + 전이 로그) → `notion_kpi_publish.py`(우리 소유 노션 「모집 KPI」 페이지의 기수별·사람별 정합성 DB upsert, 변경분만. 두 DB는 페이지 안 인라인 표 + 제목 아래 설명 한 줄, 각 DB 위에 '읽는 법' 블록(먼저 볼 것·열 설명 표)을 해시로 관리 — 내용이 바뀌면 우리가 만든 heading·callout·table 블록만 보관 처리 후 재작성. **child_database 블록은 절대 보관 처리하지 않는다**). 뒤 셋은 `if: always()`, NOTION_TOKEN 필요. **노션 쓰기는 이 페이지 하나뿐, 담당자 DB는 항상 읽기만**
 - `market_etl.yml` — 매일 KST 21:00
 - `saramin_etl.yml` — 매일 KST 04:43 (사람인 채용공고, 정각 회피로 지연 최소화)
 
