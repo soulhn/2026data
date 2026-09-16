@@ -9,6 +9,7 @@ import config
 from notion_ops import (
     NOTION_OPS_COLUMNS,
     NotionFetchError,
+    cohort_number,
     compare_ops,
     course_group,
     fetch_ops_table,
@@ -290,6 +291,44 @@ class TestCompareOps:
     def test_sorted_newest_first(self, hrd_history, notion_pages):
         cmp = compare_ops(hrd_history, parse_ops_pages(notion_pages), today="2026-09-08")
         assert cmp["개강일"].tolist() == sorted(cmp["개강일"].tolist(), reverse=True)
+
+    def test_same_day_cohorts_pair_by_number_order(self):
+        """한화 7·8기처럼 같은 날 개강한 두 기수는 개강일만으로는 2×2 교차 매칭된다 → 회차·기수 번호 순서로 짝짓는다."""
+        def hrd(degr, par):
+            return {"TRPR_ID": "AIG20230000454234", "TRPR_DEGR": degr, "TRPR_NM": "한화시스템 BEYOND SW", "TR_STA_DT": "2024-05-13",
+                    "TR_END_DT": "2024-11-08", "TOT_FXNUM": 30, "TOT_TRP_CNT": 40, "TOT_PAR_MKS": par, "FINI_CNT": 0}
+        # HRD는 8회차가 먼저 와도(정렬 안 됨) 번호 순서로 맞아야 한다; 노션도 8기가 먼저
+        h = pd.DataFrame([hrd(8, 29), hrd(7, 30)])
+        n = parse_ops_pages([_page("한화시스템 BEYOND SW 캠프 8기", "2024-05-13", "2024-11-08", 29, 0, 0, 0, confirmed=29),
+                             _page("한화시스템 BEYOND SW 캠프 7기", "2024-05-13", "2024-11-08", 30, 0, 0, 0, confirmed=30)])
+        cmp = compare_ops(h, n, today="2026-09-08")
+        assert len(cmp) == 2                                            # 교차 4행이 아니라 2행
+        by = cmp.set_index("회차")
+        assert by.loc["7회차", "노션_기수"] == 7 and by.loc["7회차", "판정"] == "✅ 일치"
+        assert by.loc["8회차", "노션_기수"] == 8 and by.loc["8회차", "판정"] == "✅ 일치"
+        assert cmp["회차"].tolist() == ["7회차", "8회차"]                # 같은 날은 회차 오름차순
+
+    def test_same_day_unequal_sides_leave_remainder_unmatched(self):
+        """같은 날 HRD 2회차·노션 1기수면 낮은 번호끼리 짝짓고 남는 회차는 'HRD만'."""
+        def hrd(degr):
+            return {"TRPR_ID": "AIG20240000459068", "TRPR_DEGR": degr, "TRPR_NM": "SK네트웍스 Family AI", "TR_STA_DT": "2025-12-30",
+                    "TR_END_DT": "2026-06-20", "TOT_FXNUM": 30, "TOT_TRP_CNT": 35, "TOT_PAR_MKS": 30, "FINI_CNT": 0}
+        n = parse_ops_pages([_page("SK네트웍스 Family AI 캠프 24기", "2025-12-30", "2026-06-20", 30, 0, 0, 0, confirmed=30)])
+        cmp = compare_ops(pd.DataFrame([hrd(24), hrd(25)]), n, today="2026-09-08").set_index("회차")
+        assert cmp.loc["24회차", "매칭"] == "양쪽" and cmp.loc["25회차", "매칭"] == "HRD만"
+
+
+class TestCohortNumber:
+    @pytest.mark.parametrize("name, expected", [
+        ("SK네트웍스 Family AI 캠프 24기", 24),
+        ("한화시스템 BEYOND SW 캠프 8기", 8),
+        ("데이터 분석 & AI 머신러닝 1기", 1),
+        ("추가인원 (개강~확정자신고) 기준 3기", 3),          # "기준"은 무시, "3기"만
+        ("업무 성과 향상을 위한 데이터 분석", None),         # 번호 없음
+        (None, None),
+    ])
+    def test_extracts_trailing_number(self, name, expected):
+        assert cohort_number(name) == expected
 
 
 # ── roster_current_counts ─────────────────────────────────────────────

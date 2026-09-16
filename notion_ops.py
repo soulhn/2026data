@@ -7,6 +7,8 @@
   1) Notion API — `NOTION_TOKEN`(내부 통합 토큰) + 운영현황표에 통합 연결. 페이지네이션으로 전량 조회
   2) 노션 CSV 내보내기 업로드 — 토큰 없이도 대조 가능
 어느 경로든 `NOTION_OPS_COLUMNS` 구조로 정규화한 뒤 (과정 그룹, 개강일)을 키로 HRD 회차와 맞춘다.
+같은 날 두 기수가 개강하면(한화 7·8기, SKN 24·25기, 한화 1·2기) 개강일만으로는 서로 교차 매칭되므로
+HRD 회차 번호와 노션 과정명의 "N기" 순서를 보조 키로 써서 낮은 회차 ↔ 낮은 기수끼리 짝짓는다.
 
 2026-09-08 실측: HRD `totParMks`(이 앱의 "개강 인원") = 노션 `확정자신고`(개강인원 − 초기이탈 + 추가인원).
 AIO 1·2기, MLE 1·2기 모두 정확히 일치. 노션의 `개강인원`(첫날 출석 인원)과는 다른 값이다.
@@ -254,8 +256,34 @@ def _pct(numer, denom):
     return (numer / denom.replace(0, pd.NA) * 100).astype("Float64").round(1)
 
 
+_COHORT_RE = re.compile(r"(\d+)\s*기(?!간|준|업)")   # "캠프 24기" → 24. "기간·기준·기업"은 제외
+
+
+def cohort_number(name):
+    """노션 과정명에서 기수 번호를 뽑는다 ("SK네트웍스 Family AI 캠프 24기" → 24). 없으면 None."""
+    m = _COHORT_RE.search(str(name or ""))
+    return int(m.group(1)) if m else None
+
+
+def _slot_by_order(df, key_cols, order_col):
+    """(그룹, 개강일)이 같은 행끼리 `order_col` 오름차순 순번(0, 1, …)을 매긴다.
+
+    같은 날 개강한 기수가 둘 이상일 때 HRD 회차 번호 순서와 노션 기수 번호 순서를 짝짓기 위한 보조 키.
+    번호가 없는 노션 행은 번호 있는 행 뒤로 보낸다. 하루 한 기수(대부분)면 전부 0이라 결과가 바뀌지 않는다.
+    """
+    if df.empty:
+        df["_slot"] = pd.Series(dtype=int)
+        return df
+    df = df.sort_values(key_cols + [order_col], na_position="last", kind="stable")
+    df["_slot"] = df.groupby(key_cols, sort=False).cumcount()
+    return df
+
+
 def compare_ops(hrd_df, notion_df, today=None):
     """HRD 회차 집계(`get_course_history_with_fallback` 결과)와 노션 운영현황표를 (그룹, 개강일)로 대조.
+
+    같은 날 개강한 기수가 여럿이면 HRD 회차 번호 순서 ↔ 노션 "N기" 번호 순서로 짝짓는다 (`_slot_by_order`).
+    번호 체계가 달라도 순서만 같으면 맞는다 — 2026-09 실측으로는 두 번호가 같다 (한화 7회차 = 7기).
 
     Returns:
         DataFrame — 한 행이 한 기수. 주요 컬럼:
@@ -284,19 +312,23 @@ def compare_ops(hrd_df, notion_df, today=None):
 
     n = notion_df.copy() if notion_df is not None else pd.DataFrame(columns=NOTION_OPS_COLUMNS + ["그룹"])
     n = n[n["그룹"].notna() & n["개강일"].notna()].copy()
+    n["노션_기수"] = n["과정명"].map(cohort_number).astype("Int64")
     n = n.rename(columns={
         "과정명": "노션_과정명", "종강일": "노션_종강일", "개강인원": "노션_개강인원",
         "초기이탈": "노션_초기이탈", "추가인원": "노션_추가인원", "확정자신고": "노션_확정자신고",
         "중도이탈": "노션_중도이탈", "현재인원": "노션_현재인원", "이탈합계": "노션_이탈합계",
-    })[["그룹", "개강일", "노션_과정명", "구분", "강의실", "노션_종강일", "노션_개강인원", "노션_초기이탈",
+    })[["그룹", "개강일", "노션_기수", "노션_과정명", "구분", "강의실", "노션_종강일", "노션_개강인원", "노션_초기이탈",
         "노션_추가인원", "노션_확정자신고", "노션_중도이탈", "노션_현재인원", "노션_이탈합계", "NOTION_URL"]]
 
     # 빈 프레임이면 키 컬럼이 float로 잡혀 merge가 dtype 불일치로 실패한다 → 양쪽 모두 object로 고정
     h = h.astype({"그룹": object, "개강일": object})
     n = n.astype({"그룹": object, "개강일": object})
-    m = h.merge(n, on=["그룹", "개강일"], how="outer", indicator=True)
+    keys = ["그룹", "개강일"]
+    h = _slot_by_order(h, keys, "TRPR_DEGR")
+    n = _slot_by_order(n, keys, "노션_기수")
+    m = h.merge(n, on=keys + ["_slot"], how="outer", indicator=True)
     m["매칭"] = m["_merge"].map({"both": "양쪽", "left_only": "HRD만", "right_only": "노션만"})
-    m = m.drop(columns="_merge")
+    m = m.drop(columns=["_merge", "_slot"])
 
     m["회차"] = m["TRPR_DEGR"].map(lambda d: f"{int(d)}회차" if pd.notna(d) else None)
     m["상태"] = [_status(s, e if pd.notna(e) else e2, today)
@@ -309,12 +341,13 @@ def compare_ops(hrd_df, notion_df, today=None):
     m["개강참석률_노션"] = _pct(m["노션_개강인원"], m["HRD_수강신청"])
     m["등록대비개강차이"] = (m["노션_개강인원"] - m["HRD_수강신청"]).astype("Float64")
 
-    order = ["그룹", "회차", "노션_과정명", "매칭", "판정", "상태", "개강일", "HRD_종료일", "노션_종강일",
+    order = ["그룹", "회차", "노션_기수", "노션_과정명", "매칭", "판정", "상태", "개강일", "HRD_종료일", "노션_종강일",
              "정원", "HRD_수강신청", "노션_개강인원", "노션_초기이탈", "노션_추가인원",
              "노션_확정자신고", "HRD_확정", "확정_차이", "노션_중도이탈", "노션_현재인원", "노션_이탈합계",
              "HRD_수료", "등록확정전환율", "개강참석률_노션", "등록대비개강차이",
              "구분", "강의실", "TRPR_ID", "TRPR_DEGR", "NOTION_URL"]
-    return m[order].sort_values(["개강일", "그룹"], ascending=[False, True]).reset_index(drop=True)
+    return m[order].sort_values(["개강일", "그룹", "TRPR_DEGR", "노션_기수"],
+                                ascending=[False, True, True, True]).reset_index(drop=True)
 
 
 def roster_current_counts(trainees_df):
