@@ -11,6 +11,7 @@ from utils import (
     get_connection, get_retry_session, adapt_query, is_pg,
     calc_attendance_rate, NOT_ATTEND_STATUSES, _attendance_penalty,
     get_billing_periods, calc_revenue, clean_time,
+    db_for_table, MAIN_DB,
 )
 from init_db import init_all_tables
 from config import (
@@ -521,6 +522,16 @@ def _cache_hrd_stats():
             conn.rollback()
 
     # ── 5) 컬럼별 채움률 (DB 명세용) ──
+    # 시장 테이블은 별도 DB(DATABASE_URL_MARKET)에 있으므로 테이블마다 맞는 DB 커넥션을 쓴다.
+    # 한 테이블이 실패해도 나머지는 저장한다 (2026-09-15 분리 직후 tb_market_trend 부재로 전체 실패했던 것 방지).
+    table_conns = {}
+
+    def _table_cursor(tbl):
+        db = db_for_table(tbl)
+        if db not in table_conns:
+            table_conns[db] = conn if db == MAIN_DB else get_connection(db=db)
+        return table_conns[db].cursor()
+
     try:
         from pages import DB_명세 as _db_spec
         fill_out = {}
@@ -536,9 +547,16 @@ def _cache_hrd_stats():
                         f"ROUND(SUM(CASE WHEN {col} IS NOT NULL THEN 1.0 ELSE 0 END) * 100.0 / COUNT(*), 1) AS \"{col}\""
                     )
             sql = f"SELECT COUNT(*) AS _TOTAL, {', '.join(exprs)} FROM {tbl}"
-            cursor.execute(sql)
-            r = cursor.fetchone()
-            desc = [d[0].upper() for d in cursor.description]
+            try:
+                tcur = _table_cursor(tbl)
+                tcur.execute(sql)
+                r = tcur.fetchone()
+                desc = [d[0].upper() for d in tcur.description]
+            except Exception as e:
+                logger.warning(f"[캐시] db_fill_rates {tbl} 건너뜀: {e}")
+                if is_pg():
+                    table_conns[db_for_table(tbl)].rollback()
+                continue
             if r:
                 total = int(r[0]) if r[0] else 0
                 rates = {desc[i]: (float(r[i]) if r[i] is not None else 0.0)
@@ -562,12 +580,19 @@ def _cache_hrd_stats():
         for tbl, cols in _db_spec.SAMPLE_COLS.items():
             sample_out[tbl] = {}
             for col in cols:
-                cursor.execute(
-                    f"SELECT DISTINCT {col} FROM {tbl} "
-                    f"WHERE {col} IS NOT NULL AND {col} != '' "
-                    f"ORDER BY {col} LIMIT 10"
-                )
-                sample_out[tbl][col] = [str(r[0]) for r in cursor.fetchall()]
+                try:
+                    tcur = _table_cursor(tbl)
+                    tcur.execute(
+                        f"SELECT DISTINCT {col} FROM {tbl} "
+                        f"WHERE {col} IS NOT NULL AND {col} != '' "
+                        f"ORDER BY {col} LIMIT 10"
+                    )
+                    sample_out[tbl][col] = [str(r[0]) for r in tcur.fetchall()]
+                except Exception as e:
+                    logger.warning(f"[캐시] db_sample_values {tbl}.{col} 건너뜀: {e}")
+                    if is_pg():
+                        table_conns[db_for_table(tbl)].rollback()
+                    sample_out[tbl][col] = []
 
         data_json = json.dumps(sample_out, ensure_ascii=False)
         cursor.execute(upsert_sql, (CacheKey.DB_SAMPLE_VALUES, data_json))
@@ -579,6 +604,9 @@ def _cache_hrd_stats():
         if is_pg():
             conn.rollback()
 
+    for db, c in table_conns.items():
+        if c is not conn:
+            c.close()
     conn.close()
     logger.info(f"[집계 캐시] HRD 통계 {saved}개 완료")
 
