@@ -284,7 +284,7 @@ with page_error_boundary():
                 try:
                     cur.execute(
                         f"SELECT DISTINCT {col} FROM {tbl} "
-                        f"WHERE {col} IS NOT NULL AND {col} != '' "
+                        f"WHERE {col} IS NOT NULL AND CAST({col} AS TEXT) != '' "
                         f"ORDER BY {col} LIMIT 10"
                     )
                     out[tbl][col] = [str(r[0]) for r in cur.fetchall()]

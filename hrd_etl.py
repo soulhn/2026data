@@ -584,7 +584,7 @@ def _cache_hrd_stats():
                     tcur = _table_cursor(tbl)
                     tcur.execute(
                         f"SELECT DISTINCT {col} FROM {tbl} "
-                        f"WHERE {col} IS NOT NULL AND {col} != '' "
+                        f"WHERE {col} IS NOT NULL AND CAST({col} AS TEXT) != '' "
                         f"ORDER BY {col} LIMIT 10"
                     )
                     sample_out[tbl][col] = [str(r[0]) for r in tcur.fetchall()]
