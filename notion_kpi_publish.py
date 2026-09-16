@@ -120,9 +120,13 @@ COHORT_SCHEMA = {
     "놓침": _num(),
     "정합성": {"select": {"options": [{"name": "일치"}, {"name": "불일치"}, {"name": "미확인"}]}},
     "명부 인원": _num(), "훈련중": _num(), "중도탈락": _num(), "조기취업": _num(), "수료(API)": _num(),
-    "개강일 참석": _num(), "개강일 참석률(%)": _num(),
+    "개강일 참석": _num(), "개강일 참석률(%)": _num(), "미참석(등록)": _num(),
+    "합격 후 취소(노션)": _num(), "취소율(%)": _num(), "등록 후 이탈(API)": _num(),
     "변경 시각": {"date": {}},
 }
+
+PERSON_VERDICTS = ("일치", "노션만 등록", "HRD만 승인", "동명이인 확인", "대기", "취소", "취소인데 명부 잔류", "등록 후 이탈")
+ATTEND_VERDICTS = ("개강일 참석", "늦게 합류", "미참석", "개강 전", "취소")
 
 PERSON_SCHEMA = {
     "이름": {"title": {}}, "KEY": {"rich_text": {}},
@@ -132,10 +136,26 @@ PERSON_SCHEMA = {
     "HRD 신청 일시": {"date": {}},
     "HRD 승인": {"checkbox": {}}, "승인 감지": {"date": {}}, "명부 상태": {"rich_text": {}},
     "첫 참석일": {"date": {}}, "첫 입실": {"rich_text": {}}, "등록 지연(일)": _num(),
-    "정합성": {"select": {"options": [{"name": n} for n in ("일치", "노션만 등록", "HRD만 승인", "동명이인 확인", "대기", "취소")]}},
+    "개강 참석": {"select": {"options": [{"name": n} for n in ATTEND_VERDICTS]}},
+    "정합성": {"select": {"options": [{"name": n} for n in PERSON_VERDICTS]}},
+    "취소 사유": {"rich_text": {}}, "취소 전 상태": {"rich_text": {}},
     "변경 시각": {"date": {}},
     "메모": {"rich_text": {}},   # 담당자 입력 열 — 파이프라인은 절대 쓰지 않는다
 }
+
+
+def ensure_properties(token, db_id, schema, meta, session=None):
+    """스키마에 새로 생긴 속성을 기존 DB에 추가한다 (있는 속성은 건드리지 않는다 — 담당자가 바꾼 옵션·이름 보존).
+
+    select 옵션은 페이지를 쓸 때 노션이 자동 생성하므로 속성 자체가 없을 때만 PATCH.
+    """
+    have = meta.get("properties") or {}
+    missing = {k: v for k, v in schema.items() if k not in have}
+    if not missing:
+        return []
+    _request(token, "PATCH", f"/databases/{db_id}", {"properties": missing}, session)
+    logger.info(f"[KPI 발행] 노션 DB 속성 추가 {db_id}: {', '.join(missing)}")
+    return list(missing)
 
 
 def ensure_databases(token, conn, session=None):
@@ -147,6 +167,7 @@ def ensure_databases(token, conn, session=None):
         meta = get_database(token, db_id, session) if db_id else None
         if meta is not None:
             ensure_database_layout(token, db_id, desc, meta, session)
+            ensure_properties(token, db_id, schema, meta, session)
             ids.append(db_id)
             continue
         db_id = create_database(token, config.NOTION_KPI_PARENT_PAGE_ID, title, schema, session)
@@ -167,7 +188,7 @@ def ensure_databases(token, conn, session=None):
 
 GUIDE_DB_KEY = "guide"
 
-COHORT_DB_DESC = "기수 하나가 한 줄. HRD-Net 승인 인원(API)과 노션 HRD등록 수가 같은지, 개강일에 실제로 몇 명 왔는지. 하루 2회 갱신"
+COHORT_DB_DESC = "기수 하나가 한 줄. HRD-Net 승인 인원(API)과 노션 HRD등록 수가 같은지, 개강일에 몇 명 왔는지, 합격 후 몇 명이 취소했는지. 하루 2회 갱신"
 PERSON_DB_DESC = "합격 이상 신청자 한 명이 한 줄. 노션 최종결과와 HRD 명부를 이름·기수로 맞춘 결과. '메모'는 담당자 열(자동 갱신 안 함)"
 
 COHORT_GUIDE = {
@@ -177,6 +198,8 @@ COHORT_GUIDE = {
         "놓침 > 0 이면 HRD-Net에는 수강신청했는데 노션에 HRD신청·HRD등록으로 안 적힌 사람이 있다 → 담당자에게 노션 갱신 요청. "
         "음수면 반대로 노션에 더 많다 (HRD 신청 취소가 노션에 반영 안 됐을 가능성)",
         "개강일 참석률(%)은 승인 인원 중 개강 당일 입실한 비율. 출결이 아직 수집되지 않은 회차는 비어 있다",
+        "취소율(%)은 합격한 사람 중 취소한 비율 (합격 이상 + 합격 후 취소 기준). 취소는 대부분 HRD 등록 전에 일어난다 — "
+        "등록 후 이탈(API)·미참석(등록)이 0이 아니면 사람별 표에서 누구인지 확인",
         "상태가 '개설예정'인데 승인(API)이 있는 것은 정상 — 기관 승인은 개강 전에 이뤄진다",
     ],
     "columns": [
@@ -195,6 +218,10 @@ COHORT_GUIDE = {
         ("명부 인원 / 훈련중", "명부에 한 번이라도 잡힌 사람 수 / 지금 훈련중 상태인 사람 수", "명부 인원 − 훈련중 = 이탈·수료"),
         ("중도탈락 / 조기취업 / 수료(API)", "명부 상태 집계. 수료(API)는 종료 회차만 값이 있고 조기취업은 뺀 수", "종료 기수 성과"),
         ("개강일 참석 / 개강일 참석률(%)", "개강 당일 입실 기록이 있는 사람 수 / 승인 인원 대비 비율", "개강 다음 날 확인"),
+        ("미참석(등록)", "개강이 지났는데 출석 기록이 없는 명부 인원 (훈련중 상태). 개강 전엔 비어 있음", "개강 다음 날 > 0 이면 연락"),
+        ("합격 후 취소(노션)", "최종결과가 합격취소(연락두절·신청자 요청)인 사람 수", "취소 사유는 사람별 표"),
+        ("취소율(%)", "합격 후 취소 ÷ (합격 이상 + 합격 후 취소) × 100", "기수 간 비교"),
+        ("등록 후 이탈(API)", "명부에 잡혔다가 출석 없이 사라졌거나 중도탈락·제적된 사람 수 (2026-09-15 추적 시작 이후)", "> 0 이면 노션도 취소로 갱신됐는지 확인"),
         ("변경 시각", "이 줄이 마지막으로 바뀐 시각(UTC). 값이 같으면 갱신하지 않는다", "오래됐으면 파이프라인 점검"),
     ],
 }
@@ -206,7 +233,10 @@ PERSON_GUIDE = {
         "노션만 등록 → 노션은 HRD등록인데 HRD 명부에 없다: 승인이 아직 안 됐거나 이름 표기가 다르다 (띄어쓰기·개명). 담당자 확인",
         "HRD만 승인 → 명부에는 있는데 노션이 아직 HRD신청·합격 단계다: 노션 최종결과를 HRD등록으로 올려 달라고 요청",
         "대기 → 합격~HRD신청 단계에서 승인 전. 개강이 가까우면 HRD 신청·승인 독촉 대상",
+        "취소인데 명부 잔류 → 노션은 합격취소인데 HRD 명부에 아직 있다: HRD-Net에서 취소 처리 필요",
+        "등록 후 이탈 → 명부에 있다가 사라졌는데 노션은 아직 HRD등록·HRD신청이다: 노션을 합격취소로 갱신",
         "동명이인 확인 → 같은 기수에 같은 이름이 둘 이상. 사람이 직접 확인",
+        "개강 다음 날엔 '개강 참석' 열이 '미참석'인 사람에게 연락. '늦게 합류'는 개강일엔 안 왔지만 그 뒤 출석한 사람",
         "이름은 가운데를 가린 표기다. 원래 이름·연락처는 '신청자' 열을 눌러 신청자 리스트에서 본다",
     ],
     "columns": [
@@ -220,7 +250,9 @@ PERSON_GUIDE = {
         ("명부 상태", "훈련중 · 중도탈락 · 정상수료 · 80%이상수료 · 조기취업 · 제적", "이탈자 확인"),
         ("첫 참석일 / 첫 입실", "HRD 출결에서 처음 입실한 날과 시각", "개강일과 다르면 지각 개강"),
         ("등록 지연(일)", "승인 감지일 − 개강일. 개강 전에 승인됐거나 추적 시작 전이면 비어 있음", "> 0 이면 개강 후 뒤늦게 승인"),
-        ("정합성", "일치 · 노션만 등록 · HRD만 승인 · 동명이인 확인 · 대기 · 취소", "위 '읽는 법' 참고"),
+        ("개강 참석", "개강일 참석 · 늦게 합류(개강 후 첫 출석) · 미참석(개강 지났는데 출석 없음) · 개강 전 · 취소(출석 없이 명부에서 빠짐)", "개강 다음 날 '미참석' 확인"),
+        ("정합성", "일치 · 노션만 등록 · HRD만 승인 · 대기 · 취소 · 취소인데 명부 잔류 · 등록 후 이탈 · 동명이인 확인", "위 '읽는 법' 참고"),
+        ("취소 사유 / 취소 전 상태", "노션 '취소 상세 사유' 그대로 / 취소 직전 최종결과 (HRD등록이었으면 등록 후 취소). 2026-09-15 이후 변경만 알 수 있음", "취소 원인 분석"),
         ("변경 시각", "이 줄이 마지막으로 바뀐 시각(UTC)", "—"),
         ("메모", "담당자 자유 입력. 파이프라인이 절대 덮어쓰지 않는다", "확인 결과·조치 기록"),
     ],
@@ -405,13 +437,16 @@ def build_cohort_rows(today=None):
     roster = load_data("""
         SELECT TRPR_ID, TRPR_DEGR, COUNT(*) AS ROSTER_CNT,
                SUM(CASE WHEN GONE_AT IS NULL AND STATUS LIKE '%훈련중%' THEN 1 ELSE 0 END) AS ACTIVE_CNT,
-               SUM(CASE WHEN FIRST_ATTEND_DT IS NOT NULL AND FIRST_ATTEND_DT = REPLACE(TR_STA_DT, '-', '') THEN 1 ELSE 0 END) AS DAY1_CNT
+               SUM(CASE WHEN FIRST_ATTEND_DT IS NOT NULL AND FIRST_ATTEND_DT = REPLACE(TR_STA_DT, '-', '') THEN 1 ELSE 0 END) AS DAY1_CNT,
+               SUM(CASE WHEN FIRST_ATTEND_DT IS NULL AND GONE_AT IS NULL AND STATUS LIKE '%훈련중%' THEN 1 ELSE 0 END) AS NOSHOW_CNT,
+               SUM(CASE WHEN FIRST_ATTEND_DT IS NULL AND (GONE_AT IS NOT NULL OR STATUS LIKE '%탈락%' OR STATUS LIKE '%제적%') THEN 1 ELSE 0 END) AS LEFT_CNT
         FROM TB_ROSTER_MEMBER GROUP BY TRPR_ID, TRPR_DEGR""")
     apps = load_data("""
         SELECT COHORT, COUNT(*) AS N,
                SUM(CASE WHEN STATUS IN ('인터뷰합격','추가선발대기','합격안내','합격자등록','HRD신청','HRD등록') THEN 1 ELSE 0 END) AS PASS_CNT,
                SUM(CASE WHEN STATUS = 'HRD신청' THEN 1 ELSE 0 END) AS APPLY_CNT,
-               SUM(CASE WHEN STATUS = 'HRD등록' THEN 1 ELSE 0 END) AS REG_CNT
+               SUM(CASE WHEN STATUS = 'HRD등록' THEN 1 ELSE 0 END) AS REG_CNT,
+               SUM(CASE WHEN STATUS LIKE '합격취소%' THEN 1 ELSE 0 END) AS CANCEL_CNT
         FROM TB_APPLICANT WHERE COHORT IS NOT NULL GROUP BY COHORT""")
     roster_map = {(r.TRPR_ID, int(r.TRPR_DEGR)): r for r in roster.itertuples(index=False)}
     apps_map = {r.COHORT: r for r in apps.itertuples(index=False)}
@@ -428,6 +463,9 @@ def build_cohort_rows(today=None):
         apply_cnt = _i(a.APPLY_CNT) if a is not None else None
         trp = _i(s.TOT_TRP_CNT)
         day1 = _i(r.DAY1_CNT) if r is not None else None
+        started = str(s.TR_STA_DT)[:10] < today          # 개강 다음 날부터 '미참석'을 센다
+        pass_cnt = _i(a.PASS_CNT) if a is not None else None
+        cancel = _i(a.CANCEL_CNT) if a is not None else None
         rows.append({
             "KEY": cohort, "기수": cohort, "과정": config.COURSE_SHORT_NAMES[s.TRPR_ID], "회차": int(s.TRPR_DEGR),
             "상태": _status(s.TR_STA_DT, s.TR_END_DT, today), "개강일": s.TR_STA_DT, "종강일": s.TR_END_DT,
@@ -440,6 +478,10 @@ def build_cohort_rows(today=None):
             "중도탈락": _i(s.DROPOUT_CNT), "조기취업": _i(s.EARLY_EMPL_CNT), "수료(API)": _i(s.FINI_CNT),
             "개강일 참석": day1,
             "개강일 참석률(%)": round(day1 / approved * 100, 1) if day1 is not None and approved else None,
+            "미참석(등록)": (_i(r.NOSHOW_CNT) if r is not None else None) if started else None,
+            "합격 후 취소(노션)": cancel,
+            "취소율(%)": round(cancel / (pass_cnt + cancel) * 100, 1) if cancel is not None and (pass_cnt or 0) + cancel > 0 else None,
+            "등록 후 이탈(API)": _i(r.LEFT_CNT) if r is not None else None,
             "변경 시각": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         })
     return rows
@@ -450,8 +492,15 @@ def build_person_rows(today=None):
     today = today or datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
     statuses = ",".join("?" * len(config.NOTION_KPI_PASS_STATUSES))
     apps = load_data(
-        f"SELECT NOTION_PAGE_ID, NAME_HASH, NAME_MASKED, COHORT, STATUS, HRD_APPLY_AT FROM TB_APPLICANT "
+        f"SELECT NOTION_PAGE_ID, NAME_HASH, NAME_MASKED, COHORT, STATUS, HRD_APPLY_AT, CANCEL_REASON FROM TB_APPLICANT "
         f"WHERE COHORT IS NOT NULL AND STATUS IN ({statuses})", params=list(config.NOTION_KPI_PASS_STATUSES))
+    # 취소 직전 상태 — 전이 로그의 마지막 STATUS 변경(→ 합격취소). 로그 시작(2026-09-15) 전 취소는 알 수 없다
+    before = load_data("""
+        SELECT l.NOTION_PAGE_ID, l.OLD_VALUE FROM TB_APPLICANT_STATUS_LOG l
+        JOIN (SELECT NOTION_PAGE_ID, MAX(DETECTED_AT) AS MAX_AT FROM TB_APPLICANT_STATUS_LOG WHERE FIELD = 'STATUS' GROUP BY NOTION_PAGE_ID) m
+          ON m.NOTION_PAGE_ID = l.NOTION_PAGE_ID AND m.MAX_AT = l.DETECTED_AT AND l.FIELD = 'STATUS'
+        WHERE l.NEW_VALUE LIKE '합격취소%'""")
+    before_map = {r.NOTION_PAGE_ID: r.OLD_VALUE for r in before.itertuples(index=False)}
     members = load_data("SELECT TRPR_ID, TRPR_DEGR, NAME_HASH, STATUS, FIRST_SEEN_AT, GONE_AT, FIRST_ATTEND_DT, FIRST_IN_TIME, TR_STA_DT FROM TB_ROSTER_MEMBER")
     tracking_start = None
     if not members.empty:
@@ -464,30 +513,51 @@ def build_person_rows(today=None):
     for a in apps.itertuples(index=False):
         matches = by_key.get((a.COHORT, a.NAME_HASH), [])
         live = [m for m in matches if m.GONE_AT is None or str(m.GONE_AT) in ("", "None", "nan", "NaT")]
+        cancelled = str(a.STATUS).startswith("합격취소")
         row = {"KEY": a.NOTION_PAGE_ID, "이름": f"{a.NAME_MASKED or '?'} · {a.COHORT}", "신청자": a.NOTION_PAGE_ID,
                "기수": a.COHORT, "노션 상태": a.STATUS, "HRD 신청 일시": a.HRD_APPLY_AT,
                "HRD 승인": False, "승인 감지": None, "명부 상태": None, "첫 참석일": None, "첫 입실": None,
-               "등록 지연(일)": None, "정합성": "대기",
+               "등록 지연(일)": None, "개강 참석": None, "정합성": "대기",
+               "취소 사유": a.CANCEL_REASON if cancelled else None,
+               "취소 전 상태": before_map.get(a.NOTION_PAGE_ID) if cancelled else None,
                "변경 시각": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
         if len(matches) > 1:
             row["정합성"] = "동명이인 확인"
-        elif live:
-            m = live[0]
+        elif live or matches:
+            m = live[0] if live else matches[0]     # 명부에서 사라진 사람도 승인·참석 사실은 남긴다
             seen = str(m.FIRST_SEEN_AT)[:19].replace(" ", "T") if m.FIRST_SEEN_AT is not None else None
-            row.update({"HRD 승인": True, "승인 감지": seen, "명부 상태": m.STATUS,
-                        "첫 참석일": m.FIRST_ATTEND_DT, "첫 입실": m.FIRST_IN_TIME})
+            row.update({"HRD 승인": bool(live), "승인 감지": seen, "명부 상태": m.STATUS,
+                        "첫 참석일": m.FIRST_ATTEND_DT, "첫 입실": m.FIRST_IN_TIME,
+                        "개강 참석": attend_verdict(m.FIRST_ATTEND_DT, m.TR_STA_DT, today, gone=not live)})
             if seen and m.TR_STA_DT and tracking_start and seen[:10] > tracking_start:
                 delay = (datetime.fromisoformat(seen[:10]) - datetime.fromisoformat(str(m.TR_STA_DT)[:10])).days
                 row["등록 지연(일)"] = max(delay, 0)
-            row["정합성"] = "일치" if a.STATUS == "HRD등록" else "HRD만 승인"
+            if not live:
+                row["정합성"] = "취소" if cancelled else "등록 후 이탈"      # 승인됐다가 명부에서 빠짐
+            elif cancelled:
+                row["정합성"] = "취소인데 명부 잔류"                         # 노션은 취소인데 HRD-Net 취소 처리가 안 됨
+            else:
+                row["정합성"] = "일치" if a.STATUS == "HRD등록" else "HRD만 승인"
         elif a.STATUS == "HRD등록":
             row["정합성"] = "노션만 등록"
-        elif str(a.STATUS).startswith("합격취소"):
+        elif cancelled:
             row["정합성"] = "취소"          # 합격 후 취소, 명부에도 없음 — 정상 종료
         else:
             row["정합성"] = "대기"          # 합격~HRD신청 단계, 승인 전
         rows.append(row)
     return rows
+
+
+def attend_verdict(first_attend_dt, start_dt, today, gone=False):
+    """개강 참석 판정. 출석이 있으면 개강일과 비교, 없으면 개강 전/미참석, 명부에서 빠졌고 출석도 없으면 취소."""
+    start = str(start_dt or "")[:10]
+    if first_attend_dt:
+        return "개강일 참석" if str(first_attend_dt)[:8] == start.replace("-", "") else "늦게 합류"
+    if gone:
+        return "취소"
+    if not start or start >= today:
+        return "개강 전"
+    return "미참석"
 
 
 def _i(v):

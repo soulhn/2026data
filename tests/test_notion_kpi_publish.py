@@ -9,8 +9,9 @@ import init_db
 import notion_kpi_publish as pub
 import utils
 from notion_kpi_publish import (
-    COHORT_GUIDE, COHORT_SCHEMA, PERSON_GUIDE, PERSON_SCHEMA, build_cohort_rows, build_person_rows, content_hash,
-    ensure_database_layout, ensure_databases, ensure_page_guide, guide_blocks, publish, to_properties,
+    COHORT_GUIDE, COHORT_SCHEMA, PERSON_GUIDE, PERSON_SCHEMA, attend_verdict, build_cohort_rows, build_person_rows,
+    content_hash, ensure_database_layout, ensure_databases, ensure_page_guide, ensure_properties, guide_blocks, publish,
+    to_properties,
 )
 
 
@@ -32,21 +33,28 @@ def _seed(conn):
     cur.execute("INSERT INTO TB_COURSE_SNAPSHOT (TRPR_ID, TRPR_DEGR, SNAP_AT, TR_STA_DT, TR_END_DT, TOT_FXNUM, TOT_TRP_CNT, TOT_PAR_MKS, FINI_CNT, "
                 "ROSTER_CNT, ACTIVE_CNT, DROPOUT_CNT, PARTIAL_FINI_CNT, EARLY_EMPL_CNT, CHANGED) "
                 "VALUES ('AIG20240000459068', 37, '2026-09-15 08:00:00', '2026-09-04', '2027-03-03', 30, 22, 21, 0, 21, 21, 0, 0, 0, 'first')")  # SKN → 제외
-    for tid, h, status, seen, fa in [("t1", "h_kim", "훈련중", "2026-09-15 08:00:00", "20260915"),
-                                     ("t2", "h_lee", "훈련중", "2026-09-16 09:00:00", None),
-                                     ("t3", "h_dup", "훈련중", "2026-09-15 08:00:00", "20260915"),
-                                     ("t4", "h_dup", "훈련중", "2026-09-15 08:00:00", None)]:
-        cur.execute("INSERT INTO TB_ROSTER_MEMBER (TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, TR_STA_DT, STATUS, FIRST_SEEN_AT, LAST_SEEN_AT, FIRST_ATTEND_DT, FIRST_IN_TIME) "
-                    "VALUES ('AIG20260000578396', 3, ?, ?, 'x', '2026-09-15', ?, ?, ?, ?, '09:00')", [tid, h, status, seen, seen, fa])
+    for tid, h, status, seen, fa, gone in [("t1", "h_kim", "훈련중", "2026-09-15 08:00:00", "20260915", None),
+                                           ("t2", "h_lee", "훈련중", "2026-09-16 09:00:00", None, None),
+                                           ("t3", "h_dup", "훈련중", "2026-09-15 08:00:00", "20260915", None),
+                                           ("t4", "h_dup", "훈련중", "2026-09-15 08:00:00", None, None),
+                                           ("t5", "h_gone", "훈련중", "2026-09-15 08:00:00", None, "2026-09-16 13:00:00"),   # 승인됐다가 사라짐
+                                           ("t6", "h_stay", "훈련중", "2026-09-15 08:00:00", "20260916", None),           # 노션은 취소인데 명부 잔류
+                                           ("t7", "h_noshow", "훈련중", "2026-09-15 08:00:00", None, None)]:            # 개강 지났는데 출석 없음
+        cur.execute("INSERT INTO TB_ROSTER_MEMBER (TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, TR_STA_DT, STATUS, FIRST_SEEN_AT, LAST_SEEN_AT, FIRST_ATTEND_DT, FIRST_IN_TIME, GONE_AT) "
+                    "VALUES ('AIG20260000578396', 3, ?, ?, 'x', '2026-09-15', ?, ?, ?, ?, '09:00', ?)", [tid, h, status, seen, seen, fa, gone])
     for pid, h, status, apply_at in [("p1", "h_kim", "HRD등록", "2026-09-01"),      # 일치
                                      ("p2", "h_park", "HRD등록", "2026-09-02"),     # 노션만 등록
                                      ("p3", "h_lee", "HRD신청", "2026-09-10"),      # HRD만 승인 (지연 승인 9/16)
                                      ("p4", "h_choi", "합격안내", None),            # 대기
                                      ("p5", "h_dup", "HRD등록", None),              # 동명이인 확인
                                      ("p7", "h_can", "합격취소(신청자 요청)", None),  # 취소
+                                     ("p8", "h_gone", "HRD등록", None),             # 등록 후 이탈
+                                     ("p9", "h_stay", "합격취소(연락두절)", None),   # 취소인데 명부 잔류
+                                     ("p10", "h_noshow", "HRD등록", None),          # 일치 + 미참석
                                      ("p6", "h_no", "신청취소(본인요청)", None)]:   # 대상 아님
-        cur.execute("INSERT INTO TB_APPLICANT (NOTION_PAGE_ID, NAME_HASH, NAME_MASKED, COHORT, STATUS, HRD_APPLY_AT) VALUES (?, ?, '홍*동', 'AIO3', ?, ?)",
-                    [pid, h, status, apply_at])
+        cur.execute("INSERT INTO TB_APPLICANT (NOTION_PAGE_ID, NAME_HASH, NAME_MASKED, COHORT, STATUS, HRD_APPLY_AT, CANCEL_REASON) VALUES (?, ?, '홍*동', 'AIO3', ?, ?, ?)",
+                    [pid, h, status, apply_at, "C2 취업 확정" if status.startswith("합격취소") else None])
+    cur.execute("INSERT INTO TB_APPLICANT_STATUS_LOG (NOTION_PAGE_ID, DETECTED_AT, FIELD, OLD_VALUE, NEW_VALUE) VALUES ('p9', '2026-09-16 09:00:00', 'STATUS', 'HRD등록', '합격취소(연락두절)')")
     conn.commit()
 
 
@@ -82,18 +90,28 @@ class TestBuildRows:
         rows = build_cohort_rows(today="2026-09-15")
         assert [r["기수"] for r in rows] == ["AIO3"]                    # SKN 회차는 제외
         r = rows[0]
-        assert r["승인(API)"] == 2 and r["HRD등록(노션)"] == 3 and r["정합성"] == "불일치"
-        assert r["HRD신청(노션)"] == 1 and r["놓침"] == 5 - 3 - 1
-        assert r["합격 이상(노션)"] == 5 and r["노션 신청자"] == 7
-        assert r["명부 인원"] == 4 and r["개강일 참석"] == 2 and r["개강일 참석률(%)"] == 100.0
+        assert r["승인(API)"] == 2 and r["HRD등록(노션)"] == 5 and r["정합성"] == "불일치"
+        assert r["HRD신청(노션)"] == 1 and r["놓침"] == 5 - 5 - 1
+        assert r["합격 이상(노션)"] == 7 and r["노션 신청자"] == 10
+        assert r["명부 인원"] == 7 and r["개강일 참석"] == 2 and r["개강일 참석률(%)"] == 100.0
         assert r["상태"] == "진행중"
+        assert r["합격 후 취소(노션)"] == 2 and r["취소율(%)"] == round(2 / 9 * 100, 1)
+        assert r["등록 후 이탈(API)"] == 1                                   # t5: 출석 없이 사라짐
+        assert r["미참석(등록)"] is None                                     # today = 개강일 → 아직 세지 않는다
+        r2 = build_cohort_rows(today="2026-09-16")[0]
+        assert r2["미참석(등록)"] == 3                                       # t2·t4·t7: 훈련중인데 출석 없음
 
     def test_person_rows_consistency(self, db, monkeypatch):
         monkeypatch.setattr(pub, "load_data", lambda q, params=None, db=None: utils.load_data(q, params=params))
         _seed(db)
         rows = {r["KEY"]: r for r in build_person_rows(today="2026-09-16")}
-        assert set(rows) == {"p1", "p2", "p3", "p4", "p5", "p7"}
-        assert rows["p7"]["정합성"] == "취소"
+        assert set(rows) == {"p1", "p2", "p3", "p4", "p5", "p7", "p8", "p9", "p10"}
+        assert rows["p7"]["정합성"] == "취소" and rows["p7"]["취소 사유"] == "C2 취업 확정" and rows["p7"]["취소 전 상태"] is None
+        assert rows["p8"]["정합성"] == "등록 후 이탈" and rows["p8"]["HRD 승인"] is False and rows["p8"]["개강 참석"] == "취소"
+        assert rows["p9"]["정합성"] == "취소인데 명부 잔류" and rows["p9"]["취소 전 상태"] == "HRD등록" and rows["p9"]["개강 참석"] == "늦게 합류"
+        assert rows["p10"]["정합성"] == "일치" and rows["p10"]["개강 참석"] == "미참석"
+        assert rows["p1"]["개강 참석"] == "개강일 참석" and rows["p3"]["개강 참석"] == "미참석" and rows["p2"]["개강 참석"] is None
+        assert rows["p1"]["취소 사유"] is None                                          # 취소 아닌 사람은 비움
         assert rows["p1"]["정합성"] == "일치" and rows["p1"]["HRD 승인"] is True and rows["p1"]["첫 참석일"] == "20260915"
         assert rows["p2"]["정합성"] == "노션만 등록" and rows["p2"]["HRD 승인"] is False
         assert rows["p3"]["정합성"] == "HRD만 승인" and rows["p3"]["등록 지연(일)"] == 1     # 9/16 승인, 개강 9/15
@@ -148,6 +166,14 @@ class TestPublish:
         later = [c.args[:2] for c in session.request.call_args_list[n_before:]]
         assert ("POST", f"{config.NOTION_API_BASE}/databases") not in later
         assert ("GET", f"{config.NOTION_API_BASE}/databases/page-1") in later and ("GET", f"{config.NOTION_API_BASE}/databases/page-3") in later
+
+    def test_ensure_properties_adds_only_missing(self):
+        session = self._fake_session()
+        meta = {"properties": {k: {} for k in PERSON_SCHEMA if k not in ("개강 참석", "취소 사유")}}
+        assert ensure_properties("tok", "db1", PERSON_SCHEMA, meta, session=session) == ["개강 참석", "취소 사유"]
+        body = session.request.call_args.kwargs["json"]
+        assert set(body["properties"]) == {"개강 참석", "취소 사유"}              # 있는 속성은 다시 보내지 않는다
+        assert ensure_properties("tok", "db1", PERSON_SCHEMA, {"properties": dict.fromkeys(PERSON_SCHEMA, {})}, session=session) == []
 
     def test_layout_skips_when_already_inline_with_same_description(self):
         session = self._fake_session()
@@ -259,3 +285,16 @@ class TestPageGuide:
         ensure_page_guide("tok", db, "cdb", "pdb", session=session)
         archived = [c for c in session.request.call_args_list if c.args[0] == "PATCH" and c.kwargs.get("json") == {"archived": True}]
         assert archived == []
+
+
+class TestAttendVerdict:
+    @pytest.mark.parametrize("first, start, today, gone, expected", [
+        ("20260915", "2026-09-15", "2026-09-16", False, "개강일 참석"),
+        ("20260917", "2026-09-15", "2026-09-18", False, "늦게 합류"),
+        (None, "2026-09-15", "2026-09-15", False, "개강 전"),        # 개강 당일 아침엔 아직 미참석이라 하지 않는다
+        (None, "2026-09-15", "2026-09-16", False, "미참석"),
+        (None, "2026-09-15", "2026-09-16", True, "취소"),
+        ("20260915", "2026-09-15", "2026-09-20", True, "개강일 참석"),   # 나갔어도 참석 사실은 남긴다
+    ])
+    def test_verdicts(self, first, start, today, gone, expected):
+        assert attend_verdict(first, start, today, gone=gone) == expected
