@@ -213,26 +213,28 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 
 ---
 
-### 개강 참석률 (모집 퍼널)
+### 등록 대비 승인률 (모집 퍼널)
 
-**기준 파일**: `HRD등록_개강참석률.py` — HRD-Net 훈련일정 상세 API(`_3.jsp`) 집계값 그대로 사용.
+**기준 파일**: `HRD등록_개강참석률.py` (파일명은 URL 유지, 화면 제목 "HRD 등록 대비 승인률") — HRD-Net 훈련일정 상세 API(`_3.jsp`) 집계값 + 명부 스냅샷.
 
 | 단계 | API 필드 | DB 컬럼 | 의미 |
 |---|---|---|---|
 | 정원 | `totFxnum` | `TOT_FXNUM` | 승인 정원 |
-| 수강신청 | `totTrpCnt` | `TOT_TRP_CNT` | HRD 등록(수강신청) 누적 인원 |
-| 개강 인원 | `totParMks` | `TOT_PAR_MKS` | 확정 신고 인원 = 훈련생 명부 건수 |
-| 수료 | `finiCnt` | `FINI_CNT` | 수료 인원 (종료 회차만 값 있음) |
+| 수강신청 | `totTrpCnt` | `TOT_TRP_CNT` | HRD 등록(수강신청) 인원 (누적인지 현재값인지 미확정 — TB_COURSE_SNAPSHOT 이력으로 판별 예정) |
+| **승인 인원** | `totParMks` | `TOT_PAR_MKS` | 기관 승인 = 확정 신고 인원 = 명부 건수. **개강 전에도 잡힌다** → "개강 인원"이라 부르지 않는다 (2026-09-16 명칭 변경) |
+| 수료 | `finiCnt` | `FINI_CNT` | 수료 인원 (종료 회차만 값 있음). 조기취업 미포함 |
+| 개강일 참석 | 명부 스냅샷 | `TB_ROSTER_MEMBER.FIRST_ATTEND_DT = 개강일` | 입실 시간이 있거나 출석 계열 상태. 출결을 읽지 않은 회차는 NA |
 
 | 지표 | 공식 |
 |---|---|
-| **개강 참석률** | 개강 인원 / 수강신청 × 100 (수강신청 0 → NA) |
-| **신청 이탈** | 수강신청 − 개강 인원 |
-| **정원 충원율** | 개강 인원 / 정원 × 100 |
+| **등록 대비 승인률** | 승인 인원 / 수강신청 × 100 (수강신청 0 → NA). 구 명칭 `개강 참석률` |
+| **미승인** | 수강신청 − 승인 인원. 구 명칭 `신청 이탈` |
+| **정원 충원율** | 승인 인원 / 정원 × 100 |
+| **개강일 참석률** | 개강일 참석 / 승인 인원 × 100 — 진짜 개강 참석률 |
 
-> **API 한계**: 명부(`_4.jsp`)에는 확정자만 내려오므로 신청만 하고 미확정인 개인은 식별 불가 — 인원 차이로만 잡힌다.
-> 시점 정보도 없어(스냅샷) 확정 신고 반영일은 알 수 없다. 개설예정 회차에도 `totParMks`가 미리 잡히는 경우가 있다(2026-09-08 실측: 엔코아 AIO 3회차 신청 13/확정 9).
-> 전 회차 조회는 `hrd_api.get_course_history_with_fallback()` — API 우선, 실패 시 `TB_COURSE_MASTER` 폴백(한화만).
+> **API 한계**: 명부(`_4.jsp`)에는 승인자만 내려오므로 신청만 하고 미승인인 개인은 식별 불가 — 인원 차이로만 잡힌다.
+> 시점 정보도 없어(스냅샷) 승인 반영일은 알 수 없다 → `kpi_etl.py`가 TB_COURSE_SNAPSHOT·TB_ROSTER_MEMBER에 변화 이력을 남긴다.
+> 전 회차 조회는 `hrd_api.get_course_history_with_fallback(get_funnel_institutions())` — API 우선, 실패 시 `TB_COURSE_MASTER` 폴백(한화만).
 
 ---
 
@@ -287,7 +289,7 @@ Fix: Correct completion rate calculation (수료율 계산 오류 수정)
 - `HRD_API_KEY` — 플레이데이터평생교육원 기관 인증키 (한화·SKN 과정). GitHub Actions + Streamlit secrets 양쪽 등록
 - `ENCORE_API_KEY` — (주)엔코아 기관 인증키 (MLE·AIO·MLO 과정). Streamlit secrets 등록. **명부/출결 API는 인증키 소속 기관의 과정만 조회 가능**
 - **과정 ID는 환경변수가 아니라 `config.py`에서 관리** (2026-09-08 통일): `INSTITUTIONS`(기관 → 키 환경변수 이름) · `COURSES`(과정 ID → 기관·약칭) ·
-  용도별 범위 `ETL_COURSE_ID`(DB 수집, 한화 1개) / `OPS_COURSE_IDS`(운영 현황) / `FUNNEL_COURSE_IDS`(개강 참석률·노션 대조, 전체).
+  용도별 범위 `ETL_COURSE_ID`(DB 수집, 한화 1개) / `OPS_COURSE_IDS`(운영 현황) / `FUNNEL_COURSE_IDS`(모집 퍼널·노션 대조, 전체).
   `hrd_api.get_institutions(course_ids)`가 과정마다 소속 기관 키를 붙여 (키, 과정ID) 쌍을 만든다. 과정 추가 = `COURSES`에 한 줄 + 범위 목록에 추가.
   구 변수 `HANWHA_COURSE_ID`·`ENCORE_COURSE_IDS`는 더 이상 읽지 않음 (시크릿에 남아 있어도 무해)
 - `DATABASE_URL` — PostgreSQL 연결 문자열 (**필수**. 미설정 시 `get_connection()`이 `DatabaseNotConfiguredError`)

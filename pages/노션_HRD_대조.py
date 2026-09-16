@@ -138,7 +138,7 @@ with page_error_boundary():
     n_bad = int((both["판정"] == "⚠️ 불일치").sum())
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("양쪽 모두 있는 기수", f"{len(both)}개")
-    k2.metric("확정 인원 일치", f"{n_ok}개", help="HRD 개강 인원(totParMks) = 노션 확정자신고")
+    k2.metric("확정 인원 일치", f"{n_ok}개", help="HRD 승인 인원(totParMks) = 노션 확정자신고")
     k3.metric("확정 인원 불일치", f"{n_bad}개", delta_color="inverse")
     k4.metric("HRD에만 있음", f"{int((view['매칭'] == 'HRD만').sum())}개",
               help="노션 운영현황표에 같은 그룹·개강일 행이 없음 (개설예정·종료 기수 포함)")
@@ -161,7 +161,7 @@ with page_error_boundary():
     st.subheader("📋 기수별 인원 대조")
     st.caption(
         "HRD 컬럼은 HRD-Net 집계값, 노션 컬럼은 운영현황표 값. "
-        "**확정 차이 = HRD 개강 인원 − 노션 확정자신고** (0이면 일치). 실제 개강 참석률 = 노션 개강인원 ÷ HRD 수강신청."
+        "**확정 차이 = HRD 승인 인원 − 노션 확정자신고** (0이면 일치). 실제 개강 참석률 = 노션 개강인원 ÷ HRD 수강신청."
     )
 
     table_cols = ["그룹", "회차", "노션_과정명", "판정", "상태", "개강일", "HRD_종료일", "노션_종강일",
@@ -185,7 +185,7 @@ with page_error_boundary():
             "노션_추가인원": st.column_config.NumberColumn("추가인원 (노션)", format="%d명", help="개강~확정자신고 사이 합류"),
             "노션_확정자신고": st.column_config.NumberColumn("확정자신고 (노션)", format="%d명",
                                                          help="개강인원 − 초기이탈 + 추가인원"),
-            "HRD_확정": st.column_config.NumberColumn("개강 인원 (HRD)", format="%d명", help="totParMks = 확정 신고 인원"),
+            "HRD_확정": st.column_config.NumberColumn("승인 인원 (HRD)", format="%d명", help="totParMks = 확정 신고 인원"),
             "확정_차이": st.column_config.NumberColumn("확정 차이", format="%+d명"),
             "노션_중도이탈": st.column_config.NumberColumn("중도이탈 (노션)", format="%d명"),
             "노션_현재인원": st.column_config.NumberColumn("현재인원 (노션)", format="%d명", help="확정자신고 − 중도이탈"),
@@ -194,7 +194,7 @@ with page_error_boundary():
             "현재_차이": st.column_config.NumberColumn("현재 차이", format="%+d명", help="HRD 훈련중 − 노션 현재인원"),
             "HRD_수료": st.column_config.NumberColumn("수료 (HRD)", format="%d명"),
             "등록확정전환율": st.column_config.ProgressColumn("등록→확정 전환율(%)", format="%.1f%%", min_value=0, max_value=100,
-                                                        help="HRD 개강 인원 ÷ HRD 수강신청. 기존 페이지의 '개강 참석률'"),
+                                                        help="HRD 승인 인원 ÷ HRD 수강신청. 기존 페이지의 '등록 대비 승인률'"),
             "개강참석률_노션": st.column_config.NumberColumn("실제 개강 참석률(%)", format="%.1f%%",
                                                       help="노션 개강인원 ÷ HRD 수강신청. 100% 초과면 등록 없이 개강 참석한 인원이 있거나 신청 취소분이 빠진 것"),
             "등록대비개강차이": st.column_config.NumberColumn("개강 − 등록", format="%+d명", help="노션 개강인원 − HRD 수강신청"),
@@ -216,7 +216,7 @@ with page_error_boundary():
             "HRD_수강신청": "① 수강신청 (HRD)",
             "노션_개강인원": "② 개강인원 (노션)",
             "노션_확정자신고": "③ 확정자신고 (노션)",
-            "HRD_확정": "③ 개강 인원 (HRD)",
+            "HRD_확정": "③ 승인 인원 (HRD)",
             "노션_현재인원": "④ 현재인원 (노션)",
         }
         long = chart_df.melt(id_vars="기수", value_vars=list(stages.keys()), var_name="단계", value_name="인원")
@@ -231,7 +231,7 @@ with page_error_boundary():
             tooltip=["기수", "단계", "인원"],
         ).properties(height=220)
         st.altair_chart(chart)
-        st.caption("③이 두 개면 HRD 개강 인원과 노션 확정자신고가 같은 단계라는 뜻 — 높이가 같아야 정상입니다.")
+        st.caption("③이 두 개면 HRD 승인 인원과 노션 확정자신고가 같은 단계라는 뜻 — 높이가 같아야 정상입니다.")
         st.divider()
 
     # ─────────────────── 용어 매핑 ───────────────────
@@ -241,11 +241,11 @@ with page_error_boundary():
 | 이 앱 (HRD-Net 기준) | 노션 운영현황표 | 관계 |
 |---|---|---|
 | 수강신청 (`totTrpCnt`) | — | 노션은 HRD 등록 단계를 관리하지 않음 |
-| **개강 인원** (`totParMks`) | **확정자신고** = 개강인원 − 초기이탈 + 추가인원 | 같은 값 (2026-09-08 실측, AIO 1·2기 / MLE 1·2기 모두 일치). 노션 "개강인원"과는 **다른 단계** |
+| **승인 인원** (`totParMks`) | **확정자신고** = 개강인원 − 초기이탈 + 추가인원 | 같은 값 (2026-09-08 실측, AIO 1·2기 / MLE 1·2기 모두 일치). 노션 "개강인원"과는 **다른 단계** |
 | — | 개강인원 | 첫날 실제 출석 인원. API에 없음 → 이 화면에서만 볼 수 있음 |
-| 신청 이탈 = 수강신청 − 개강 인원 | 초기이탈 / 추가인원 | 노션 "이탈"은 개강 이후 단계. 신청 이탈은 등록 후 미참석까지 섞인 값이라 다른 개념 |
+| 미승인 = 수강신청 − 승인 인원 | 초기이탈 / 추가인원 | 노션 "이탈"은 개강 이후 단계. 미승인은 등록 후 미참석까지 섞인 값이라 다른 개념 |
 | — | 중도이탈, 현재인원, 이탈합계 | 확정 이후 운영 지표. 이 화면은 명부 '훈련중' 인원과 대조 가능 (체크박스) |
-| 개강 참석률 = 개강 인원 ÷ 수강신청 | — | 노션 용어로는 **등록→확정 전환율**. 진짜 개강 참석률은 노션 개강인원 ÷ 수강신청 |
+| 등록 대비 승인률 = 승인 인원 ÷ 수강신청 | — | 노션 용어로는 **등록→확정 전환율**. 진짜 개강 참석률은 노션 개강인원 ÷ 수강신청 |
 | 종료일 / 상태 "종료" | 종강일 | 명칭만 다름 |
 | N회차 (HRD 회차 번호) | N기 (기수) | 번호 체계가 다름 → 개강일로 맞춤 |
 | 정원, 모집률, 정원 충원율 | — | 노션에 정원 개념 없음 |

@@ -338,7 +338,7 @@ with page_error_boundary():
 
         # ── [2] 현재 운영 중인 과정 현황 ─────────────────────────────────
         st.subheader("🚨 현재 운영 중인 과정 현황")
-        st.caption("수강 신청/개강 인원/제적/중도 탈락/수료·조기취업/현재 인원/잔여율 기준입니다.")
+        st.caption("수강 신청/승인 인원/제적/중도 탈락/수료·조기취업/현재 인원/잔여율 기준입니다.")
 
         trainee_stats = trainees_df.groupby(['TRPR_ID', 'TRPR_DEGR']).apply(
             lambda g: pd.Series({
@@ -353,7 +353,7 @@ with page_error_boundary():
             active_table[c] = pd.to_numeric(active_table[c], errors='coerce').fillna(0).astype(int)
         active_table['TOT_PAR_MKS'] = pd.to_numeric(active_table['TOT_PAR_MKS'], errors='coerce').fillna(0)
         active_table['TOT_TRP_CNT'] = pd.to_numeric(active_table['TOT_TRP_CNT'], errors='coerce').fillna(0)
-        # 현재 인원 = 개강 인원 − 제적 − 중도탈락 − 수료·조기취업 (실제 훈련중 인원)
+        # 현재 인원 = 승인 인원 − 제적 − 중도탈락 − 수료·조기취업 (실제 훈련중 인원)
         active_table['CURRENT_CNT'] = (
             active_table['TOT_PAR_MKS'] - active_table['EXPEL_CNT']
             - active_table['DROP_CNT'] - active_table['FINI_CNT']
@@ -369,7 +369,7 @@ with page_error_boundary():
                 "TRPR_NM":     "과정명",
                 "TR_END_DT":   st.column_config.DateColumn("종료 예정일"),
                 "TOT_TRP_CNT": st.column_config.NumberColumn("수강 신청", format="%d명"),
-                "TOT_PAR_MKS": st.column_config.NumberColumn("개강 인원", format="%d명"),
+                "TOT_PAR_MKS": st.column_config.NumberColumn("승인 인원", format="%d명", help="기관 승인 인원 = 확정 신고 인원"),
                 "EXPEL_CNT":   st.column_config.NumberColumn("제적", format="%d명"),
                 "DROP_CNT":    st.column_config.NumberColumn("중도 탈락", format="%d명"),
                 "FINI_CNT":    st.column_config.NumberColumn("수료·조기취업", format="%d명"),
