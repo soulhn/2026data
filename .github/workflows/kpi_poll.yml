@@ -1,19 +1,26 @@
-name: HRD ETL (매시간)
+name: KPI poll (15분 · 외부 트리거)
+
+# 예약 실행(schedule)은 GitHub가 자주 누락·지연시켜 실제로는 하루 2회만 돌았다 (docs/DEV_LOG.md 2026-09-16).
+# 그래서 이 워크플로는 예약 없이 외부에서 호출한다:
+#   · cron-job.org → workflow_dispatch API  (15분마다)
+#   · 노션 자동화 → 중계(supabase/functions/notion-relay) → workflow_dispatch API  (최종결과 바뀌는 즉시)
+# 둘 다 토큰 권한은 Actions: write 하나면 된다. 설정 절차: recruit-kpi/docs/SETUP_REALTIME.md
+# 한화 출결(hrd_etl.py)은 무거워서 여기 없다 — hrd_etl.yml이 따로 돈다.
 
 on:
-  schedule:
-    # UTC 기준: KST 09:00~18:00 = UTC 00:00~09:00
-    # 평일 매시간 실행
-    - cron: '10 0-9 * * 1-5'
-  workflow_dispatch:  # 수동 실행 버튼
+  workflow_dispatch:
+
+concurrency:
+  group: kpi-poll
+  cancel-in-progress: false   # 겹치면 줄 세운다 (같은 DB에 동시에 쓰지 않도록)
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  etl:
+  poll:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -26,15 +33,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run HRD ETL
-        env:
-          HRD_API_KEY: ${{ secrets.HRD_API_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DATABASE_URL_MARKET: ${{ secrets.DATABASE_URL_MARKET }}
-        run: python -u hrd_etl.py
-
-      - name: Run KPI round snapshot ETL
-        if: always()   # 출결 ETL이 실패해도 스냅샷은 남긴다
+      - name: Roster snapshot (HRD 명부 · 승인/이탈 감지)
         env:
           HRD_API_KEY: ${{ secrets.HRD_API_KEY }}
           ENCORE_API_KEY: ${{ secrets.ENCORE_API_KEY }}
@@ -42,8 +41,8 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python -u kpi_etl.py
 
-      - name: Run Notion applicants ETL
-        if: always()   # NOTION_TOKEN 이 없으면 스크립트가 스스로 건너뛴다
+      - name: Notion applicants (최종결과 전이 감지)
+        if: always()
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 import config
 from init_db import init_all_tables
 from notion_ops import NotionFetchError, prop_value, query_database
+from notify import discord_post
 from utils import _clean_secret, adapt_query, get_connection, mask_name
 
 load_dotenv()
@@ -132,8 +133,19 @@ def fetch_changed_pages(token, since_iso=None, session=None):
 # ── 저장 ─────────────────────────────────────────────────────────────
 
 
-def upsert_applicants(conn, rows, now=None):
-    """현재 상태 upsert + 추적 필드 전이 로그. 반환: (신규, 갱신, 전이 로그 수)."""
+HRD_STATUSES = ("HRD신청", "HRD등록")
+
+
+def _notable(old, new):
+    """알림 대상 전이: HRD신청·HRD등록으로 들어오거나 거기서 나가거나, 합격취소로 가는 것."""
+    return (new in HRD_STATUSES) or (old in HRD_STATUSES) or str(new or "").startswith("합격취소")
+
+
+def upsert_applicants(conn, rows, now=None, events=None):
+    """현재 상태 upsert + 추적 필드 전이 로그. 반환: (신규, 갱신, 전이 로그 수).
+
+    events: 리스트를 주면 알림용 최종결과 전이를 {"name","cohort","old","new"}로 덧붙인다 (기수 있는 사람만).
+    """
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     cur = conn.cursor()
     tracked_sql = ", ".join(TRACKED_FIELDS)
@@ -163,6 +175,8 @@ def upsert_applicants(conn, rows, now=None):
             if r.get("STATUS") is not None:
                 cur.execute(log, [pid, now, "STATUS", None, r["STATUS"], r.get("NOTION_EDITED_AT")])
                 transitions += 1
+                if events is not None and r.get("COHORT") and _notable(None, r["STATUS"]):
+                    events.append({"name": r.get("NAME_MASKED"), "cohort": r["COHORT"], "old": None, "new": r["STATUS"]})
             continue
         prev_vals = dict(zip(TRACKED_FIELDS, prev[:len(TRACKED_FIELDS)]))
         changed = [f for f in TRACKED_FIELDS if _norm(prev_vals.get(f)) != _norm(r.get(f))]
@@ -171,19 +185,22 @@ def upsert_applicants(conn, rows, now=None):
         for f in changed:
             cur.execute(log, [pid, now, f, _norm(prev_vals.get(f)), _norm(r.get(f)), r.get("NOTION_EDITED_AT")])
             transitions += 1
+            if f == "STATUS" and events is not None and r.get("COHORT") and _notable(_norm(prev_vals.get(f)), _norm(r.get(f))):
+                events.append({"name": r.get("NAME_MASKED"), "cohort": r["COHORT"],
+                               "old": _norm(prev_vals.get(f)), "new": _norm(r.get(f))})
         cur.execute(update, [r.get(c) for c in update_cols] + [now, pid])
         updated += 1
     conn.commit()
     return inserted, updated, transitions
 
 
-def run(token, conn, now=None, session=None):
-    """한 번의 폴링. 반환: (조회 페이지 수, 신규, 갱신, 전이)."""
+def run(token, conn, now=None, session=None, events=None):
+    """한 번의 폴링. 반환: (조회 페이지 수, 신규, 갱신, 전이). events: 알림용 전이 수집 리스트(선택)."""
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     since = since_from_state(get_sync_state(conn))
     pages = fetch_changed_pages(token, since, session=session)
     rows = [parse_applicant_page(p) for p in pages]
-    inserted, updated, transitions = upsert_applicants(conn, rows, now)
+    inserted, updated, transitions = upsert_applicants(conn, rows, now, events=events)
     set_sync_state(conn, now.strftime("%Y-%m-%dT%H:%M:%SZ"))
     return len(pages), inserted, updated, transitions
 
@@ -196,14 +213,18 @@ def main():
     t0 = time.monotonic()
     init_all_tables(include_market=False)
     conn = get_connection(timeout=30)
+    events = []
     try:
-        n, ins, upd, tr = run(token, conn)
+        n, ins, upd, tr = run(token, conn, events=events)
     except NotionFetchError as e:
         logger.error(f"[신청자 폴링] {e}")
         return
     finally:
         conn.close()
     logger.info(f"[신청자 폴링] 조회 {n} · 신규 {ins} · 갱신 {upd} · 전이 {tr} ({time.monotonic() - t0:.1f}s)")
+    sent = discord_post([("📋 노션 최종결과 변경", [f"{e['name'] or '?'} · {e['cohort']}: {e['old'] or '(신규)'} → {e['new']}" for e in events])])
+    if sent:
+        logger.info(f"[신청자 폴링] 디스코드 알림 {sent}건 (전이 {len(events)}건)")
 
 
 if __name__ == "__main__":

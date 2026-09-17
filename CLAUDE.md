@@ -75,6 +75,8 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 
 ### ETL 자동화
 - `hrd_etl.yml` — cron은 평일 KST 09:00~18:00 매시간이지만 **GitHub 예약 실행이 지연·누락돼 실제로는 하루 2회(약 13:30·18:35 KST)만 돈다** (2026-09 실측, 2주 이상 일관). 정확한 주기가 필요하면 외부 트리거(workflow_dispatch API 호출)로 바꿀 것. 4단계: `hrd_etl.py`(한화 출결) → `kpi_etl.py`(회차 스냅샷 TB_COURSE_SNAPSHOT 변화 시만 기록 + 명부 사람 스냅샷 TB_ROSTER_MEMBER: 승인 감지·상태 변화·첫 참석일. 참석 판정 = 입실 시간 있거나 출석 계열 상태) → `notion_applicants_etl.py`(신청자 리스트 미러 TB_APPLICANT + 전이 로그) → `notion_kpi_publish.py`(우리 소유 노션 「모집 KPI」 페이지의 기수별·사람별 정합성 DB upsert, 변경분만. 두 DB는 페이지 안 인라인 표 + 제목 아래 설명 한 줄, 각 DB 위에 '읽는 법' 블록(먼저 볼 것·열 설명 표)을 해시로 관리 — 내용이 바뀌면 우리가 만든 heading·callout·table 블록만 보관 처리 후 재작성. **child_database 블록은 절대 보관 처리하지 않는다**). 뒤 셋은 `if: always()`, NOTION_TOKEN 필요. **노션 쓰기는 이 페이지 하나뿐, 담당자 DB는 항상 읽기만**
+- `kpi_poll.yml` — **예약 없음, 외부 호출 전용**(workflow_dispatch): cron-job.org가 15분마다, 노션 자동화가 `supabase/functions/notion-relay`를 거쳐 즉시. 3단계(kpi_etl → notion_applicants_etl → notion_kpi_publish, 약 2분), `concurrency: kpi-poll`로 겹침 방지. 설정 절차는 `recruit-kpi/docs/SETUP_REALTIME.md`. "한 번이라도 HRD 등록"은 명부 스냅샷(사라져도 행 유지) + 노션 전이 로그로 모은다
+- 디스코드 알림(`notify.py`): `DISCORD_WEBHOOK_URL`이 있으면 kpi_etl(승인 감지·명부 이탈)과 notion_applicants_etl(HRD신청·HRD등록·합격취소 전이)이 실행당 한 메시지. 없으면 무동작. **가린 이름 + 기수만** 보낸다
 - `market_etl.yml` — 매일 KST 21:00
 - `saramin_etl.yml` — 매일 KST 04:43 (사람인 채용공고, 정각 회피로 지연 최소화)
 
@@ -305,6 +307,7 @@ Fix: Correct completion rate calculation (수료율 계산 오류 수정)
 - `DATABASE_URL` — PostgreSQL 연결 문자열 (**필수**. 미설정 시 `get_connection()`이 `DatabaseNotConfiguredError`)
 - `DATABASE_URL_MARKET` — 시장 DB(두 번째 Supabase 프로젝트) 연결 문자열. GitHub Actions 3개 워크플로 + Streamlit secrets 등록. 미설정 시 메인으로 폴백
 - `NOTION_TOKEN` — 노션 내부 통합 토큰(읽기 전용). 신청자 리스트·운영현황표에 통합 연결 필요. GitHub Actions(신청자 폴링) + Streamlit secrets(노션 대조 페이지). 없으면 폴링은 건너뛰고 대조 페이지는 CSV 업로드로 대체
+- `DISCORD_WEBHOOK_URL` — (선택) 디스코드 채널 웹훅. GitHub Actions에만. 없으면 알림을 건너뛴다
 - `SARAMIN_API_KEY` — 사람인 채용공고 API 키 (GitHub Actions + Streamlit secrets 등록)
 - `ETL_FULL_REFRESH` — `=1`이면 market_etl이 증분(12개월) 대신 2023-01-01부터 전체 재수집. GitHub Actions 수동 실행의 `full_refresh` 입력으로 전달 (`gh workflow run market_etl.yml -f full_refresh=true`)
 

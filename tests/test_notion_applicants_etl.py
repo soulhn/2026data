@@ -133,6 +133,18 @@ class TestUpsert:
         cur.execute("SELECT NEW_VALUE FROM TB_APPLICANT_STATUS_LOG WHERE FIELD='STATUS' ORDER BY DETECTED_AT")
         assert [r[0] for r in cur.fetchall()] == ["HRD등록", "합격취소(신청자 요청)"]
 
+    def test_collects_notable_transitions_for_alerts(self, db):
+        """알림 대상: HRD신청·HRD등록 진입/이탈, 합격취소 진입. 그 외 전이(인터뷰예약 등)는 제외."""
+        events = []
+        upsert_applicants(db, self._rows(_page("p1", "홍길동", "합격안내"), _page("p2", "김철수", "HRD등록"), _page("p3", "박영희", "인터뷰예약")),
+                          now=datetime(2026, 9, 15, 1), events=events)
+        assert [(e["cohort"], e["old"], e["new"]) for e in events] == [("AIO3", None, "HRD등록")]
+        events.clear()
+        upsert_applicants(db, self._rows(_page("p1", "홍길동", "HRD등록", edited="2026-09-16T00:00:00.000Z"),
+                                         _page("p2", "김철수", "합격취소(신청자 요청)", edited="2026-09-16T00:00:00.000Z")),
+                          now=datetime(2026, 9, 16, 1), events=events)
+        assert [(e["name"], e["old"], e["new"]) for e in events] == [("홍*동", "합격안내", "HRD등록"), ("김*수", "HRD등록", "합격취소(신청자 요청)")]
+
     def test_tracked_fields_include_attendance(self):
         assert {"STATUS", "COHORT", "HRD_REG_AT", "ATTEND_DT"} <= set(TRACKED_FIELDS)
 

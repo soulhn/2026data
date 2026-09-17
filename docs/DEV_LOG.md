@@ -1,5 +1,19 @@
 # 개발 일지
 
+## 2026-09-17 — "한 번이라도 HRD 등록" 수집: 15분 폴링 워크플로 + 노션 즉시 트리거 + 디스코드 알림
+
+### 문제
+- HRD 명부 API는 현재 승인자만 준다 → 등록 후 취소한 사람은 스냅샷 사이에 사라지면 못 본다. 노션은 최종결과가 덮어써져 흔적이 안 남는다.
+  노션 API에 페이지 변경 이력 엔드포인트는 없다 (UI의 페이지 기록은 못 읽음) → 과거는 복원 불가, 앞으로는 촘촘히 보는 수밖에
+
+### 구현
+- `kpi_poll.yml`: 예약 없이 workflow_dispatch만. 외부(cron-job.org 15분, 노션 자동화 → Supabase Edge Function 중계)가 부른다.
+  GitHub 예약 실행이 하루 2회로 새던 문제를 우회. 한화 출결(hrd_etl, 9분)은 빼서 약 2분
+- `supabase/functions/notion-relay/index.ts`: 노션 "웹훅 보내기"는 본문·헤더를 못 정해 GitHub를 직접 못 부름 → 키 검사 후 workflow_dispatch 호출. 노션 본문은 읽지 않음(실명·연락처 유출 방지). concurrency 그룹이 대기 1개만 남겨 디바운스
+- `notify.py` + 두 ETL의 `events` 수집: 노션 전이(HRD신청·HRD등록 진입/이탈, 합격취소), 명부 JOINED/LEFT(AI캠퍼스만)를 실행당 한 메시지로. `DISCORD_WEBHOOK_URL` 없으면 무동작. 가린 이름 + 기수만
+- 노션 기준 "등록 이력": 현재 HRD신청·HRD등록 ∪ 전이 로그에 HRD 상태 진입·이탈 ∪ HRD 신청 일시 있음 → 사람별 `HRD 등록 이력(노션)` 체크, 기수별 `등록 이력(노션)` 수. API 쪽 `명부 인원`과 나란히 두면 감지 구멍이 보인다
+- 사용자 쪽 절차: `recruit-kpi/docs/SETUP_REALTIME.md` (GitHub 토큰 Actions:write만 → cron-job.org → 디스코드 웹훅 시크릿 → Edge Function + 노션 자동화)
+
 ## 2026-09-17 — 모집 KPI 핵심 지표 ①②③ + 개강일 출결 기록 여부(DAY1_STATUS)
 
 ### 요청

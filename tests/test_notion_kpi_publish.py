@@ -99,6 +99,7 @@ class TestBuildRows:
         # 핵심 지표 ①②③ — 개강 당일엔 아직 계산하지 않는다
         assert r["① 개강 참석률(%)"] is None and r["② 확정자 신고율(%)"] is None and r["③ 참석 기록 채움률(%)"] is None
         assert r["합격 후 취소(노션)"] == 2 and r["취소율(%)"] == round(2 / 9 * 100, 1)
+        assert r["등록 이력(노션)"] == 7          # HRD등록 5 + HRD신청 1 + 취소됐지만 로그에 HRD등록이던 p9
         assert r["등록 후 이탈(API)"] == 1                                   # t5: 출석 없이 사라짐
         assert r["미참석(등록)"] is None                                     # today = 개강일 → 아직 세지 않는다
         r2 = build_cohort_rows(today="2026-09-16")[0]
@@ -117,6 +118,8 @@ class TestBuildRows:
         assert rows["p7"]["정합성"] == "취소" and rows["p7"]["취소 사유"] == "C2 취업 확정" and rows["p7"]["취소 전 상태"] is None
         assert rows["p8"]["정합성"] == "등록 후 이탈" and rows["p8"]["HRD 승인"] is False and rows["p8"]["개강 참석"] == "취소"
         assert rows["p9"]["정합성"] == "취소인데 명부 잔류" and rows["p9"]["취소 전 상태"] == "HRD등록" and rows["p9"]["개강 참석"] == "늦게 합류"
+        assert rows["p9"]["HRD 등록 이력(노션)"] is True and rows["p7"]["HRD 등록 이력(노션)"] is False   # 로그로 복원 / 흔적 없음
+        assert rows["p1"]["HRD 등록 이력(노션)"] is True and rows["p4"]["HRD 등록 이력(노션)"] is False
         assert rows["p10"]["정합성"] == "일치" and rows["p10"]["개강 참석"] == "미참석"
         assert rows["p1"]["개강 참석"] == "개강일 참석" and rows["p3"]["개강 참석"] == "미참석" and rows["p2"]["개강 참석"] is None
         assert rows["p1"]["취소 사유"] is None                                          # 취소 아닌 사람은 비움

@@ -24,11 +24,13 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 from dotenv import load_dotenv
 
+import config
 from hrd_api import (
     ROSTER_COUNT_COLUMNS, fetch_all_attendance, fetch_all_course_history, fetch_all_rosters,
     get_funnel_institutions, summarize_roster_status,
 )
 from init_db import init_all_tables
+from notify import discord_post
 from notion_applicants_etl import name_hash
 from utils import adapt_query, get_connection, mask_name
 
@@ -214,11 +216,16 @@ def fetch_first_attendance(pairs, snapshots_df, today=None):
     return first_attendance(attend, round_start), err
 
 
-def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_start, now=None):
+def _label(trpr_id, degr):
+    return f"{config.COURSE_SHORT_NAMES.get(trpr_id, trpr_id)}{int(degr)}"
+
+
+def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_start, now=None, events=None):
     """명부 사람 단위 upsert + 이벤트 로그. 반환: {'joined','status','first_attend','left'} 건수.
 
     done_rounds: 이번에 명부를 성공적으로 읽은 (과정ID, 회차) 집합 — 그 회차에서만 '사라짐(LEFT)'을 판정한다.
     round_start: (과정ID, 회차) → 개강일.
+    events: 리스트를 주면 알림용 승인(JOINED)·이탈(LEFT)을 {"kind","name","cohort"}로 덧붙인다 (AI캠퍼스 과정만).
     """
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     cur = conn.cursor()
@@ -237,11 +244,11 @@ def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_star
     existing = {}
     if done_rounds:
         cur.execute(adapt_query(
-            "SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, STATUS, GONE_AT, FIRST_ATTEND_DT, DAY1_STATUS FROM TB_ROSTER_MEMBER"))
+            "SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, STATUS, GONE_AT, FIRST_ATTEND_DT, DAY1_STATUS, NAME_MASKED FROM TB_ROSTER_MEMBER"))
         for row in cur.fetchall():
             if (row[0], int(row[1])) in done_rounds:
                 existing[(row[0], int(row[1]), str(row[2]))] = {"STATUS": row[3], "GONE_AT": row[4],
-                                                                 "FIRST_ATTEND_DT": row[5], "DAY1_STATUS": row[6]}
+                                                                 "FIRST_ATTEND_DT": row[5], "DAY1_STATUS": row[6], "NAME_MASKED": row[7]}
 
     seen = set()
     rows = roster_df.to_dict("records") if roster_df is not None and not roster_df.empty else []
@@ -260,6 +267,8 @@ def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_star
                  round_start.get((key[0], key[1])), status, now, now, now, fa_dt, fa_time, day1])
             cur.execute(log, [key[0], key[1], key[2], now, "JOINED", None, status])
             counts["joined"] += 1
+            if events is not None and config.COURSE_SHORT_NAMES.get(key[0]) in config.NOTION_KPI_COURSES:
+                events.append({"kind": "JOINED", "name": mask_name(r.get("TRNEE_NM")), "cohort": _label(key[0], key[1])})
             if fa_dt:
                 cur.execute(log, [key[0], key[1], key[2], now, "FIRST_ATTEND", None, fa_dt])
                 counts["first_attend"] += 1
@@ -291,6 +300,8 @@ def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_star
             [now, *key])
         cur.execute(log, [key[0], key[1], key[2], now, "LEFT", _s(prev["STATUS"]), None])
         counts["left"] += 1
+        if events is not None and config.COURSE_SHORT_NAMES.get(key[0]) in config.NOTION_KPI_COURSES:
+            events.append({"kind": "LEFT", "name": prev.get("NAME_MASKED"), "cohort": _label(key[0], key[1])})
     conn.commit()
     return counts
 
@@ -317,12 +328,17 @@ def main():
     conn = get_connection(timeout=30)
     try:
         saved, skipped = save_snapshots(df, conn)
-        member = upsert_roster_members(conn, roster, first_att, roster.attrs.get("done_rounds", set()), round_start)
+        events = []
+        member = upsert_roster_members(conn, roster, first_att, roster.attrs.get("done_rounds", set()), round_start, events=events)
     finally:
         conn.close()
     logger.info(f"[KPI 스냅샷] 회차 {len(df)}개 중 저장 {saved} · 변화 없음 {skipped}")
     logger.info(f"[KPI 명부] 사람 {len(roster)}명 · 신규 {member['joined']} · 상태 변화 {member['status']} · "
                 f"첫 참석 {member['first_attend']} · 이탈(명부 제외) {member['left']} ({time.monotonic() - t0:.1f}s)")
+    sent = discord_post([("✅ HRD 승인 감지 (명부 등장)", [f"{e['name'] or '?'} · {e['cohort']}" for e in events if e["kind"] == "JOINED"]),
+                         ("⚠️ HRD 명부에서 사라짐 (승인 취소·이탈)", [f"{e['name'] or '?'} · {e['cohort']}" for e in events if e["kind"] == "LEFT"])])
+    if sent:
+        logger.info(f"[KPI 명부] 디스코드 알림 {sent}건")
 
 
 if __name__ == "__main__":

@@ -118,7 +118,7 @@ COHORT_SCHEMA = {
     "① 개강 참석률(%)": _num(), "② 확정자 신고율(%)": _num(), "③ 참석 기록 채움률(%)": _num(),
     "종강일": {"date": {}},
     "정원": _num(), "수강신청(API)": _num(), "승인(API)": _num(),
-    "노션 신청자": _num(), "합격 이상(노션)": _num(), "HRD신청(노션)": _num(), "HRD등록(노션)": _num(),
+    "노션 신청자": _num(), "합격 이상(노션)": _num(), "HRD신청(노션)": _num(), "HRD등록(노션)": _num(), "등록 이력(노션)": _num(),
     "정합성": {"select": {"options": [{"name": "일치"}, {"name": "불일치"}, {"name": "미확인"}]}},
     "명부 인원": _num(), "훈련중": _num(), "중도탈락": _num(), "조기취업": _num(), "수료(API)": _num(),
     "개강일 참석": _num(), "개강일 기록": _num(), "미참석(등록)": _num(),
@@ -138,7 +138,7 @@ PERSON_SCHEMA = {
     "기수": {"select": {"options": []}},
     "노션 상태": {"rich_text": {}},
     "HRD 신청 일시": {"date": {}},
-    "HRD 승인": {"checkbox": {}}, "승인 감지": {"date": {}}, "명부 상태": {"rich_text": {}},
+    "HRD 승인": {"checkbox": {}}, "HRD 등록 이력(노션)": {"checkbox": {}}, "승인 감지": {"date": {}}, "명부 상태": {"rich_text": {}},
     "첫 참석일": {"date": {}}, "첫 입실": {"rich_text": {}}, "등록 지연(일)": _num(),
     "개강 참석": {"select": {"options": [{"name": n} for n in ATTEND_VERDICTS]}},
     "정합성": {"select": {"options": [{"name": n} for n in PERSON_VERDICTS]}},
@@ -234,6 +234,7 @@ COHORT_GUIDE = {
         ("합격 이상(노션)", "인터뷰합격 · 추가선발대기 · 합격안내 · 합격자등록 · HRD신청 · HRD등록", "사람별 표의 대상 인원"),
         ("HRD신청(노션)", "노션 최종결과가 'HRD신청' — 신청은 했고 아직 승인 전", "개강 임박 시 독촉 대상"),
         ("HRD등록(노션)", "노션 최종결과가 'HRD등록' — 기관 승인까지 끝남", "승인(API)과 비교"),
+        ("등록 이력(노션)", "노션 기준 한 번이라도 HRD신청·HRD등록이었던 사람 수 (현재 상태 + 전이 로그 + HRD 신청 일시). 취소돼도 남는다", "명부 인원(API)과 비교 — 다르면 한쪽이 못 본 것"),
         ("정합성", "일치 = 승인(API) = HRD등록(노션) · 불일치 · 미확인(한쪽 값 없음)", "매일 '불일치'만 확인"),
         ("명부 인원 / 훈련중", "명부에 한 번이라도 잡힌 사람 수(= HRD 등록자, 이후 빠진 사람 포함. 2026-09-15 추적 시작) / 지금 훈련중 상태인 사람 수", "①②③의 분모 / 명부 인원 − 훈련중 = 이탈·수료"),
         ("중도탈락 / 조기취업 / 수료(API)", "명부 상태 집계. 수료(API)는 종료 회차만 값이 있고 조기취업은 뺀 수", "종료 기수 성과"),
@@ -266,6 +267,7 @@ PERSON_GUIDE = {
         ("노션 상태", "노션 최종결과 값 그대로", "HRD등록이어야 명부와 일치"),
         ("HRD 신청 일시", "노션 'HRD 신청 일시' 속성 (담당자 입력)", "비어 있으면 입력 요청"),
         ("HRD 승인", "HRD 명부에 이 사람이 있으면 체크", "체크 = 기관 승인 완료"),
+        ("HRD 등록 이력(노션)", "한 번이라도 HRD신청·HRD등록이었거나 HRD 신청 일시가 있으면 체크. 취소돼도 유지", "취소자 중 등록까지 갔던 사람 찾기"),
         ("승인 감지", "파이프라인이 명부에서 처음 본 시각. 실제 승인 시각과 최대 반나절 차이", "등록 지연 계산 기준"),
         ("명부 상태", "훈련중 · 중도탈락 · 정상수료 · 80%이상수료 · 조기취업 · 제적", "이탈자 확인"),
         ("첫 참석일 / 첫 입실", "HRD 출결에서 처음 입실한 날과 시각", "개강일과 다르면 지각 개강"),
@@ -447,6 +449,18 @@ def _status(sta, end, today):
     return "진행중"
 
 
+def notion_ever_registered():
+    """노션 기준 'HRD에 한 번이라도 등록(신청)한' 신청자 페이지 ID 집합.
+
+    최종결과가 덮어써져도 흔적이 남는 세 곳을 합친다: 현재 상태가 HRD신청·HRD등록 / 전이 로그(2026-09-15~)에 HRD신청·HRD등록 진입 /
+    'HRD 신청 일시'가 입력됨(취소돼도 값 유지). 로그 시작 전에 등록 후 취소된 사람은 신청 일시가 없으면 잡히지 않는다.
+    """
+    now_reg = load_data("SELECT NOTION_PAGE_ID FROM TB_APPLICANT WHERE STATUS IN ('HRD신청', 'HRD등록') OR HRD_APPLY_AT IS NOT NULL")
+    logged = load_data("SELECT DISTINCT NOTION_PAGE_ID FROM TB_APPLICANT_STATUS_LOG WHERE FIELD = 'STATUS' "
+                       "AND (NEW_VALUE IN ('HRD신청', 'HRD등록') OR OLD_VALUE IN ('HRD신청', 'HRD등록'))")   # 들어온 기록도, 나간 기록도 증거
+    return set(now_reg["NOTION_PAGE_ID"]) | set(logged["NOTION_PAGE_ID"])
+
+
 def build_cohort_rows(today=None):
     """기수별 정합성 행. AI캠퍼스 과정(config.NOTION_KPI_COURSES) 회차만."""
     today = today or datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
@@ -471,6 +485,9 @@ def build_cohort_rows(today=None):
         FROM TB_APPLICANT WHERE COHORT IS NOT NULL GROUP BY COHORT""")
     roster_map = {(r.TRPR_ID, int(r.TRPR_DEGR)): r for r in roster.itertuples(index=False)}
     apps_map = {r.COHORT: r for r in apps.itertuples(index=False)}
+    ever = notion_ever_registered()
+    ever_by_cohort = load_data("SELECT NOTION_PAGE_ID, COHORT FROM TB_APPLICANT WHERE COHORT IS NOT NULL")
+    ever_cnt = ever_by_cohort[ever_by_cohort["NOTION_PAGE_ID"].isin(ever)].groupby("COHORT").size().to_dict()
 
     rows = []
     for s in snap.itertuples(index=False):
@@ -486,20 +503,20 @@ def build_cohort_rows(today=None):
         day1 = _i(r.DAY1_CNT) if r is not None else None
         start = str(s.TR_STA_DT)[:10]
         started = start < today                            # 개강 다음 날부터 '미참석'을 센다
-        ever = _i(r.ROSTER_CNT) if r is not None else None  # HRD에 한 번이라도 등록(승인)된 사람 = 명부에 잡힌 적 있는 사람
+        ever_api = _i(r.ROSTER_CNT) if r is not None else None  # HRD에 한 번이라도 등록(승인)된 사람 = 명부에 잡힌 적 있는 사람
         confirm_due = bool(start) and (datetime.fromisoformat(start) + timedelta(days=config.NOTION_KPI_CONFIRM_DAYS)).strftime("%Y-%m-%d") <= today
         pass_cnt = _i(a.PASS_CNT) if a is not None else None
         cancel = _i(a.CANCEL_CNT) if a is not None else None
         rows.append({
             "KEY": cohort, "기수": cohort, "과정": config.COURSE_SHORT_NAMES[s.TRPR_ID],
             "상태": _status(s.TR_STA_DT, s.TR_END_DT, today), "개강일": s.TR_STA_DT,
-            "① 개강 참석률(%)": _pct(day1, ever) if started else None,
-            "② 확정자 신고율(%)": _pct(approved, ever) if confirm_due else None,
-            "③ 참석 기록 채움률(%)": _pct(_i(r.DAY1_REC_CNT) if r is not None else None, ever) if started else None,
+            "① 개강 참석률(%)": _pct(day1, ever_api) if started else None,
+            "② 확정자 신고율(%)": _pct(approved, ever_api) if confirm_due else None,
+            "③ 참석 기록 채움률(%)": _pct(_i(r.DAY1_REC_CNT) if r is not None else None, ever_api) if started else None,
             "종강일": s.TR_END_DT,
             "정원": _i(s.TOT_FXNUM), "수강신청(API)": trp, "승인(API)": approved,
             "노션 신청자": _i(a.N) if a is not None else None, "합격 이상(노션)": _i(a.PASS_CNT) if a is not None else None,
-            "HRD신청(노션)": apply_cnt, "HRD등록(노션)": reg,
+            "HRD신청(노션)": apply_cnt, "HRD등록(노션)": reg, "등록 이력(노션)": ever_cnt.get(cohort, 0) if a is not None else None,
             "정합성": ("미확인" if approved is None or reg is None else ("일치" if approved == reg else "불일치")),
             "명부 인원": _i(r.ROSTER_CNT) if r is not None else None, "훈련중": _i(r.ACTIVE_CNT) if r is not None else None,
             "중도탈락": _i(s.DROPOUT_CNT), "조기취업": _i(s.EARLY_EMPL_CNT), "수료(API)": _i(s.FINI_CNT),
@@ -527,6 +544,7 @@ def build_person_rows(today=None):
           ON m.NOTION_PAGE_ID = l.NOTION_PAGE_ID AND m.MAX_AT = l.DETECTED_AT AND l.FIELD = 'STATUS'
         WHERE l.NEW_VALUE LIKE '합격취소%'""")
     before_map = {r.NOTION_PAGE_ID: r.OLD_VALUE for r in before.itertuples(index=False)}
+    ever = notion_ever_registered()
     members = load_data("SELECT TRPR_ID, TRPR_DEGR, NAME_HASH, STATUS, FIRST_SEEN_AT, GONE_AT, FIRST_ATTEND_DT, FIRST_IN_TIME, TR_STA_DT FROM TB_ROSTER_MEMBER")
     tracking_start = None
     if not members.empty:
@@ -542,7 +560,8 @@ def build_person_rows(today=None):
         cancelled = str(a.STATUS).startswith("합격취소")
         row = {"KEY": a.NOTION_PAGE_ID, "이름": f"{a.NAME_MASKED or '?'} · {a.COHORT}", "신청자": a.NOTION_PAGE_ID,
                "기수": a.COHORT, "노션 상태": a.STATUS, "HRD 신청 일시": a.HRD_APPLY_AT,
-               "HRD 승인": False, "승인 감지": None, "명부 상태": None, "첫 참석일": None, "첫 입실": None,
+               "HRD 승인": False, "HRD 등록 이력(노션)": a.NOTION_PAGE_ID in ever,
+               "승인 감지": None, "명부 상태": None, "첫 참석일": None, "첫 입실": None,
                "등록 지연(일)": None, "개강 참석": None, "정합성": "대기",
                "취소 사유": a.CANCEL_REASON if cancelled else None,
                "취소 전 상태": before_map.get(a.NOTION_PAGE_ID) if cancelled else None,

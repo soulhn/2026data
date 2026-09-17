@@ -110,6 +110,22 @@ class TestUpsert:
         assert ("t2", "LEFT", "훈련중", None) in events
         assert ("t3", "JOINED", None, "훈련중") in events
 
+    def test_events_collected_for_kpi_courses_only(self, db, monkeypatch):
+        """알림 이벤트는 AI캠퍼스 과정(config.NOTION_KPI_COURSES)만. JOINED·LEFT에 가린 이름·기수 라벨."""
+        import config
+        monkeypatch.setattr(config, "COURSE_SHORT_NAMES", {"A": "AIO", "S": "SKN"})
+        monkeypatch.setattr(config, "NOTION_KPI_COURSES", ("AIO",))
+        rs = {("A", 3): "2026-09-15", ("S", 1): "2026-09-15"}
+        events = []
+        upsert_roster_members(db, _roster(("t1", "홍길동", "훈련중"), cid="A"), first_attendance(pd.DataFrame()), {("A", 3)}, rs,
+                              now=datetime(2026, 9, 15, 0), events=events)
+        upsert_roster_members(db, _roster(("s1", "김철수", "훈련중"), cid="S", degr=1), first_attendance(pd.DataFrame()), {("S", 1)}, rs,
+                              now=datetime(2026, 9, 15, 0), events=events)
+        assert events == [{"kind": "JOINED", "name": "홍*동", "cohort": "AIO3"}]
+        events.clear()
+        upsert_roster_members(db, _roster(cid="A"), first_attendance(pd.DataFrame()), {("A", 3)}, rs, now=datetime(2026, 9, 16, 0), events=events)
+        assert events == [{"kind": "LEFT", "name": "홍*동", "cohort": "AIO3"}]
+
     def test_left_only_judged_for_fetched_rounds(self, db):
         rs = {("A", 3): "2026-09-15", ("B", 1): "2026-07-09"}
         upsert_roster_members(db, pd.concat([_roster(("t1", "홍길동", "훈련중")), _roster(("u1", "박민수", "훈련중"), cid="B", degr=1)]),
