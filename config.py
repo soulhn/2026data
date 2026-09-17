@@ -357,4 +357,5 @@ NOTION_KPI_PASS_STATUSES = (                     # 사람별 정합성 표 대�
     "인터뷰합격", "추가선발대기", "합격안내", "합격자등록", "HRD신청", "HRD등록",
     "합격취소(연락두절)", "합격취소(신청자 요청)",
 )
+NOTION_KPI_CONFIRM_DAYS = 7                      # 개강 후 이 일수가 지나야 '확정자 신고율'을 계산 (확정 신고는 개강 1주 뒤)
 NOTION_WRITE_INTERVAL = 0.35                     # 초. 노션 API 초당 3건 제한

@@ -56,6 +56,18 @@ class TestAttendanceRule:
         assert out.loc["t2", "FIRST_ATTEND_DT"] == "20260916"
         assert "t3" not in out.index
 
+    def test_first_attendance_records_day1_status(self):
+        """개강일 출결 행이 있으면 상태(결석 포함)를 남긴다 — 참석 기록 채움률의 분자. 개강일 행이 없으면 None."""
+        att = _att([("t1", "20260915", "09:02", "결석"),      # 입실 있음 → 참석, 개강일 기록 있음
+                    ("t2", "20260915", None, "결석"),         # 결석 → 참석 아님, 기록은 있음
+                    ("t3", "20260916", "08:50", "출석")])     # 개강 다음 날부터 → 기록 없음
+        out = first_attendance(att, {("A", 3): "2026-09-15"}).set_index("TRNEE_ID")
+        assert out.loc["t1", "DAY1_STATUS"] == "결석" and out.loc["t1", "FIRST_ATTEND_DT"] == "20260915"
+        assert out.loc["t2", "DAY1_STATUS"] == "결석" and out.loc["t2", "FIRST_ATTEND_DT"] is None
+        assert out.loc["t3", "DAY1_STATUS"] is None and out.loc["t3", "FIRST_ATTEND_DT"] == "20260916"
+        assert set(out.index) == {"t1", "t2", "t3"}
+        assert first_attendance(att)["DAY1_STATUS"].isna().all()           # 개강일 정보 없으면 전부 None
+
     def test_attendance_months(self):
         assert attendance_months("2026-09-15", date(2026, 9, 15)) == ["202609"]
         assert attendance_months("2026-08-28", date(2026, 9, 15)) == ["202608", "202609"]   # 개강 달 + 이번 달

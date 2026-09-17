@@ -172,17 +172,30 @@ def attendance_months(tr_sta_dt, today):
     return sorted(months)
 
 
-def first_attendance(attend_df):
-    """출결 → (TRPR_ID, TRPR_DEGR, TRNEE_ID)별 첫 참석일·그날 입실 시각."""
-    cols = ["TRPR_ID", "TRPR_DEGR", "TRNEE_ID", "FIRST_ATTEND_DT", "FIRST_IN_TIME"]
+def first_attendance(attend_df, round_start=None):
+    """출결 → (TRPR_ID, TRPR_DEGR, TRNEE_ID)별 첫 참석일·그날 입실 시각 + 개강일 출결 상태.
+
+    DAY1_STATUS = 개강일(round_start)에 출결 행이 있으면 그 상태(출석·결석·지각 …), 없으면 None.
+    "개강일에 왔는지"와 별개로 "개강일 기록이 있는지"(참석 기록 채움률)를 세기 위한 값이라 결석도 남긴다.
+    round_start: (과정ID, 회차) → 'YYYY-MM-DD'. 없으면 DAY1_STATUS는 전부 None.
+    """
+    cols = ["TRPR_ID", "TRPR_DEGR", "TRNEE_ID", "FIRST_ATTEND_DT", "FIRST_IN_TIME", "DAY1_STATUS"]
     if attend_df is None or attend_df.empty:
         return pd.DataFrame(columns=cols)
+    keys = ["TRPR_ID", "TRPR_DEGR", "TRNEE_ID"]
     a = attend_df.copy()
     a["TRPR_DEGR"] = pd.to_numeric(a["TRPR_DEGR"], errors="coerce").fillna(0).astype(int)
+    a["TRNEE_ID"] = a["TRNEE_ID"].astype(str)
+    a["ATEND_DT"] = a["ATEND_DT"].astype(str)
     a["_att"] = [is_attended(s, t) for s, t in zip(a["ATEND_STATUS"], a["IN_TIME"])]
-    a = a[a["_att"]].sort_values("ATEND_DT")
-    first = a.groupby(["TRPR_ID", "TRPR_DEGR", "TRNEE_ID"], as_index=False).first()
-    return first.rename(columns={"ATEND_DT": "FIRST_ATTEND_DT", "IN_TIME": "FIRST_IN_TIME"})[cols]
+    first = (a[a["_att"]].sort_values("ATEND_DT").groupby(keys, as_index=False).first()
+             .rename(columns={"ATEND_DT": "FIRST_ATTEND_DT", "IN_TIME": "FIRST_IN_TIME"})[keys + ["FIRST_ATTEND_DT", "FIRST_IN_TIME"]])
+    starts = {k: str(v).replace("-", "")[:8] for k, v in (round_start or {}).items()}
+    a["_start"] = [starts.get((t, d)) for t, d in zip(a["TRPR_ID"], a["TRPR_DEGR"])]
+    day1 = (a[a["ATEND_DT"] == a["_start"]].groupby(keys, as_index=False).first()
+            .rename(columns={"ATEND_STATUS": "DAY1_STATUS"})[keys + ["DAY1_STATUS"]])
+    out = first.merge(day1, on=keys, how="outer")
+    return out.reindex(columns=cols).astype(object).where(out.reindex(columns=cols).notna(), None)
 
 
 def fetch_first_attendance(pairs, snapshots_df, today=None):
@@ -197,7 +210,8 @@ def fetch_first_attendance(pairs, snapshots_df, today=None):
     targets = [(r.TRPR_ID, int(r.TRPR_DEGR), ym)
                for r in active.itertuples(index=False) for ym in attendance_months(r.TR_STA_DT, today)]
     attend, err, _ = fetch_all_attendance(pairs, targets)
-    return first_attendance(attend), err
+    round_start = {(r.TRPR_ID, int(r.TRPR_DEGR)): str(r.TR_STA_DT) for r in active.itertuples(index=False)}
+    return first_attendance(attend, round_start), err
 
 
 def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_start, now=None):
@@ -216,16 +230,18 @@ def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_star
     first_map = {}
     if first_att_df is not None and not first_att_df.empty:
         for r in first_att_df.itertuples(index=False):
-            first_map[(r.TRPR_ID, int(r.TRPR_DEGR), str(r.TRNEE_ID))] = (_s(r.FIRST_ATTEND_DT), _s(r.FIRST_IN_TIME))
+            first_map[(r.TRPR_ID, int(r.TRPR_DEGR), str(r.TRNEE_ID))] = (
+                _s(r.FIRST_ATTEND_DT), _s(r.FIRST_IN_TIME), _s(getattr(r, "DAY1_STATUS", None)))
 
     # 현재 DB에 있는 회원 (성공 회차만)
     existing = {}
     if done_rounds:
         cur.execute(adapt_query(
-            "SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, STATUS, GONE_AT, FIRST_ATTEND_DT FROM TB_ROSTER_MEMBER"))
+            "SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, STATUS, GONE_AT, FIRST_ATTEND_DT, DAY1_STATUS FROM TB_ROSTER_MEMBER"))
         for row in cur.fetchall():
             if (row[0], int(row[1])) in done_rounds:
-                existing[(row[0], int(row[1]), str(row[2]))] = {"STATUS": row[3], "GONE_AT": row[4], "FIRST_ATTEND_DT": row[5]}
+                existing[(row[0], int(row[1]), str(row[2]))] = {"STATUS": row[3], "GONE_AT": row[4],
+                                                                 "FIRST_ATTEND_DT": row[5], "DAY1_STATUS": row[6]}
 
     seen = set()
     rows = roster_df.to_dict("records") if roster_df is not None and not roster_df.empty else []
@@ -233,15 +249,15 @@ def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_star
         key = (r["TRPR_ID"], int(r["TRPR_DEGR"]), str(r["TRNEE_ID"]))
         seen.add(key)
         status = _s(r.get("TRNEE_STATUS"))
-        fa_dt, fa_time = first_map.get(key, (None, None))
+        fa_dt, fa_time, day1 = first_map.get(key, (None, None, None))
         prev = existing.get(key)
         if prev is None:
             cur.execute(adapt_query(
                 "INSERT INTO TB_ROSTER_MEMBER (TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, TR_STA_DT, STATUS, "
-                "FIRST_SEEN_AT, LAST_SEEN_AT, STATUS_CHANGED_AT, FIRST_ATTEND_DT, FIRST_IN_TIME) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
+                "FIRST_SEEN_AT, LAST_SEEN_AT, STATUS_CHANGED_AT, FIRST_ATTEND_DT, FIRST_IN_TIME, DAY1_STATUS) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
                 [key[0], key[1], key[2], name_hash(r.get("TRNEE_NM")), mask_name(r.get("TRNEE_NM")),
-                 round_start.get((key[0], key[1])), status, now, now, now, fa_dt, fa_time])
+                 round_start.get((key[0], key[1])), status, now, now, now, fa_dt, fa_time, day1])
             cur.execute(log, [key[0], key[1], key[2], now, "JOINED", None, status])
             counts["joined"] += 1
             if fa_dt:
@@ -259,6 +275,9 @@ def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_star
             sets += ["FIRST_ATTEND_DT = ?", "FIRST_IN_TIME = ?"]
             params += [fa_dt, fa_time]
             counts["first_attend"] += 1
+        if day1 and day1 != _s(prev.get("DAY1_STATUS")):     # 개강일 출결은 사후 정정될 수 있어 값이 있으면 최신으로
+            sets += ["DAY1_STATUS = ?"]
+            params += [day1]
         cur.execute(adapt_query(
             f"UPDATE TB_ROSTER_MEMBER SET {', '.join(sets)} WHERE TRPR_ID = ? AND TRPR_DEGR = ? AND TRNEE_ID = ?"),
             params + list(key))

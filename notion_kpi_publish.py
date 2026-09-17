@@ -114,18 +114,20 @@ COHORT_SCHEMA = {
     "기수": {"title": {}},
     "과정": {"select": {"options": [{"name": c} for c in config.NOTION_KPI_COURSES]}},
     "상태": {"select": {"options": [{"name": "개설예정"}, {"name": "진행중"}, {"name": "종료"}]}},
-    "개강일": {"date": {}}, "종강일": {"date": {}},
+    "개강일": {"date": {}},
+    "① 개강 참석률(%)": _num(), "② 확정자 신고율(%)": _num(), "③ 참석 기록 채움률(%)": _num(),
+    "종강일": {"date": {}},
     "정원": _num(), "수강신청(API)": _num(), "승인(API)": _num(),
     "노션 신청자": _num(), "합격 이상(노션)": _num(), "HRD신청(노션)": _num(), "HRD등록(노션)": _num(),
     "정합성": {"select": {"options": [{"name": "일치"}, {"name": "불일치"}, {"name": "미확인"}]}},
     "명부 인원": _num(), "훈련중": _num(), "중도탈락": _num(), "조기취업": _num(), "수료(API)": _num(),
-    "개강일 참석": _num(), "개강일 참석률(%)": _num(), "미참석(등록)": _num(),
+    "개강일 참석": _num(), "개강일 기록": _num(), "미참석(등록)": _num(),
     "합격 후 취소(노션)": _num(), "취소율(%)": _num(), "등록 후 이탈(API)": _num(),
     "변경 시각": {"date": {}},
 }
 
 # 스키마에서 뺀 속성 — 기존 DB에 남아 있으면 지운다 (2026-09-17: 놓침은 미승인 수와 같은 값이라 오해만 부르고, KEY·회차는 기수와 중복)
-REMOVED_PROPERTIES = {"cohort": ("놓침", "KEY", "회차"), "person": ("KEY",)}
+REMOVED_PROPERTIES = {"cohort": ("놓침", "KEY", "회차", "개강일 참석률(%)"), "person": ("KEY",)}   # 개강일 참석률(%) → ① 개강 참석률(%)로 대체
 
 PERSON_VERDICTS = ("일치", "노션만 등록", "HRD만 승인", "동명이인 확인", "대기", "취소", "취소인데 명부 잔류", "등록 후 이탈")
 ATTEND_VERDICTS = ("개강일 참석", "늦게 합류", "미참석", "개강 전", "취소")
@@ -202,15 +204,18 @@ def ensure_databases(token, conn, session=None):
 
 GUIDE_DB_KEY = "guide"
 
-COHORT_DB_DESC = "기수 하나가 한 줄. HRD-Net 승인 인원(API)과 노션 HRD등록 수가 같은지, 개강일에 몇 명 왔는지, 합격 후 몇 명이 취소했는지. 하루 2회 갱신"
+COHORT_DB_DESC = "기수 하나가 한 줄. 핵심 지표 ①②③ — HRD 등록자 중 개강일 참석 · 확정 신고 · 개강일 기록 비율. 하루 2회 갱신"
 PERSON_DB_DESC = "합격 이상 신청자 한 명이 한 줄. 노션 최종결과와 HRD 명부를 이름·기수로 맞춘 결과. '메모'는 담당자 열(자동 갱신 안 함)"
 
 COHORT_GUIDE = {
     "title": "1️⃣ 기수별 정합성 — 읽는 법",
     "first": [
+        "핵심은 ①②③ 세 열. 분모는 모두 '명부 인원' = HRD-Net에 한 번이라도 등록(기관 승인)된 사람. 계산식과 원천은 아래 표",
+        "① 개강 참석률 = 개강일 참석 ÷ 명부 인원. 개강 다음 날부터 값이 생긴다",
+        "② 확정자 신고율 = 승인(API, 현재 확정 인원) ÷ 명부 인원. 확정 신고는 개강 1주 뒤라 개강 + 7일부터 계산. 그 전에 빠진 사람이 있으면 100% 아래로 내려간다",
+        "③ 참석 기록 채움률 = 개강일 기록 ÷ 명부 인원. 개강일 출결 행(출석이든 결석이든)이 있는 사람 비율 — 100%가 아니면 개강 후 뒤늦게 등록됐거나 출결 입력이 빠진 것",
         "정합성이 '불일치'인 기수부터 본다 → 승인(API)과 HRD등록(노션)이 다른 기수. 누가 다른지는 아래 사람별 표에서 그 기수로 필터",
         "수강신청(API) − 승인(API)은 신청만 하고 승인되지 않은 사람 수 (취소·미승인 누적). 노션 누락 여부는 이 표가 아니라 사람별 표의 'HRD만 승인'으로 본다",
-        "개강일 참석률(%)은 승인 인원 중 개강 당일 입실한 비율. 출결이 아직 수집되지 않은 회차는 비어 있다",
         "취소율(%)은 합격한 사람 중 취소한 비율 (합격 이상 + 합격 후 취소 기준). 취소는 대부분 HRD 등록 전에 일어난다 — "
         "등록 후 이탈(API)·미참석(등록)이 0이 아니면 사람별 표에서 누구인지 확인",
         "상태가 '개설예정'인데 승인(API)이 있는 것은 정상 — 기관 승인은 개강 전에 이뤄진다",
@@ -219,6 +224,9 @@ COHORT_GUIDE = {
         ("기수 / 과정", "AIO3 = 과정 약칭 + 노션 기수 번호 (HRD-Net 회차 번호와 같음)", "행 식별"),
         ("상태", "개설예정 · 진행중 · 종료 (개강일·종강일과 오늘 비교)", "진행중 기수만 보고 싶을 때 필터"),
         ("개강일 / 종강일", "HRD-Net 훈련 기간", "—"),
+        ("① 개강 참석률(%)", "원천: HRD-Net 명부(_4.jsp) + 월별 출결. 계산: 개강일 참석 ÷ 명부 인원 × 100. 개강일 참석 = 개강일에 입실 시각이 있거나 출석 계열 상태", "HRD 등록자 중 첫날 온 비율"),
+        ("② 확정자 신고율(%)", "원천: HRD-Net 훈련일정 상세(_3.jsp) totParMks = 확정 신고 인원(노션 확정자신고와 같음, 실측 62/63 기수). 계산: 승인(API) ÷ 명부 인원 × 100, 개강 + 7일부터", "HRD 등록자 중 1주 뒤 확정된 비율"),
+        ("③ 참석 기록 채움률(%)", "원천: HRD-Net 월별 출결에 개강일 행이 있는지. 계산: 개강일 기록 ÷ 명부 인원 × 100", "100% 미만이면 늦은 등록 또는 출결 미입력"),
         ("정원", "HRD-Net 승인 정원 (totFxnum)", "충원율 = 승인 ÷ 정원"),
         ("수강신청(API)", "HRD-Net에 수강신청한 인원 (totTrpCnt). 신청만 하고 취소·미승인된 사람까지 누적", "승인과의 차이 = 미승인"),
         ("승인(API)", "기관이 승인한 인원 (totParMks) = 확정 신고 인원 = 명부 건수", "노션 HRD등록과 같아야 한다"),
@@ -227,9 +235,9 @@ COHORT_GUIDE = {
         ("HRD신청(노션)", "노션 최종결과가 'HRD신청' — 신청은 했고 아직 승인 전", "개강 임박 시 독촉 대상"),
         ("HRD등록(노션)", "노션 최종결과가 'HRD등록' — 기관 승인까지 끝남", "승인(API)과 비교"),
         ("정합성", "일치 = 승인(API) = HRD등록(노션) · 불일치 · 미확인(한쪽 값 없음)", "매일 '불일치'만 확인"),
-        ("명부 인원 / 훈련중", "명부에 한 번이라도 잡힌 사람 수 / 지금 훈련중 상태인 사람 수", "명부 인원 − 훈련중 = 이탈·수료"),
+        ("명부 인원 / 훈련중", "명부에 한 번이라도 잡힌 사람 수(= HRD 등록자, 이후 빠진 사람 포함. 2026-09-15 추적 시작) / 지금 훈련중 상태인 사람 수", "①②③의 분모 / 명부 인원 − 훈련중 = 이탈·수료"),
         ("중도탈락 / 조기취업 / 수료(API)", "명부 상태 집계. 수료(API)는 종료 회차만 값이 있고 조기취업은 뺀 수", "종료 기수 성과"),
-        ("개강일 참석 / 개강일 참석률(%)", "개강 당일 입실 기록이 있는 사람 수 / 승인 인원 대비 비율", "개강 다음 날 확인"),
+        ("개강일 참석 / 개강일 기록", "개강 당일 입실(출석)한 사람 수 / 개강 당일 출결 행이 있는 사람 수(결석 포함)", "①·③의 분자"),
         ("미참석(등록)", "개강이 지났는데 출석 기록이 없는 명부 인원 (훈련중 상태). 개강 전엔 비어 있음", "개강 다음 날 > 0 이면 연락"),
         ("합격 후 취소(노션)", "최종결과가 합격취소(연락두절·신청자 요청)인 사람 수", "취소 사유는 사람별 표"),
         ("취소율(%)", "합격 후 취소 ÷ (합격 이상 + 합격 후 취소) × 100", "기수 간 비교"),
@@ -450,6 +458,7 @@ def build_cohort_rows(today=None):
         SELECT TRPR_ID, TRPR_DEGR, COUNT(*) AS ROSTER_CNT,
                SUM(CASE WHEN GONE_AT IS NULL AND STATUS LIKE '%훈련중%' THEN 1 ELSE 0 END) AS ACTIVE_CNT,
                SUM(CASE WHEN FIRST_ATTEND_DT IS NOT NULL AND FIRST_ATTEND_DT = REPLACE(TR_STA_DT, '-', '') THEN 1 ELSE 0 END) AS DAY1_CNT,
+               SUM(CASE WHEN DAY1_STATUS IS NOT NULL THEN 1 ELSE 0 END) AS DAY1_REC_CNT,
                SUM(CASE WHEN FIRST_ATTEND_DT IS NULL AND GONE_AT IS NULL AND STATUS LIKE '%훈련중%' THEN 1 ELSE 0 END) AS NOSHOW_CNT,
                SUM(CASE WHEN FIRST_ATTEND_DT IS NULL AND (GONE_AT IS NOT NULL OR STATUS LIKE '%탈락%' OR STATUS LIKE '%제적%') THEN 1 ELSE 0 END) AS LEFT_CNT
         FROM TB_ROSTER_MEMBER GROUP BY TRPR_ID, TRPR_DEGR""")
@@ -475,20 +484,26 @@ def build_cohort_rows(today=None):
         apply_cnt = _i(a.APPLY_CNT) if a is not None else None
         trp = _i(s.TOT_TRP_CNT)
         day1 = _i(r.DAY1_CNT) if r is not None else None
-        started = str(s.TR_STA_DT)[:10] < today          # 개강 다음 날부터 '미참석'을 센다
+        start = str(s.TR_STA_DT)[:10]
+        started = start < today                            # 개강 다음 날부터 '미참석'을 센다
+        ever = _i(r.ROSTER_CNT) if r is not None else None  # HRD에 한 번이라도 등록(승인)된 사람 = 명부에 잡힌 적 있는 사람
+        confirm_due = bool(start) and (datetime.fromisoformat(start) + timedelta(days=config.NOTION_KPI_CONFIRM_DAYS)).strftime("%Y-%m-%d") <= today
         pass_cnt = _i(a.PASS_CNT) if a is not None else None
         cancel = _i(a.CANCEL_CNT) if a is not None else None
         rows.append({
             "KEY": cohort, "기수": cohort, "과정": config.COURSE_SHORT_NAMES[s.TRPR_ID],
-            "상태": _status(s.TR_STA_DT, s.TR_END_DT, today), "개강일": s.TR_STA_DT, "종강일": s.TR_END_DT,
+            "상태": _status(s.TR_STA_DT, s.TR_END_DT, today), "개강일": s.TR_STA_DT,
+            "① 개강 참석률(%)": _pct(day1, ever) if started else None,
+            "② 확정자 신고율(%)": _pct(approved, ever) if confirm_due else None,
+            "③ 참석 기록 채움률(%)": _pct(_i(r.DAY1_REC_CNT) if r is not None else None, ever) if started else None,
+            "종강일": s.TR_END_DT,
             "정원": _i(s.TOT_FXNUM), "수강신청(API)": trp, "승인(API)": approved,
             "노션 신청자": _i(a.N) if a is not None else None, "합격 이상(노션)": _i(a.PASS_CNT) if a is not None else None,
             "HRD신청(노션)": apply_cnt, "HRD등록(노션)": reg,
             "정합성": ("미확인" if approved is None or reg is None else ("일치" if approved == reg else "불일치")),
             "명부 인원": _i(r.ROSTER_CNT) if r is not None else None, "훈련중": _i(r.ACTIVE_CNT) if r is not None else None,
             "중도탈락": _i(s.DROPOUT_CNT), "조기취업": _i(s.EARLY_EMPL_CNT), "수료(API)": _i(s.FINI_CNT),
-            "개강일 참석": day1,
-            "개강일 참석률(%)": round(day1 / approved * 100, 1) if day1 is not None and approved else None,
+            "개강일 참석": day1, "개강일 기록": _i(r.DAY1_REC_CNT) if r is not None else None,
             "미참석(등록)": (_i(r.NOSHOW_CNT) if r is not None else None) if started else None,
             "합격 후 취소(노션)": cancel,
             "취소율(%)": round(cancel / (pass_cnt + cancel) * 100, 1) if cancel is not None and (pass_cnt or 0) + cancel > 0 else None,
@@ -569,6 +584,10 @@ def attend_verdict(first_attend_dt, start_dt, today, gone=False):
     if not start or start >= today:
         return "개강 전"
     return "미참석"
+
+
+def _pct(numer, denom):
+    return round(numer / denom * 100, 1) if numer is not None and denom else None
 
 
 def _i(v):

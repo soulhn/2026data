@@ -193,9 +193,11 @@ def init_main_tables():
             STATUS_CHANGED_AT TIMESTAMP,     -- 마지막 상태 변화 감지 시각
             FIRST_ATTEND_DT TEXT,            -- 첫 참석일 (YYYYMMDD). 입실 시간이 있거나 출석 계열 상태
             FIRST_IN_TIME TEXT,              -- 첫 참석일 입실 시각
+            DAY1_STATUS TEXT,                -- 개강일 출결 상태 (출석·결석·지각 …). 행 자체가 없으면 NULL = 기록 없음
             PRIMARY KEY (TRPR_ID, TRPR_DEGR, TRNEE_ID)
         )
     ''')
+    _exec_ignore(conn, cursor, "ALTER TABLE TB_ROSTER_MEMBER ADD COLUMN DAY1_STATUS TEXT")   # 2026-09-17 추가 (기존 DB)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS TB_ROSTER_MEMBER_LOG (
             TRPR_ID TEXT NOT NULL, TRPR_DEGR INTEGER NOT NULL, TRNEE_ID TEXT NOT NULL,

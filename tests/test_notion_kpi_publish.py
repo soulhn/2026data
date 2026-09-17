@@ -40,8 +40,9 @@ def _seed(conn):
                                            ("t5", "h_gone", "훈련중", "2026-09-15 08:00:00", None, "2026-09-16 13:00:00"),   # 승인됐다가 사라짐
                                            ("t6", "h_stay", "훈련중", "2026-09-15 08:00:00", "20260916", None),           # 노션은 취소인데 명부 잔류
                                            ("t7", "h_noshow", "훈련중", "2026-09-15 08:00:00", None, None)]:            # 개강 지났는데 출석 없음
-        cur.execute("INSERT INTO TB_ROSTER_MEMBER (TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, TR_STA_DT, STATUS, FIRST_SEEN_AT, LAST_SEEN_AT, FIRST_ATTEND_DT, FIRST_IN_TIME, GONE_AT) "
-                    "VALUES ('AIG20260000578396', 3, ?, ?, 'x', '2026-09-15', ?, ?, ?, ?, '09:00', ?)", [tid, h, status, seen, seen, fa, gone])
+        day1 = "출석" if fa == "20260915" else ("결석" if tid == "t2" else None)
+        cur.execute("INSERT INTO TB_ROSTER_MEMBER (TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, TR_STA_DT, STATUS, FIRST_SEEN_AT, LAST_SEEN_AT, FIRST_ATTEND_DT, FIRST_IN_TIME, GONE_AT, DAY1_STATUS) "
+                    "VALUES ('AIG20260000578396', 3, ?, ?, 'x', '2026-09-15', ?, ?, ?, ?, '09:00', ?, ?)", [tid, h, status, seen, seen, fa, gone, day1])
     for pid, h, status, apply_at in [("p1", "h_kim", "HRD등록", "2026-09-01"),      # 일치
                                      ("p2", "h_park", "HRD등록", "2026-09-02"),     # 노션만 등록
                                      ("p3", "h_lee", "HRD신청", "2026-09-10"),      # HRD만 승인 (지연 승인 9/16)
@@ -93,13 +94,20 @@ class TestBuildRows:
         assert r["승인(API)"] == 2 and r["HRD등록(노션)"] == 5 and r["정합성"] == "불일치"
         assert r["HRD신청(노션)"] == 1 and "놓침" not in r and "회차" not in r
         assert r["합격 이상(노션)"] == 7 and r["노션 신청자"] == 10
-        assert r["명부 인원"] == 7 and r["개강일 참석"] == 2 and r["개강일 참석률(%)"] == 100.0
+        assert r["명부 인원"] == 7 and r["개강일 참석"] == 2 and r["개강일 기록"] == 3
         assert r["상태"] == "진행중"
+        # 핵심 지표 ①②③ — 개강 당일엔 아직 계산하지 않는다
+        assert r["① 개강 참석률(%)"] is None and r["② 확정자 신고율(%)"] is None and r["③ 참석 기록 채움률(%)"] is None
         assert r["합격 후 취소(노션)"] == 2 and r["취소율(%)"] == round(2 / 9 * 100, 1)
         assert r["등록 후 이탈(API)"] == 1                                   # t5: 출석 없이 사라짐
         assert r["미참석(등록)"] is None                                     # today = 개강일 → 아직 세지 않는다
         r2 = build_cohort_rows(today="2026-09-16")[0]
         assert r2["미참석(등록)"] == 3                                       # t2·t4·t7: 훈련중인데 출석 없음
+        assert r2["① 개강 참석률(%)"] == round(2 / 7 * 100, 1)              # 개강일 참석 2 ÷ 명부 인원 7
+        assert r2["③ 참석 기록 채움률(%)"] == round(3 / 7 * 100, 1)          # 개강일 행 있는 사람 3 (결석 포함)
+        assert r2["② 확정자 신고율(%)"] is None                               # 개강 + 7일 전
+        r3 = build_cohort_rows(today="2026-09-22")[0]
+        assert r3["② 확정자 신고율(%)"] == round(2 / 7 * 100, 1)              # 승인(API) 2 ÷ 명부 인원 7
 
     def test_person_rows_consistency(self, db, monkeypatch):
         monkeypatch.setattr(pub, "load_data", lambda q, params=None, db=None: utils.load_data(q, params=params))
