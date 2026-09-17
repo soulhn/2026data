@@ -111,13 +111,12 @@ def _num():
 
 
 COHORT_SCHEMA = {
-    "기수": {"title": {}}, "KEY": {"rich_text": {}},
+    "기수": {"title": {}},
     "과정": {"select": {"options": [{"name": c} for c in config.NOTION_KPI_COURSES]}},
-    "회차": _num(), "상태": {"select": {"options": [{"name": "개설예정"}, {"name": "진행중"}, {"name": "종료"}]}},
+    "상태": {"select": {"options": [{"name": "개설예정"}, {"name": "진행중"}, {"name": "종료"}]}},
     "개강일": {"date": {}}, "종강일": {"date": {}},
     "정원": _num(), "수강신청(API)": _num(), "승인(API)": _num(),
     "노션 신청자": _num(), "합격 이상(노션)": _num(), "HRD신청(노션)": _num(), "HRD등록(노션)": _num(),
-    "놓침": _num(),
     "정합성": {"select": {"options": [{"name": "일치"}, {"name": "불일치"}, {"name": "미확인"}]}},
     "명부 인원": _num(), "훈련중": _num(), "중도탈락": _num(), "조기취업": _num(), "수료(API)": _num(),
     "개강일 참석": _num(), "개강일 참석률(%)": _num(), "미참석(등록)": _num(),
@@ -125,11 +124,14 @@ COHORT_SCHEMA = {
     "변경 시각": {"date": {}},
 }
 
+# 스키마에서 뺀 속성 — 기존 DB에 남아 있으면 지운다 (2026-09-17: 놓침은 미승인 수와 같은 값이라 오해만 부르고, KEY·회차는 기수와 중복)
+REMOVED_PROPERTIES = {"cohort": ("놓침", "KEY", "회차"), "person": ("KEY",)}
+
 PERSON_VERDICTS = ("일치", "노션만 등록", "HRD만 승인", "동명이인 확인", "대기", "취소", "취소인데 명부 잔류", "등록 후 이탈")
 ATTEND_VERDICTS = ("개강일 참석", "늦게 합류", "미참석", "개강 전", "취소")
 
 PERSON_SCHEMA = {
-    "이름": {"title": {}}, "KEY": {"rich_text": {}},
+    "이름": {"title": {}},
     "신청자": {"relation": {"database_id": config.NOTION_APPLICANTS_DB_ID, "single_property": {}}},
     "기수": {"select": {"options": []}},
     "노션 상태": {"rich_text": {}},
@@ -158,6 +160,17 @@ def ensure_properties(token, db_id, schema, meta, session=None):
     return list(missing)
 
 
+def remove_properties(token, db_id, names, meta, session=None):
+    """기존 DB에서 더 이상 쓰지 않는 속성을 지운다 (노션은 값을 null로 보내면 삭제). 없으면 요청 없음."""
+    have = meta.get("properties") or {}
+    gone = [n for n in names if n in have]
+    if not gone:
+        return []
+    _request(token, "PATCH", f"/databases/{db_id}", {"properties": {n: None for n in gone}}, session)
+    logger.info(f"[KPI 발행] 노션 DB 속성 삭제 {db_id}: {', '.join(gone)}")
+    return gone
+
+
 def ensure_databases(token, conn, session=None):
     """두 DB가 없으면 만들고 ID를 TB_SYNC_STATE에 저장. 있으면 인라인·설명만 맞춘다. 반환: (cohort_db_id, person_db_id)."""
     ids = []
@@ -168,6 +181,7 @@ def ensure_databases(token, conn, session=None):
         if meta is not None:
             ensure_database_layout(token, db_id, desc, meta, session)
             ensure_properties(token, db_id, schema, meta, session)
+            remove_properties(token, db_id, REMOVED_PROPERTIES[key.split("_")[2]], meta, session)
             ids.append(db_id)
             continue
         db_id = create_database(token, config.NOTION_KPI_PARENT_PAGE_ID, title, schema, session)
@@ -195,25 +209,23 @@ COHORT_GUIDE = {
     "title": "1️⃣ 기수별 정합성 — 읽는 법",
     "first": [
         "정합성이 '불일치'인 기수부터 본다 → 승인(API)과 HRD등록(노션)이 다른 기수. 누가 다른지는 아래 사람별 표에서 그 기수로 필터",
-        "놓침 > 0 이면 HRD-Net에는 수강신청했는데 노션에 HRD신청·HRD등록으로 안 적힌 사람이 있다 → 담당자에게 노션 갱신 요청. "
-        "음수면 반대로 노션에 더 많다 (HRD 신청 취소가 노션에 반영 안 됐을 가능성)",
+        "수강신청(API) − 승인(API)은 신청만 하고 승인되지 않은 사람 수 (취소·미승인 누적). 노션 누락 여부는 이 표가 아니라 사람별 표의 'HRD만 승인'으로 본다",
         "개강일 참석률(%)은 승인 인원 중 개강 당일 입실한 비율. 출결이 아직 수집되지 않은 회차는 비어 있다",
         "취소율(%)은 합격한 사람 중 취소한 비율 (합격 이상 + 합격 후 취소 기준). 취소는 대부분 HRD 등록 전에 일어난다 — "
         "등록 후 이탈(API)·미참석(등록)이 0이 아니면 사람별 표에서 누구인지 확인",
         "상태가 '개설예정'인데 승인(API)이 있는 것은 정상 — 기관 승인은 개강 전에 이뤄진다",
     ],
     "columns": [
-        ("기수 / 과정 / 회차", "AIO3 = 과정 약칭 + 노션 기수 번호. 회차는 HRD-Net 번호(현재 둘이 같음)", "행 식별"),
+        ("기수 / 과정", "AIO3 = 과정 약칭 + 노션 기수 번호 (HRD-Net 회차 번호와 같음)", "행 식별"),
         ("상태", "개설예정 · 진행중 · 종료 (개강일·종강일과 오늘 비교)", "진행중 기수만 보고 싶을 때 필터"),
         ("개강일 / 종강일", "HRD-Net 훈련 기간", "—"),
         ("정원", "HRD-Net 승인 정원 (totFxnum)", "충원율 = 승인 ÷ 정원"),
-        ("수강신청(API)", "HRD-Net에 수강신청한 인원 (totTrpCnt). 신청만 하고 미승인된 사람 포함", "놓침 계산의 기준"),
+        ("수강신청(API)", "HRD-Net에 수강신청한 인원 (totTrpCnt). 신청만 하고 취소·미승인된 사람까지 누적", "승인과의 차이 = 미승인"),
         ("승인(API)", "기관이 승인한 인원 (totParMks) = 확정 신고 인원 = 명부 건수", "노션 HRD등록과 같아야 한다"),
         ("노션 신청자", "그 기수로 배정된 노션 신청자 전체 (취소 포함)", "모집 규모 참고"),
         ("합격 이상(노션)", "인터뷰합격 · 추가선발대기 · 합격안내 · 합격자등록 · HRD신청 · HRD등록", "사람별 표의 대상 인원"),
         ("HRD신청(노션)", "노션 최종결과가 'HRD신청' — 신청은 했고 아직 승인 전", "개강 임박 시 독촉 대상"),
         ("HRD등록(노션)", "노션 최종결과가 'HRD등록' — 기관 승인까지 끝남", "승인(API)과 비교"),
-        ("놓침", "수강신청(API) − HRD등록(노션) − HRD신청(노션)", "> 0 이면 노션 누락 의심"),
         ("정합성", "일치 = 승인(API) = HRD등록(노션) · 불일치 · 미확인(한쪽 값 없음)", "매일 '불일치'만 확인"),
         ("명부 인원 / 훈련중", "명부에 한 번이라도 잡힌 사람 수 / 지금 훈련중 상태인 사람 수", "명부 인원 − 훈련중 = 이탈·수료"),
         ("중도탈락 / 조기취업 / 수료(API)", "명부 상태 집계. 수료(API)는 종료 회차만 값이 있고 조기취업은 뺀 수", "종료 기수 성과"),
@@ -467,12 +479,11 @@ def build_cohort_rows(today=None):
         pass_cnt = _i(a.PASS_CNT) if a is not None else None
         cancel = _i(a.CANCEL_CNT) if a is not None else None
         rows.append({
-            "KEY": cohort, "기수": cohort, "과정": config.COURSE_SHORT_NAMES[s.TRPR_ID], "회차": int(s.TRPR_DEGR),
+            "KEY": cohort, "기수": cohort, "과정": config.COURSE_SHORT_NAMES[s.TRPR_ID],
             "상태": _status(s.TR_STA_DT, s.TR_END_DT, today), "개강일": s.TR_STA_DT, "종강일": s.TR_END_DT,
             "정원": _i(s.TOT_FXNUM), "수강신청(API)": trp, "승인(API)": approved,
             "노션 신청자": _i(a.N) if a is not None else None, "합격 이상(노션)": _i(a.PASS_CNT) if a is not None else None,
             "HRD신청(노션)": apply_cnt, "HRD등록(노션)": reg,
-            "놓침": (trp - (reg or 0) - (apply_cnt or 0)) if trp is not None and a is not None else None,
             "정합성": ("미확인" if approved is None or reg is None else ("일치" if approved == reg else "불일치")),
             "명부 인원": _i(r.ROSTER_CNT) if r is not None else None, "훈련중": _i(r.ACTIVE_CNT) if r is not None else None,
             "중도탈락": _i(s.DROPOUT_CNT), "조기취업": _i(s.EARLY_EMPL_CNT), "수료(API)": _i(s.FINI_CNT),

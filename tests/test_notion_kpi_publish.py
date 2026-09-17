@@ -9,9 +9,9 @@ import init_db
 import notion_kpi_publish as pub
 import utils
 from notion_kpi_publish import (
-    COHORT_GUIDE, COHORT_SCHEMA, PERSON_GUIDE, PERSON_SCHEMA, attend_verdict, build_cohort_rows, build_person_rows,
-    content_hash, ensure_database_layout, ensure_databases, ensure_page_guide, ensure_properties, guide_blocks, publish,
-    to_properties,
+    COHORT_GUIDE, COHORT_SCHEMA, PERSON_GUIDE, PERSON_SCHEMA, REMOVED_PROPERTIES, attend_verdict, build_cohort_rows,
+    build_person_rows, content_hash, ensure_database_layout, ensure_databases, ensure_page_guide, ensure_properties,
+    guide_blocks, publish, remove_properties, to_properties,
 )
 
 
@@ -73,9 +73,9 @@ class TestProperties:
         assert "메모" not in props                                             # 담당자 열은 절대 안 씀
 
     def test_missing_and_null_values(self):
-        props = to_properties(COHORT_SCHEMA, {"기수": "AIO3", "KEY": "AIO3", "정합성": None, "개강일": None, "놓침": None})
-        assert props["정합성"] == {"select": None} and props["개강일"] == {"date": None} and props["놓침"] == {"number": None}
-        assert "회차" not in props
+        props = to_properties(COHORT_SCHEMA, {"기수": "AIO3", "KEY": "AIO3", "정합성": None, "개강일": None, "정원": None})
+        assert props["정합성"] == {"select": None} and props["개강일"] == {"date": None} and props["정원"] == {"number": None}
+        assert "KEY" not in props and "승인(API)" not in props                 # KEY는 내부 매핑용, 노션에 쓰지 않는다
 
     def test_hash_ignores_change_time(self):
         a = {"KEY": "x", "값": 1, "변경 시각": "t1"}
@@ -91,7 +91,7 @@ class TestBuildRows:
         assert [r["기수"] for r in rows] == ["AIO3"]                    # SKN 회차는 제외
         r = rows[0]
         assert r["승인(API)"] == 2 and r["HRD등록(노션)"] == 5 and r["정합성"] == "불일치"
-        assert r["HRD신청(노션)"] == 1 and r["놓침"] == 5 - 5 - 1
+        assert r["HRD신청(노션)"] == 1 and "놓침" not in r and "회차" not in r
         assert r["합격 이상(노션)"] == 7 and r["노션 신청자"] == 10
         assert r["명부 인원"] == 7 and r["개강일 참석"] == 2 and r["개강일 참석률(%)"] == 100.0
         assert r["상태"] == "진행중"
@@ -174,6 +174,14 @@ class TestPublish:
         body = session.request.call_args.kwargs["json"]
         assert set(body["properties"]) == {"개강 참석", "취소 사유"}              # 있는 속성은 다시 보내지 않는다
         assert ensure_properties("tok", "db1", PERSON_SCHEMA, {"properties": dict.fromkeys(PERSON_SCHEMA, {})}, session=session) == []
+
+    def test_remove_properties_only_when_present(self):
+        session = self._fake_session()
+        meta = {"properties": {"기수": {}, "놓침": {}, "KEY": {}}}
+        assert remove_properties("tok", "db1", REMOVED_PROPERTIES["cohort"], meta, session=session) == ["놓침", "KEY"]
+        assert session.request.call_args.kwargs["json"] == {"properties": {"놓침": None, "KEY": None}}   # null = 삭제
+        assert remove_properties("tok", "db1", REMOVED_PROPERTIES["cohort"], {"properties": {"기수": {}}}, session=session) == []
+        assert not (set(REMOVED_PROPERTIES["cohort"]) & set(COHORT_SCHEMA)) and "KEY" not in PERSON_SCHEMA
 
     def test_layout_skips_when_already_inline_with_same_description(self):
         session = self._fake_session()
