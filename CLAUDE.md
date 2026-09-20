@@ -306,7 +306,7 @@ Fix: Correct completion rate calculation (수료율 계산 오류 수정)
   구 변수 `HANWHA_COURSE_ID`·`ENCORE_COURSE_IDS`는 더 이상 읽지 않음 (시크릿에 남아 있어도 무해)
 - `DATABASE_URL` — PostgreSQL 연결 문자열 (**필수**. 미설정 시 `get_connection()`이 `DatabaseNotConfiguredError`)
 - `DATABASE_URL_MARKET` — 시장 DB(두 번째 Supabase 프로젝트) 연결 문자열. GitHub Actions 3개 워크플로 + Streamlit secrets 등록. 미설정 시 메인으로 폴백
-- `NOTION_TOKEN` — 노션 내부 통합 토큰(읽기 전용). 신청자 리스트·운영현황표에 통합 연결 필요. GitHub Actions(신청자 폴링) + Streamlit secrets(노션 대조 페이지). 없으면 폴링은 건너뛰고 대조 페이지는 CSV 업로드로 대체
+- `NOTION_TOKEN` — 노션 **내부 통합** 토큰 (통합 이름 `sul`, 워크스페이스 교육 BU, 2026-09-20부터. 그전엔 개인 액세스 토큰). 콘텐츠 읽기·업데이트·삽입. **연결된 페이지만 보인다**: 신청자 리스트 DB·운영현황표 DB(읽기)·「모집 KPI」 페이지(쓰기) 세 곳에 연결돼 있음 — 새 페이지를 읽으려면 그 페이지에 통합을 연결해야 한다. GitHub Actions + Streamlit secrets. 없으면 폴링은 건너뛰고 대조 페이지는 CSV 업로드로 대체
 - `DISCORD_WEBHOOK_URL` — (선택) 디스코드 채널 웹훅. GitHub Actions에만. 없으면 알림을 건너뛴다
 - `SARAMIN_API_KEY` — 사람인 채용공고 API 키 (GitHub Actions + Streamlit secrets 등록)
 - `ETL_FULL_REFRESH` — `=1`이면 market_etl이 증분(12개월) 대신 2023-01-01부터 전체 재수집. GitHub Actions 수동 실행의 `full_refresh` 입력으로 전달 (`gh workflow run market_etl.yml -f full_refresh=true`)
