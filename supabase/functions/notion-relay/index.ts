@@ -31,14 +31,19 @@ async function validSignature(raw: string, header: string | null): Promise<boole
   return `sha256=${hex}` === header;
 }
 
-async function currentStatus(pageId: string): Promise<string | null> {
-  const q = ALL_STATUS_PROP_IDS.map((id) => `filter_properties=${encodeURIComponent(id)}`).join("&");
-  const r = await fetch(`https://api.notion.com/v1/pages/${pageId}?${q}`, {
-    headers: { Authorization: `Bearer ${Deno.env.get("NOTION_TOKEN")}`, "Notion-Version": NOTION_VERSION },
-  });
-  if (!r.ok) return null;
-  const page = await r.json();
-  return page?.properties?.[STATUS_PROP_NAME]?.select?.name ?? null;
+// 페이지의 최종결과만 읽는다. 그 DB에 없는 속성 ID를 섞어 보내면 노션이 400을 돌려주므로(2026-09-21 실측) 부모 DB에 맞는 ID 하나만 쓴다.
+// 부모를 모르면 원본별 ID를 차례로 시도한다.
+async function currentStatus(pageId: string, propIds: string[]): Promise<string | null> {
+  for (const id of propIds) {
+    const r = await fetch(`https://api.notion.com/v1/pages/${pageId}?filter_properties=${encodeURIComponent(id)}`, {
+      headers: { Authorization: `Bearer ${Deno.env.get("NOTION_TOKEN")}`, "Notion-Version": NOTION_VERSION },
+    });
+    if (!r.ok) { console.log(`[notion-relay] 페이지 읽기 ${r.status} (prop ${id})`); continue; }
+    const page = await r.json();
+    const name = page?.properties?.[STATUS_PROP_NAME]?.select?.name;
+    if (name !== undefined) return name ?? null;
+  }
+  return null;
 }
 
 async function dispatch(): Promise<number> {
@@ -83,7 +88,7 @@ Deno.serve(async (req: Request) => {
   const propOk = !changedKnown || changed.some((c) => wanted.includes(c) || wanted.includes(decodeURIComponent(c)));
   if (!isPage || !entityId || !parentOk || !propOk || type.includes("deleted")) return new Response("ignored", { status: 200 });
 
-  const status = await currentStatus(entityId);
+  const status = await currentStatus(entityId, wanted);
   const triggers = (Deno.env.get("TRIGGER_STATUSES") ?? "HRD등록").split(",").map((s) => s.trim()).filter(Boolean);
   if (!status || !triggers.some((t) => status === t || status.startsWith(t))) {
     console.log(`[notion-relay] 최종결과=${status} → 트리거 아님`);
