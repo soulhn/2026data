@@ -89,8 +89,8 @@ class TestBuildRows:
         monkeypatch.setattr(pub, "load_data", lambda q, params=None, db=None: utils.load_data(q, params=params))
         _seed(db)
         rows = build_cohort_rows(today="2026-09-15")
-        assert [r["기수"] for r in rows] == ["AIO3"]                    # SKN 회차는 제외
-        r = rows[0]
+        assert sorted(r["기수"] for r in rows) == ["AIO3", "SKN37"]      # 2026-09-21부터 SKN도 대상. 한화는 없음
+        r = next(r for r in rows if r["기수"] == "AIO3")
         assert r["승인(API)"] == 2 and r["HRD등록(노션)"] == 5 and r["정합성"] == "불일치"
         assert r["HRD신청(노션)"] == 1 and "놓침" not in r and "회차" not in r
         assert r["합격 이상(노션)"] == 7 and r["노션 신청자"] == 10
@@ -102,12 +102,12 @@ class TestBuildRows:
         assert r["등록 이력(노션)"] == 7          # HRD등록 5 + HRD신청 1 + 취소됐지만 로그에 HRD등록이던 p9
         assert r["등록 후 이탈(API)"] == 1                                   # t5: 출석 없이 사라짐
         assert r["미참석(등록)"] is None                                     # today = 개강일 → 아직 세지 않는다
-        r2 = build_cohort_rows(today="2026-09-16")[0]
+        r2 = next(r for r in build_cohort_rows(today="2026-09-16") if r["기수"] == "AIO3")
         assert r2["미참석(등록)"] == 3                                       # t2·t4·t7: 훈련중인데 출석 없음
         assert r2["① 개강 참석률(%)"] == round(2 / 7 * 100, 1)              # 개강일 참석 2 ÷ 명부 인원 7
         assert r2["③ 참석 기록 채움률(%)"] == round(3 / 7 * 100, 1)          # 개강일 행 있는 사람 3 (결석 포함)
         assert r2["② 확정자 신고율(%)"] is None                               # 개강 + 7일 전
-        r3 = build_cohort_rows(today="2026-09-22")[0]
+        r3 = next(r for r in build_cohort_rows(today="2026-09-22") if r["기수"] == "AIO3")
         assert r3["② 확정자 신고율(%)"] == round(2 / 7 * 100, 1)              # 승인(API) 2 ÷ 명부 인원 7
 
     def test_person_rows_consistency(self, db, monkeypatch):

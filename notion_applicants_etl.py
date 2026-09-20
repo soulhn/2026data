@@ -1,4 +1,4 @@
-"""노션 '엔코아 AI 캠퍼스 신청자 리스트' 증분 폴링 ETL — 모집 KPI 1단계.
+"""노션 신청자 리스트(AI캠퍼스·SKN, `config.NOTION_APPLICANT_SOURCES`) 증분 폴링 ETL — 모집 KPI 1단계.
 
 담당자가 노션에서 관리하는 개인 단위 퍼널(신청 → 연락 → 인터뷰 → 합격 → HRD신청 → HRD등록 → 개강 참석)을
 매시간 읽어 TB_APPLICANT(현재 상태)에 미러하고, 추적 필드가 바뀐 사람은 TB_APPLICANT_STATUS_LOG에
@@ -16,6 +16,7 @@
 import hashlib
 import logging
 import os
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -23,7 +24,7 @@ from dotenv import load_dotenv
 
 import config
 from init_db import init_all_tables
-from notion_ops import NotionFetchError, prop_value, query_database
+from notion_ops import NotionFetchError, prop_value, query_data_source
 from notify import discord_post
 from utils import _clean_secret, adapt_query, get_connection, mask_name
 
@@ -44,7 +45,7 @@ _PROP_MAP = {
     "취소 상세 사유": "CANCEL_REASON", "이관 대상 과정/기수": "TRANSFER_TO",
 }
 APPLICANT_COLUMNS = [
-    "NOTION_PAGE_ID", "NOTION_URL", "NAME_HASH", "NAME_MASKED",
+    "NOTION_PAGE_ID", "NOTION_URL", "NAME_HASH", "NAME_MASKED", "SOURCE_KEY",
     "COHORT", "COHORT_TEXT", "STATUS", "PROCESS_RESULT", "APPLIED_AT", "SOURCE",
     "INTERVIEW_AT", "INTERVIEW_GRADE", "PASS_NOTICE_AT", "PASS_REG_AT", "PASS_REG",
     "HRD_APPLY_AT", "HRD_REG_AT", "HRD_ONSITE", "OT_ATTEND", "ATTEND_DT",
@@ -70,8 +71,24 @@ def _norm(v):
     return s or None
 
 
-def parse_applicant_page(page):
-    """노션 페이지 객체 → APPLICANT_COLUMNS 딕셔너리 (이름은 해시·마스킹만)."""
+_COHORT_NUM = re.compile(r"^\s*(\d+)\s*기?\s*$")
+
+
+def normalize_cohort(value, prefix=""):
+    """노션 '최종기수' → 우리 기수 키. "35기" + prefix "SKN" → "SKN35". "AIO3"처럼 이미 완성형이면 그대로."""
+    if value is None or str(value).strip() == "":
+        return None
+    v = str(value).strip()
+    m = _COHORT_NUM.match(v)
+    return f"{prefix}{int(m.group(1))}" if m and prefix else v
+
+
+def parse_applicant_page(page, source=None):
+    """노션 페이지 객체 → APPLICANT_COLUMNS 딕셔너리 (이름은 해시·마스킹만).
+
+    source: config.NOTION_APPLICANT_SOURCES 항목(+ "key"). None이면 AI캠퍼스.
+    """
+    source = source or dict(config.NOTION_APPLICANT_SOURCES["AI"], key="AI")
     props = page.get("properties") or {}
     name = prop_value(props["이름"]) if "이름" in props else None
     row = {
@@ -79,11 +96,14 @@ def parse_applicant_page(page):
         "NOTION_URL": page.get("url"),
         "NAME_HASH": name_hash(name),
         "NAME_MASKED": mask_name(name) if name else None,
+        "SOURCE_KEY": source["key"],
         "NOTION_CREATED_AT": page.get("created_time"),
         "NOTION_EDITED_AT": page.get("last_edited_time"),
     }
-    for prop_name, col in _PROP_MAP.items():
+    prop_map = dict(_PROP_MAP, **source.get("prop_map", {}))
+    for prop_name, col in prop_map.items():
         row[col] = _norm(prop_value(props[prop_name])) if prop_name in props else None
+    row["COHORT"] = normalize_cohort(row.get("COHORT"), source.get("cohort_prefix", ""))
     # 담당자에게 추가 요청한 신규 속성 — 생기면 자동으로 읽힌다
     row["HRD_APPLY_AT"] = _norm(prop_value(props[config.NOTION_HRD_APPLY_PROP])) if config.NOTION_HRD_APPLY_PROP in props else None
     row["ATTEND_DT"] = _norm(prop_value(props[config.NOTION_ATTEND_PROP])) if config.NOTION_ATTEND_PROP in props else None
@@ -120,13 +140,24 @@ def since_from_state(last_sync_iso, overlap_min=None):
     return (t - overlap).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
-def fetch_changed_pages(token, since_iso=None, session=None):
-    """since 이후 수정된 신청자 페이지(없으면 전량), 수정 시각 오름차순."""
+def sources():
+    """폴링할 신청자 리스트 목록 — config 항목에 "key"를 붙여 돌려준다."""
+    return [dict(v, key=k) for k, v in config.NOTION_APPLICANT_SOURCES.items()]
+
+
+def sync_key(source_key):
+    """원본별 마지막 동기화 시각 키. AI캠퍼스는 예전 키를 그대로 써서 전량 재조회를 피한다."""
+    return SYNC_KEY if source_key == "AI" else f"{SYNC_KEY}:{source_key}"
+
+
+def fetch_changed_pages(token, since_iso=None, session=None, source=None):
+    """since 이후 수정된 신청자 페이지(없으면 전량), 수정 시각 오름차순. 데이터 소스 API(2025-09-03)."""
+    source = source or dict(config.NOTION_APPLICANT_SOURCES["AI"], key="AI")
     flt = {"timestamp": "last_edited_time", "last_edited_time": {"on_or_after": since_iso}} if since_iso else None
-    return query_database(
-        token, config.NOTION_APPLICANTS_DB_ID, filter=flt,
+    return query_data_source(
+        token, source["data_source_id"], filter=flt,
         sorts=[{"timestamp": "last_edited_time", "direction": "ascending"}],
-        session=session, what="신청자 리스트",
+        session=session, what=source.get("name", "신청자 리스트"),
     )
 
 
@@ -194,15 +225,22 @@ def upsert_applicants(conn, rows, now=None, events=None):
     return inserted, updated, transitions
 
 
-def run(token, conn, now=None, session=None, events=None):
-    """한 번의 폴링. 반환: (조회 페이지 수, 신규, 갱신, 전이). events: 알림용 전이 수집 리스트(선택)."""
+def run(token, conn, now=None, session=None, events=None, source_keys=None):
+    """원본별로 한 번씩 폴링. 반환: (조회 페이지 수, 신규, 갱신, 전이) 합계. events: 알림용 전이 수집 리스트(선택)."""
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
-    since = since_from_state(get_sync_state(conn))
-    pages = fetch_changed_pages(token, since, session=session)
-    rows = [parse_applicant_page(p) for p in pages]
-    inserted, updated, transitions = upsert_applicants(conn, rows, now, events=events)
-    set_sync_state(conn, now.strftime("%Y-%m-%dT%H:%M:%SZ"))
-    return len(pages), inserted, updated, transitions
+    total = [0, 0, 0, 0]
+    for src in sources():
+        if source_keys and src["key"] not in source_keys:
+            continue
+        since = since_from_state(get_sync_state(conn, sync_key(src["key"])))
+        pages = fetch_changed_pages(token, since, session=session, source=src)
+        rows = [parse_applicant_page(p, src) for p in pages]
+        inserted, updated, transitions = upsert_applicants(conn, rows, now, events=events)
+        set_sync_state(conn, now.strftime("%Y-%m-%dT%H:%M:%SZ"), sync_key(src["key"]))
+        logger.info(f"[신청자 폴링] {src['key']}: 조회 {len(pages)} · 신규 {inserted} · 갱신 {updated} · 전이 {transitions}")
+        for i, v in enumerate((len(pages), inserted, updated, transitions)):
+            total[i] += v
+    return tuple(total)
 
 
 def main():

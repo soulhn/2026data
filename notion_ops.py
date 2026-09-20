@@ -109,7 +109,7 @@ prop_value = _prop_value
 
 
 def query_database(token, db_id, filter=None, sorts=None, session=None, what="데이터베이스"):
-    """노션 데이터베이스 조회 (읽기 전용, 페이지네이션) → 페이지 객체 목록.
+    """노션 데이터베이스 조회 (읽기 전용, 페이지네이션) → 페이지 객체 목록. 2022-06-28 API.
 
     Args:
         token: Notion 내부 통합 토큰. 대상 DB에 통합이 연결돼 있어야 한다.
@@ -119,11 +119,24 @@ def query_database(token, db_id, filter=None, sorts=None, session=None, what="�
     Raises:
         NotionFetchError: 인증·권한·네트워크 실패. 메시지는 화면 안내용 한글.
     """
+    return _query(token, f"{config.NOTION_API_BASE}/databases/{db_id}/query", config.NOTION_API_VERSION,
+                  filter, sorts, session, what)
+
+
+def query_data_source(token, data_source_id, filter=None, sorts=None, session=None, what="데이터 소스"):
+    """노션 데이터 소스 조회 (2025-09-03 API). 페이지 객체 모양은 query_database와 같다.
+
+    DB 하나에 데이터 소스가 여럿이면(SKN 신청자 리스트) 2022 API는 400을 돌려주므로 이걸 쓴다.
+    """
+    return _query(token, f"{config.NOTION_API_BASE}/data_sources/{data_source_id}/query", config.NOTION_API_VERSION_DS,
+                  filter, sorts, session, what)
+
+
+def _query(token, url, version, filter, sorts, session, what):
     http = session or requests
-    url = f"{config.NOTION_API_BASE}/databases/{db_id}/query"
     headers = {
         "Authorization": f"Bearer {token}",
-        "Notion-Version": config.NOTION_API_VERSION,
+        "Notion-Version": version,
         "Content-Type": "application/json",
     }
     body = {"page_size": config.NOTION_PAGE_SIZE}

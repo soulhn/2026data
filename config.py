@@ -345,8 +345,23 @@ COURSE_GROUP_KEYWORDS = {
 # ── 노션 신청자 리스트 폴링 (notion_applicants_etl.py, 모집 KPI 1단계) ──
 # "엔코아 AI 캠퍼스 신청자 리스트" 데이터베이스. 읽기 전용. 이름은 해시·마스킹만 저장, 연락처는 저장하지 않는다.
 NOTION_APPLICANTS_DB_ID = "375d943bcac280e7ba18cd107d5e40d2"
-NOTION_APPLICANTS_DATA_SOURCE_ID = "375d943bcac2804499a6000bf5cd7ad5"   # 2025-09-03 API의 데이터 소스 ID (아직 미사용, 이전 대비용)
+NOTION_APPLICANTS_DATA_SOURCE_ID = "375d943bcac2804499a6000bf5cd7ad5"   # 2025-09-03 API의 데이터 소스 ID
 NOTION_APPLICANTS_STATUS_PROP_ID = "HnnX"                              # '최종결과' 속성 ID — 웹훅 이벤트의 updated_properties와 대조
+NOTION_API_VERSION_DS = "2025-09-03"      # 데이터 소스 API. DB 하나에 데이터 소스가 여럿인 SKN DB는 이 버전으로만 조회된다 (2022 버전은 400)
+
+# 신청자 리스트 원본 — 과정군마다 담당자 DB가 따로 있다. 전부 **읽기만**. 폴링·웹훅·발행이 이 목록을 공유한다.
+#   cohort_prefix: 노션 '최종기수' 값이 "35기"처럼 번호만이면 앞에 붙여 "SKN35"로 만든다. AI캠퍼스는 이미 "AIO3" 꼴이라 빈 문자열
+#   prop_map: 기본 매핑(notion_applicants_etl._PROP_MAP)에 덮어쓸 속성명 → 컬럼. SKN은 'HRD 등록 일자'가 등록 시점 기록
+NOTION_APPLICANT_SOURCES = {
+    "AI": {"name": "엔코아 AI 캠퍼스 신청자 리스트", "db_id": NOTION_APPLICANTS_DB_ID,
+           "data_source_id": NOTION_APPLICANTS_DATA_SOURCE_ID, "status_prop_id": NOTION_APPLICANTS_STATUS_PROP_ID,
+           "cohort_prefix": "", "prop_map": {}},
+    "SKN": {"name": "SK네트웍스 Family AI 캠프 신청자 리스트", "db_id": "dfe9c46469bb40e1aee143f91eaf0abd",
+            "data_source_id": "837e6b2f06db48f3862d8ccd769cd310", "status_prop_id": "sXGM",
+            "cohort_prefix": "SKN",
+            # SKN은 이름이 뒤바뀌어 있다: '합격자등록'이 날짜, '합격자 등록'이 체크박스 (AI는 반대). OT 참석은 띄어쓰기
+            "prop_map": {"HRD 등록 일자": "HRD_REG_AT", "합격자등록": "PASS_REG_AT", "합격자 등록": "PASS_REG", "OT 참석": "OT_ATTEND"}},
+}
 NOTION_ATTEND_PROP = "개강 참석일"        # 담당자에게 추가 요청한 날짜 속성. 생기면 ETL이 자동으로 읽는다
 NOTION_HRD_APPLY_PROP = "HRD 신청 일시"   # 위와 같음 — HRD 신청 후 취소돼도 신청 사실이 남도록
 NOTION_SYNC_OVERLAP_MIN = 10              # 증분 폴링 시 마지막 동기화 시각에서 이만큼 되감아 조회 (시계 오차·지연 흡수)
@@ -354,7 +369,7 @@ NOTION_SYNC_OVERLAP_MIN = 10              # 증분 폴링 시 마지막 동기�
 # ── 노션 "모집 KPI" 페이지 발행 (notion_kpi_publish.py) ──
 # 우리 소유 페이지(관리자 개인 공간). 담당자 DB는 여전히 읽기만 한다. 두 DB는 첫 실행 때 이 페이지 아래에 자동 생성.
 NOTION_KPI_PARENT_PAGE_ID = "3dcd943bcac281658623eefb32c40d9a"
-NOTION_KPI_COURSES = ("AIO", "MLE", "MLO")       # 신청자 리스트가 다루는 AI캠퍼스 과정만
+NOTION_KPI_COURSES = ("AIO", "MLE", "MLO", "SKN")   # 신청자 리스트가 있는 과정 (한화는 모집 종료, 2026-09-21 SKN 추가)
 NOTION_KPI_PASS_STATUSES = (                     # 사람별 정합성 표 대상 = 합격 단계 이상
     "인터뷰합격", "추가선발대기", "합격안내", "합격자등록", "HRD신청", "HRD등록",
     "합격취소(연락두절)", "합격취소(신청자 요청)",

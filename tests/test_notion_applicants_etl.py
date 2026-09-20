@@ -65,6 +65,31 @@ class TestParse:
         assert name_hash(None) is None
 
 
+class TestSources:
+    def test_cohort_normalization(self):
+        from notion_applicants_etl import normalize_cohort
+        assert normalize_cohort("35기", "SKN") == "SKN35" and normalize_cohort(" 7 기 ", "SKN") == "SKN7"
+        assert normalize_cohort("AIO3", "") == "AIO3" and normalize_cohort("35기", "") == "35기"   # 접두어 없으면 그대로
+        assert normalize_cohort(None, "SKN") is None and normalize_cohort("", "SKN") is None
+
+    def test_skn_page_uses_prefix_and_reg_date(self):
+        skn = dict(config.NOTION_APPLICANT_SOURCES["SKN"], key="SKN")
+        page = _page("s1", "홍길동", "HRD등록", cohort="35기",
+                     extra={"HRD 등록 일자": {"type": "date", "date": {"start": "2026-06-30"}}})
+        row = parse_applicant_page(page, skn)
+        assert row["COHORT"] == "SKN35" and row["SOURCE_KEY"] == "SKN" and row["HRD_REG_AT"] == "2026-06-30"
+        # SKN은 '합격자등록'(날짜)·'합격자 등록'(체크박스) 이름이 AI와 반대 — 정수 컬럼에 날짜가 들어가 PG가 거부했던 사고
+        page2 = _page("s2", "김철수", "HRD등록", cohort="35기",
+                      extra={"합격자등록": {"type": "date", "date": {"start": "2026-06-20"}}, "합격자 등록": {"type": "checkbox", "checkbox": True}})
+        row2 = parse_applicant_page(page2, skn)
+        assert row2["PASS_REG_AT"] == "2026-06-20" and row2["PASS_REG"] in (True, 1)
+        assert parse_applicant_page(_page("p1", "홍길동", "HRD등록"))["SOURCE_KEY"] == "AI"
+
+    def test_sync_key_keeps_legacy_for_ai(self):
+        from notion_applicants_etl import SYNC_KEY, sync_key
+        assert sync_key("AI") == SYNC_KEY and sync_key("SKN") == f"{SYNC_KEY}:SKN"
+
+
 class TestSince:
     def test_none_when_first_run(self):
         assert since_from_state(None) is None
@@ -76,17 +101,32 @@ class TestSince:
 class TestFetch:
     def test_incremental_filter_payload(self):
         session = MagicMock()
-        resp = MagicMock(); resp.status_code = 200; resp.json.return_value = {"results": [], "has_more": False}
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"results": [], "has_more": False}
         session.post.return_value = resp
         fetch_changed_pages("tok", "2026-09-15T07:50:00.000Z", session=session)
         body = session.post.call_args.kwargs["json"]
         assert body["filter"] == {"timestamp": "last_edited_time", "last_edited_time": {"on_or_after": "2026-09-15T07:50:00.000Z"}}
         assert body["sorts"][0]["timestamp"] == "last_edited_time"
-        assert session.post.call_args.args[0].endswith(f"/databases/{config.NOTION_APPLICANTS_DB_ID}/query")
+        assert session.post.call_args.args[0].endswith(f"/data_sources/{config.NOTION_APPLICANTS_DATA_SOURCE_ID}/query")
+        assert session.post.call_args.kwargs["headers"]["Notion-Version"] == config.NOTION_API_VERSION_DS
+
+    def test_source_selects_data_source(self):
+        session = MagicMock()
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"results": [], "has_more": False}
+        session.post.return_value = resp
+        skn = dict(config.NOTION_APPLICANT_SOURCES["SKN"], key="SKN")
+        fetch_changed_pages("tok", None, session=session, source=skn)
+        assert session.post.call_args.args[0].endswith(f"/data_sources/{skn['data_source_id']}/query")
 
     def test_full_scan_has_no_filter(self):
         session = MagicMock()
-        resp = MagicMock(); resp.status_code = 200; resp.json.return_value = {"results": [], "has_more": False}
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"results": [], "has_more": False}
         session.post.return_value = resp
         fetch_changed_pages("tok", None, session=session)
         assert "filter" not in session.post.call_args.kwargs["json"]
@@ -153,12 +193,14 @@ class TestRun:
     def test_run_sets_sync_state_and_uses_overlap(self, db, monkeypatch):
         calls = []
 
-        def fake_fetch(token, since, session=None):
-            calls.append(since)
-            return [_page("p1", "홍길동", "HRD신청")]
+        def fake_fetch(token, since, session=None, source=None):
+            calls.append((source["key"], since))
+            return [_page("p1", "홍길동", "HRD신청")] if source["key"] == "AI" else []
 
         monkeypatch.setattr(etl, "fetch_changed_pages", fake_fetch)
         assert etl.run("tok", db, now=datetime(2026, 9, 15, 8)) == (1, 1, 0, 1)
-        assert etl.get_sync_state(db) == "2026-09-15T08:00:00Z"
+        assert etl.get_sync_state(db) == "2026-09-15T08:00:00Z"                         # AI = 예전 키 그대로
+        assert etl.get_sync_state(db, etl.sync_key("SKN")) == "2026-09-15T08:00:00Z"   # 원본별 별도 키
         etl.run("tok", db, now=datetime(2026, 9, 15, 9))
-        assert calls == [None, "2026-09-15T07:50:00.000Z"]
+        assert calls == [("AI", None), ("SKN", None), ("AI", "2026-09-15T07:50:00.000Z"), ("SKN", "2026-09-15T07:50:00.000Z")]
+        assert etl.run("tok", db, now=datetime(2026, 9, 15, 10), source_keys=["SKN"]) == (0, 0, 0, 0)   # 원본 골라 돌리기

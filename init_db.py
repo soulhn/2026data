@@ -217,6 +217,7 @@ def init_main_tables():
             NOTION_PAGE_ID TEXT PRIMARY KEY,
             NOTION_URL TEXT,
             NAME_HASH TEXT,                  -- sha256(이름). HRD 명부 이름을 즉석 해시해 대조
+            SOURCE_KEY TEXT,                 -- 어느 신청자 리스트에서 왔나 (config.NOTION_APPLICANT_SOURCES 키: AI · SKN)
             NAME_MASKED TEXT,                -- 홍*동
             COHORT TEXT,                     -- 최종기수 (AIO1 …)
             COHORT_TEXT TEXT,                -- 기수 (자유 입력)
@@ -236,6 +237,8 @@ def init_main_tables():
             SYNCED_AT TIMESTAMP
         )
     ''')
+    _exec_ignore(conn, cursor, "ALTER TABLE TB_APPLICANT ADD COLUMN SOURCE_KEY TEXT")   # 2026-09-21 추가 (기존 DB)
+    _exec_ignore(conn, cursor, "UPDATE TB_APPLICANT SET SOURCE_KEY = 'AI' WHERE SOURCE_KEY IS NULL")   # SKN 추가 전 행은 전부 AI캠퍼스
     # 상태 전이 로그 — 추적 필드가 바뀔 때마다 한 줄. 노션 API엔 이력이 없어 스냅샷 차분이 유일한 이력
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS TB_APPLICANT_STATUS_LOG (
