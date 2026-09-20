@@ -60,13 +60,24 @@ Deno.serve(async (req: Request) => {
   // 2) 그 뒤 모든 이벤트는 서명 검증
   if (!(await validSignature(raw, req.headers.get("X-Notion-Signature")))) return new Response("bad signature", { status: 401 });
 
-  // 3) 신청자 리스트의 최종결과 변경만 본다
-  const parent = norm(body?.data?.parent?.id ?? body?.data?.parent?.data_source_id ?? "");
-  const changed: string[] = body?.data?.updated_properties ?? [];
-  const isTarget = body?.type === "page.properties_updated" && APPLICANTS_DB.includes(parent) && changed.includes(STATUS_PROP_ID);
-  if (!isTarget) return new Response("ignored", { status: 200 });
+  // 3) 페이지 이벤트만. 이벤트 형식은 API 버전마다 조금씩 달라 느슨하게 본다 — 최종 판단은 어차피 아래에서 페이지를 직접 읽어서 한다
+  //    (통합이 연결된 페이지의 이벤트만 오고, 최종결과 속성이 없는 페이지는 null → 트리거 아님)
+  const type: string = body?.type ?? "";
+  const entityId: string | undefined = body?.entity?.id;
+  const entityType: string = body?.entity?.type ?? "";
+  const parentRaw = body?.data?.parent ?? {};
+  const parent = norm(parentRaw?.id ?? parentRaw?.data_source_id ?? parentRaw?.database_id ?? "");
+  const changedRaw: any[] = body?.data?.updated_properties ?? body?.data?.updated_property_ids ?? [];
+  const changed = changedRaw.map((c) => (typeof c === "string" ? c : c?.id ?? c?.property_id ?? "")).filter(Boolean);
+  const changedKnown = changedRaw.length > 0;
+  console.log(`[notion-relay] event type=${type} entity=${entityType} parent=${parent || "-"} updated=[${changed.join(",")}] keys=${Object.keys(body?.data ?? {}).join(",")}`);
 
-  const status = await currentStatus(body.entity.id);
+  const isPage = type.startsWith("page.") || entityType === "page";
+  const parentOk = !parent || APPLICANTS_DB.includes(parent);          // 부모를 못 읽으면 통과시키고 아래에서 걸러진다
+  const propOk = !changedKnown || changed.includes(STATUS_PROP_ID) || changed.includes(decodeURIComponent(STATUS_PROP_ID));
+  if (!isPage || !entityId || !parentOk || !propOk || type.includes("deleted")) return new Response("ignored", { status: 200 });
+
+  const status = await currentStatus(entityId);
   const triggers = (Deno.env.get("TRIGGER_STATUSES") ?? "HRD등록").split(",").map((s) => s.trim()).filter(Boolean);
   if (!status || !triggers.some((t) => status === t || status.startsWith(t))) {
     console.log(`[notion-relay] 최종결과=${status} → 트리거 아님`);
