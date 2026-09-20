@@ -15,6 +15,7 @@
 
 실행: python notion_registry_publish.py   (hrd_etl.yml 하루 2회 + 노션 웹훅 → kpi_poll.yml)
 """
+import json
 import logging
 import os
 import time
@@ -26,8 +27,8 @@ import config
 from init_db import init_all_tables
 from notion_applicants_etl import get_sync_state, set_sync_state
 from notion_kpi_publish import (
-    _num, _request, _rt, create_database, ensure_database_layout, ensure_properties, get_database, publish,
-    remove_properties,
+    _num, _request, _rt, content_hash, create_database, ensure_database_layout, ensure_properties, get_database,
+    publish, remove_properties,
 )
 from notion_ops import NotionFetchError
 from utils import _clean_secret, adapt_query, get_connection, load_data
@@ -42,6 +43,10 @@ UPDATED_BLOCK_KEY = "notion_reg_updated_block"
 GUIDE_BLOCK_KEY = "notion_reg_guide_block"
 COHORT_PUB = "reg_cohort"
 PERSON_PUB = "reg_person"
+BODY_PUB = "reg_body"            # 기수 페이지 본문(명단 표) — ROW_KEY 기수, NOTION_PAGE_ID 에 블록 ID 목록(JSON)
+BODY_BLOCK_TYPES = ("table", "paragraph")   # 우리가 본문에 만드는 블록 종류 — 이것 외에는 절대 보관 처리하지 않는다
+BODY_COLUMNS = ("이름", "등록일", "개강날 출석", "노션 상태", "HRD 승인")
+_ATTEND_ORDER = {"출석": 0, "미출석": 1, "개강 전": 2}
 REMOVED = {COHORT_PUB: (), PERSON_PUB: ()}   # 스키마에서 뺀 속성 — 기존 DB에 남아 있으면 지운다
 
 KST = timezone(timedelta(hours=9))
@@ -312,6 +317,82 @@ def cohort_page_map(conn):
     return {r[0]: r[1] for r in cur.fetchall()}
 
 
+# ── 기수 페이지 본문: 명단 표 (자동) ──────────────────────────────────
+# 노션 API는 '필터된 보기'를 못 만들어 기수 페이지 안에 고정 표를 직접 쓴다. 명단·값이 바뀐 기수만 다시 쓴다.
+# 갱신 시각은 표에 넣지 않는다 — 페이지 상단 속성 '갱신 시각'이 이미 보이고, 넣으면 매 실행 22개 표를 전부 다시 써야 한다.
+
+
+def body_rows(person_rows, cohort_page_id):
+    rows = [r for r in person_rows if r["기수"] == cohort_page_id]
+    rows.sort(key=lambda r: (_ATTEND_ORDER.get(r["개강날 출석"], 9), r["등록일"] or "9999", r["이름"]))
+    return [[r["이름"].split(" · ")[0], r["등록일"] or "", r["개강날 출석"] or "", r["노션 상태"] or "", "✓" if r["HRD 승인"] else ""]
+            for r in rows]
+
+
+def _table_row(cells):
+    return {"type": "table_row", "table_row": {"cells": [_rt(str(c)) for c in cells]}}
+
+
+def body_blocks(rows, person_db):
+    """명단 표 + 안내 문단. 표 행이 90개를 넘으면 (호출당 블록 상한) 뒤는 따로 붙인다 → (첫 요청 블록들, 남은 행들)."""
+    head = [list(BODY_COLUMNS)] + rows
+    first, rest = head[:90], head[90:]
+    table = {"type": "table", "table": {"table_width": len(BODY_COLUMNS), "has_column_header": True, "has_row_header": False,
+                                        "children": [_table_row(r) for r in first]}}
+    note = {"type": "paragraph", "paragraph": {"rich_text": [
+        {"type": "text", "text": {"content": f"총 {len(rows)}명 · 자동 갱신 표(정렬·필터 불가). 메모·정렬은 "}},
+        {"type": "mention", "mention": {"type": "database", "database": {"id": person_db}}},
+        {"type": "text", "text": {"content": " 에서 이 기수로 필터해서."}}]}}
+    return [table, note], rest
+
+
+def _archive_body_blocks(token, ids, session=None):
+    for block_id in ids:
+        try:
+            block = _request(token, "GET", f"/blocks/{block_id}", None, session)
+        except NotionFetchError as e:
+            if "404" in str(e):
+                continue
+            raise
+        if block.get("type") in BODY_BLOCK_TYPES and not block.get("archived"):
+            _request(token, "PATCH", f"/blocks/{block_id}", {"archived": True}, session)
+        elif block.get("type") not in BODY_BLOCK_TYPES:
+            logger.warning(f"[등록자 발행] 본문 기록에 {block.get('type')} 블록이 있어 건너뜀: {block_id}")
+
+
+def publish_cohort_bodies(token, conn, cohort_pages, person_rows, person_db, session=None):
+    """기수 페이지마다 명단 표를 쓴다. 반환: (다시 쓴 기수 수, 건너뛴 기수 수)."""
+    cur = conn.cursor()
+    cur.execute(adapt_query("SELECT ROW_KEY, NOTION_PAGE_ID, CONTENT_HASH FROM TB_NOTION_PUBLISH WHERE DB_KEY = ?"), [BODY_PUB])
+    known = {r[0]: (r[1], r[2]) for r in cur.fetchall()}
+    upsert = adapt_query(
+        "INSERT INTO TB_NOTION_PUBLISH (DB_KEY, ROW_KEY, NOTION_PAGE_ID, CONTENT_HASH, UPDATED_AT) VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(DB_KEY, ROW_KEY) DO UPDATE SET NOTION_PAGE_ID = excluded.NOTION_PAGE_ID, "
+        "CONTENT_HASH = excluded.CONTENT_HASH, UPDATED_AT = excluded.UPDATED_AT")
+    written = skipped = 0
+    for cohort, page_id in cohort_pages.items():
+        rows = body_rows(person_rows, page_id)
+        h = content_hash({"KEY": cohort, "rows": rows})
+        prev_ids, prev_hash = known.get(cohort, (None, None))
+        if prev_hash == h:
+            skipped += 1
+            continue
+        if prev_ids:
+            _archive_body_blocks(token, json.loads(prev_ids), session)
+        blocks, rest = body_blocks(rows, person_db)
+        res = _request(token, "PATCH", f"/blocks/{page_id}/children", {"children": blocks}, session)
+        ids, want = [], [b["type"] for b in blocks]
+        for r in res.get("results", []):                     # `after` 없이 붙여도 같은 규칙으로 우리 블록만 집는다
+            if len(ids) < len(want) and r.get("type") == want[len(ids)]:
+                ids.append(r["id"])
+        for i in range(0, len(rest), 90):
+            _request(token, "PATCH", f"/blocks/{ids[0]}/children", {"children": [_table_row(r) for r in rest[i:i + 90]]}, session)
+        cur.execute(upsert, [BODY_PUB, cohort, json.dumps(ids), h, datetime.now(timezone.utc).replace(tzinfo=None)])
+        conn.commit()
+        written += 1
+    return written, skipped
+
+
 # ── 실행 ─────────────────────────────────────────────────────────────
 
 
@@ -328,7 +409,9 @@ def main():
         cohort_db, person_db = ensure_databases(token, conn)
         c = publish(token, conn, COHORT_PUB, cohort_db, COHORT_SCHEMA, build_cohort_rows())
         pages = cohort_page_map(conn)
-        p = publish(token, conn, PERSON_PUB, person_db, {**PERSON_SCHEMA, "기수": {"relation": {}}}, build_person_rows(pages))
+        persons = build_person_rows(pages)
+        p = publish(token, conn, PERSON_PUB, person_db, {**PERSON_SCHEMA, "기수": {"relation": {}}}, persons)
+        b = publish_cohort_bodies(token, conn, pages, persons, person_db)
         stamp = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
         touch_updated(token, upd_block, f"마지막 갱신: {stamp} (KST) · 기수 {len(pages)}개 · 등록자 {sum(p)}명 — 하루 2회 + 노션 HRD등록 변경 즉시")
     except NotionFetchError as e:
@@ -336,8 +419,8 @@ def main():
         return
     finally:
         conn.close()
-    logger.info(f"[등록자 발행] 기수 생성 {c[0]} · 갱신 {c[1]} · 건너뜀 {c[2]} | 등록자 생성 {p[0]} · 갱신 {p[1]} · 건너뜀 {p[2]} "
-                f"({time.monotonic() - t0:.1f}s)")
+    logger.info(f"[등록자 발행] 기수 생성 {c[0]} · 갱신 {c[1]} · 건너뜀 {c[2]} | 등록자 생성 {p[0]} · 갱신 {p[1]} · 건너뜀 {p[2]} | "
+                f"기수 명단 표 다시 씀 {b[0]} · 건너뜀 {b[1]} ({time.monotonic() - t0:.1f}s)")
 
 
 if __name__ == "__main__":

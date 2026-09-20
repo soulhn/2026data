@@ -8,7 +8,7 @@ import notion_applicants_etl
 import notion_kpi_publish
 import notion_registry_publish as reg
 import utils
-from notion_registry_publish import attend_verdict, build_cohort_rows, build_person_rows
+from notion_registry_publish import attend_verdict, body_blocks, body_rows, build_cohort_rows, build_person_rows, publish_cohort_bodies
 
 
 @pytest.fixture
@@ -127,3 +127,59 @@ def test_url_property_conversion():
     props = to_properties({"원본 링크": {"url": {}}}, {"원본 링크": "https://notion.so/x"})
     assert props["원본 링크"] == {"url": "https://notion.so/x"}
     assert to_properties({"원본 링크": {"url": {}}}, {"원본 링크": None})["원본 링크"] == {"url": None}
+
+
+class TestCohortBody:
+    def _persons(self):
+        return [{"기수": "c1", "이름": "홍*동 · AIO3", "등록일": "2026-09-02", "개강날 출석": "미출석", "노션 상태": "HRD등록", "HRD 승인": True},
+                {"기수": "c1", "이름": "김*수 · AIO3", "등록일": "2026-09-01", "개강날 출석": "출석", "노션 상태": "HRD등록", "HRD 승인": True},
+                {"기수": "c1", "이름": "박*희 · AIO3", "등록일": None, "개강날 출석": "출석", "노션 상태": "노션에 없음", "HRD 승인": False},
+                {"기수": "c2", "이름": "이*정 · SKN37", "등록일": "2026-08-30", "개강날 출석": "출석", "노션 상태": "HRD등록", "HRD 승인": True}]
+
+    def test_rows_filtered_sorted_and_masked(self):
+        rows = body_rows(self._persons(), "c1")
+        assert [r[0] for r in rows] == ["김*수", "박*희", "홍*동"]           # 출석 먼저, 그 안에서 등록일 순, 없는 날짜는 뒤로
+        assert rows[0] == ["김*수", "2026-09-01", "출석", "HRD등록", "✓"] and rows[1][4] == ""
+
+    def test_blocks_split_over_90_rows(self):
+        rows = [[f"n{i}", "", "출석", "", ""] for i in range(120)]
+        blocks, rest = body_blocks(rows, "db")
+        assert [b["type"] for b in blocks] == ["table", "paragraph"]
+        assert len(blocks[0]["table"]["children"]) == 90 and len(rest) == 31        # 헤더 1 + 89행, 나머지 31행
+        assert blocks[0]["table"]["children"][0]["table_row"]["cells"][0][0]["text"]["content"] == "이름"
+        assert blocks[1]["paragraph"]["rich_text"][1]["mention"]["database"]["id"] == "db"
+
+    def test_publish_writes_once_then_skips_then_rewrites(self, db, monkeypatch):
+        import config
+        monkeypatch.setattr(config, "NOTION_WRITE_INTERVAL", 0)
+        from unittest.mock import MagicMock
+        session = MagicMock()
+        calls = []
+
+        def request(method, url, headers=None, json=None, timeout=None):
+            calls.append((method, url.rsplit("/v1", 1)[-1], json))
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.headers = {}
+            if method == "PATCH" and url.endswith("/children"):
+                resp.json.return_value = {"results": [{"id": f"blk-{len(calls)}-{i}", "type": b["type"]} for i, b in enumerate(json["children"])]
+                                          + [{"id": "db-block", "type": "child_database"}]}
+            elif method == "GET":
+                resp.json.return_value = {"id": url.rsplit("/", 1)[-1], "type": "table", "archived": False}
+            else:
+                resp.json.return_value = {"id": "ok"}
+            return resp
+        session.request.side_effect = request
+        pages = {"AIO3": "c1", "SKN37": "c2"}
+        assert publish_cohort_bodies("tok", db, pages, self._persons(), "pdb", session=session) == (2, 0)
+        cur = db.cursor()
+        cur.execute("SELECT ROW_KEY, NOTION_PAGE_ID FROM TB_NOTION_PUBLISH WHERE DB_KEY = 'reg_body' ORDER BY ROW_KEY")
+        stored = dict(cur.fetchall())
+        assert set(stored) == {"AIO3", "SKN37"} and "db-block" not in stored["AIO3"]      # 뒤따라온 DB 블록은 기록하지 않는다
+        n = len(calls)
+        assert publish_cohort_bodies("tok", db, pages, self._persons(), "pdb", session=session) == (0, 2) and len(calls) == n
+        persons = self._persons()
+        persons[0]["개강날 출석"] = "출석"
+        assert publish_cohort_bodies("tok", db, pages, persons, "pdb", session=session) == (1, 1)
+        archived = [c for c in calls[n:] if c[0] == "PATCH" and c[2] == {"archived": True}]
+        assert len(archived) == 2 and all("/blocks/blk-" in c[1] for c in archived)     # AIO3의 옛 표·문단만 보관
