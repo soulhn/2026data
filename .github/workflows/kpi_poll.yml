@@ -36,7 +36,7 @@ jobs:
           ENCORE_API_KEY: ${{ secrets.ENCORE_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python -u kpi_etl.py
+        run: python -u kpi_etl.py --kpi-only   # AI캠퍼스 9회차만 (전체 72회차는 hrd_etl.yml이 하루 2회)
 
       - name: Notion applicants (최종결과 전이 감지)
         if: always()

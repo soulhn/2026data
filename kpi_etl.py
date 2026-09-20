@@ -16,6 +16,7 @@ HRD-Net은 현재 값만 준다(시점 없음). 그래서 매시간 읽어서 **
 
 실행: python kpi_etl.py   (GitHub Actions hrd_etl.yml 에서 hrd_etl 다음 단계로 매시간)
 """
+import argparse
 import logging
 import os
 import time
@@ -27,7 +28,7 @@ from dotenv import load_dotenv
 import config
 from hrd_api import (
     ROSTER_COUNT_COLUMNS, fetch_all_attendance, fetch_all_course_history, fetch_all_rosters,
-    get_funnel_institutions, summarize_roster_status,
+    get_funnel_institutions, get_institutions, summarize_roster_status,
 )
 from init_db import init_all_tables
 from notify import discord_post
@@ -309,14 +310,23 @@ def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_star
 # ── 실행 ─────────────────────────────────────────────────────────────
 
 
-def main():
+def kpi_course_ids():
+    """노션 「모집 KPI」 대상 과정(AI캠퍼스)만 — 웹훅 경로에서 SKN·한화 72회차를 다 읽으면 5분이 걸려 이걸로 좁힌다."""
+    return [cid for cid in config.FUNNEL_COURSE_IDS if config.COURSE_SHORT_NAMES.get(cid) in config.NOTION_KPI_COURSES]
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="HRD 회차·명부 스냅샷")
+    parser.add_argument("--kpi-only", action="store_true",
+                        help="AI캠퍼스(config.NOTION_KPI_COURSES) 과정만 읽는다. 노션 웹훅 트리거(kpi_poll.yml)용 — 다른 과정 회차는 건드리지 않는다")
+    args = parser.parse_args(argv)
     if not (os.getenv("HRD_API_KEY") or os.getenv("ENCORE_API_KEY")):
         logger.error("HRD_API_KEY / ENCORE_API_KEY 가 없습니다.")
         return
     t0 = time.monotonic()
     init_all_tables(include_market=False)
-    pairs = get_funnel_institutions()
-    logger.info(f"[KPI 스냅샷] 과정 {len(pairs)}개 조회")
+    pairs = get_institutions(kpi_course_ids()) if args.kpi_only else get_funnel_institutions()
+    logger.info(f"[KPI 스냅샷] 과정 {len(pairs)}개 조회{' (AI캠퍼스만)' if args.kpi_only else ''}")
     df, roster, errors = fetch_round_snapshots(pairs)
     if errors:
         logger.warning(f"[KPI 스냅샷] 일부 조회 실패: {errors}")

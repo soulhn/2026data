@@ -29,6 +29,16 @@ def _att(rows, cid="A", degr=3):
                           "OUT_TIME": None, "ATEND_STATUS": st, "COLLECTED_AT": None} for tid, d, it, st in rows])
 
 
+class TestKpiScope:
+    def test_kpi_course_ids_only_ai_campus(self, monkeypatch):
+        import config
+        from kpi_etl import kpi_course_ids
+        monkeypatch.setattr(config, "FUNNEL_COURSE_IDS", ["A", "S", "H"])
+        monkeypatch.setattr(config, "COURSE_SHORT_NAMES", {"A": "AIO", "S": "SKN", "H": "한화"})
+        monkeypatch.setattr(config, "NOTION_KPI_COURSES", ("AIO", "MLE", "MLO"))
+        assert kpi_course_ids() == ["A"]
+
+
 class TestAttendanceRule:
     @pytest.mark.parametrize("status,in_time,expected", [
         ("결석", "08:43", True),      # 퇴실 전: 상태는 결석이지만 입실 시간이 있으면 참석 (실측 2026-09-15)
@@ -77,7 +87,9 @@ class TestAttendanceRule:
 
 class TestUpsert:
     def _rows(self, conn, sql):
-        cur = conn.cursor(); cur.execute(sql); return cur.fetchall()
+        cur = conn.cursor()
+        cur.execute(sql)
+        return cur.fetchall()
 
     def test_join_then_status_change_then_leave(self, db):
         rs = {("A", 3): "2026-09-15"}

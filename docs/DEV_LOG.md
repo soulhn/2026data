@@ -4,7 +4,7 @@
 
 ### 가동 확인 (19:17)
 - 최종결과 → HRD등록 → 함수 로그 `최종결과=HRD등록 → workflow_dispatch 204` → `KPI poll` 실행 성공 → 신청자 폴링 전이 1건. 연달아 바꾸면 concurrency가 대기 1개만 남기는 것도 확인(3건 중 1건 cancelled)
-- 실측 지연 약 6분. `kpi_etl` 명부 스냅샷이 72회차 전부를 읽어 5분 → 웹훅 경로에선 AI캠퍼스 회차만 읽게 줄이는 게 다음 과제
+- 실측 지연 약 6분 → `kpi_etl.py --kpi-only`(`kpi_course_ids()` = NOTION_KPI_COURSES 과정만, 9회차) 로 스냅샷 단계 324s → 111s. 전체 약 3분. 전체 72회차는 hrd_etl.yml이 하루 2회 계속 맡는다
 - 삽질: `NOTION_VERIFICATION_TOKEN` 누락 → 전부 401 / 재배포 후 Verify JWT 자동 재활성 / 2026-03-11 이벤트 형식이 첫 필터와 안 맞아 ignored → 필터 완화 + 구조 로그
 
 ### 결정
