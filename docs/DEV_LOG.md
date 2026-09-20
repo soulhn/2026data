@@ -1,5 +1,18 @@
 # 개발 일지
 
+## 2026-09-20 — 노션 API 웹훅으로 HRD등록 즉시 반영 (15분 폴링·노션 자동화 경로 대체)
+
+### 결정
+- "한 번이라도 HRD 등록"의 과거 이름 복원은 불가(공개 API에 이력 엔드포인트 없음 — 데이터 소스 API·이력성 주소 4개 직접 확인). 과거는 수강신청(API) − 등록 이력(노션)의 수로만 관리
+- 실시간성은 노션 **API 웹훅**(통합 구독, 공식 기능)으로. 내부 통합 `sul`로 바꾼 덕에 가능해짐. 9/17에 만든 cron-job.org 15분 폴링·노션 자동화 웹훅 경로는 폐기(문서 교체)
+- 트리거는 사용자 요청대로 **최종결과 → HRD등록**만. 나머지 전이는 하루 2회 폴링. `TRIGGER_STATUSES`로 확장 가능
+
+### 구현 (`supabase/functions/notion-relay/index.ts`)
+- 검증 토큰 응답 → 이후 `X-Notion-Signature`(HMAC-SHA256, 키 = verification_token) 검사 → `page.properties_updated` + 부모가 신청자 리스트(DB ID 또는 데이터 소스 ID) + `updated_properties`에 최종결과(`HnnX`) 포함일 때만
+  → 페이지의 최종결과 **하나만** 읽어(`filter_properties`) 트리거 상태면 `kpi_poll.yml` workflow_dispatch. 노션엔 항상 200(재전송 폭주 방지)
+- 반영 지연 ≈ 노션 몇 초 + GitHub 대기·실행 약 2분. 파이썬 파이프라인은 그대로 재사용
+- 절차: `recruit-kpi/docs/SETUP_REALTIME.md` (GitHub 토큰 → 함수 배포 → 구독 생성·검증 토큰 → 확인)
+
 ## 2026-09-20 — NOTION_TOKEN을 개인 액세스 토큰 → 내부 통합(`sul`)으로 교체
 
 - 관리자가 워크스페이스(교육 BU)에 내부 통합을 만들어 줌. 개인 토큰(2027-09-15 만료, 본인 권한 전체)보다 범위가 좁고 계정에 안 묶인다

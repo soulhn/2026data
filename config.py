@@ -345,6 +345,8 @@ COURSE_GROUP_KEYWORDS = {
 # ── 노션 신청자 리스트 폴링 (notion_applicants_etl.py, 모집 KPI 1단계) ──
 # "엔코아 AI 캠퍼스 신청자 리스트" 데이터베이스. 읽기 전용. 이름은 해시·마스킹만 저장, 연락처는 저장하지 않는다.
 NOTION_APPLICANTS_DB_ID = "375d943bcac280e7ba18cd107d5e40d2"
+NOTION_APPLICANTS_DATA_SOURCE_ID = "375d943bcac2804499a6000bf5cd7ad5"   # 2025-09-03 API의 데이터 소스 ID (아직 미사용, 이전 대비용)
+NOTION_APPLICANTS_STATUS_PROP_ID = "HnnX"                              # '최종결과' 속성 ID — 웹훅 이벤트의 updated_properties와 대조
 NOTION_ATTEND_PROP = "개강 참석일"        # 담당자에게 추가 요청한 날짜 속성. 생기면 ETL이 자동으로 읽는다
 NOTION_HRD_APPLY_PROP = "HRD 신청 일시"   # 위와 같음 — HRD 신청 후 취소돼도 신청 사실이 남도록
 NOTION_SYNC_OVERLAP_MIN = 10              # 증분 폴링 시 마지막 동기화 시각에서 이만큼 되감아 조회 (시계 오차·지연 흡수)

@@ -1,11 +1,8 @@
-name: KPI poll (15분 · 외부 트리거)
+name: KPI poll (노션 웹훅 트리거)
 
-# 예약 실행(schedule)은 GitHub가 자주 누락·지연시켜 실제로는 하루 2회만 돌았다 (docs/DEV_LOG.md 2026-09-16).
-# 그래서 이 워크플로는 예약 없이 외부에서 호출한다:
-#   · cron-job.org → workflow_dispatch API  (15분마다)
-#   · 노션 자동화 → 중계(supabase/functions/notion-relay) → workflow_dispatch API  (최종결과 바뀌는 즉시)
-# 둘 다 토큰 권한은 Actions: write 하나면 된다. 설정 절차: recruit-kpi/docs/SETUP_REALTIME.md
-# 한화 출결(hrd_etl.py)은 무거워서 여기 없다 — hrd_etl.yml이 따로 돈다.
+# 예약 없음. 노션 API 웹훅 → supabase/functions/notion-relay(최종결과가 HRD등록으로 바뀐 경우만) → workflow_dispatch 로 즉시 실행.
+# 정기 실행은 hrd_etl.yml(하루 2회 실측)이 계속 맡는다. 토큰 권한은 Actions: write 하나. 설정 절차: recruit-kpi/docs/SETUP_REALTIME.md
+# 한화 출결(hrd_etl.py)은 무거워서 여기 없다.
 
 on:
   workflow_dispatch:
