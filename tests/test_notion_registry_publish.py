@@ -69,6 +69,9 @@ class TestCohorts:
         db.commit()
         a = {r["기수"]: r for r in build_cohort_rows(today="2026-09-16")}["AIO3"]
         assert a["개강일 출석 인원"] is None and a["개강 참석률(%)"] is None
+        rows = {r["KEY"]: r for r in build_person_rows({"AIO3": "c"}, today="2026-09-16")}
+        assert rows["p1"]["개강날 출석"] == "기록 없음" and rows["roster:AIG20260000578396:3:t2"]["개강날 출석"] == "기록 없음"
+        assert rows["p2"]["개강날 출석"] == "미출석"      # 명부에 없는 사람은 회차 기록과 무관하게 미출석
 
     def test_before_start_no_attendance(self, db):
         _seed(db)
@@ -114,6 +117,10 @@ class TestVerdict:
     ])
     def test_attend(self, first, start, today, expected):
         assert attend_verdict(first, start, today) == expected
+
+    def test_unknown_round(self):
+        assert attend_verdict(None, "2026-03-12", "2026-09-21", known=False) == "기록 없음"
+        assert attend_verdict("20260312", "2026-03-12", "2026-09-21", known=False) == "출석"
 
 
 def test_hash_ignores_updated_at():

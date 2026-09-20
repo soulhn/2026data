@@ -39,6 +39,30 @@ class TestKpiScope:
         assert kpi_course_ids() == ["A"]
 
 
+class TestBackfill:
+    def test_backfill_fills_only_empty_rounds(self, db, monkeypatch):
+        from kpi_etl import backfill_day1
+        import kpi_etl
+        rs = {("A", 2): "2026-03-12", ("A", 3): "2026-09-15"}
+        upsert_roster_members(db, _roster(("t1", "홍길동", "훈련중"), ("t2", "김철수", "훈련중"), cid="A", degr=2),
+                              first_attendance(pd.DataFrame()), {("A", 2)}, rs, now=datetime(2026, 9, 15, 0))
+        upsert_roster_members(db, _roster(("t9", "박영희", "훈련중"), cid="A", degr=3),
+                              first_attendance(_att([("t9", "20260915", "09:00", "출석")]), {("A", 3): "2026-09-15"}), {("A", 3)}, rs,
+                              now=datetime(2026, 9, 15, 0))
+        asked = []
+
+        def fake_attend(pairs, targets, deadline=None):
+            asked.extend(targets)
+            return _att([("t1", "20260312", "09:01", "출석"), ("t2", "20260312", None, "결석")], cid="A", degr=2), None, {("A", 2)}
+        monkeypatch.setattr(kpi_etl, "fetch_all_attendance", fake_attend)
+        assert backfill_day1(db, [("k", "A")], today="2026-09-21") == (1, 2)
+        assert asked == [("A", 2, "202603")]                                   # 출결 있는 3회차는 다시 읽지 않는다
+        cur = db.cursor()
+        cur.execute("SELECT TRNEE_ID, FIRST_ATTEND_DT, DAY1_STATUS FROM TB_ROSTER_MEMBER WHERE TRPR_DEGR = 2 ORDER BY TRNEE_ID")
+        assert cur.fetchall() == [("t1", "20260312", "출석"), ("t2", None, "결석")]
+        assert backfill_day1(db, [("k", "A")], today="2026-09-21") == (0, 0)   # 두 번째는 대상 없음
+
+
 class TestAttendanceRule:
     @pytest.mark.parametrize("status,in_time,expected", [
         ("결석", "08:43", True),      # 퇴실 전: 상태는 결석이지만 입실 시간이 있으면 참석 (실측 2026-09-15)

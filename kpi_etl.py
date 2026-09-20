@@ -225,6 +225,36 @@ def _label(trpr_id, degr):
     return f"{config.COURSE_SHORT_NAMES.get(trpr_id, trpr_id)}{int(degr)}"
 
 
+def backfill_day1(conn, pairs, today=None):
+    """추적 시작 전에 끝난 회차의 개강월 출결을 한 번 읽어 첫 참석일·개강일 상태를 채운다 (비어 있는 사람만).
+
+    대상: 명부는 있는데 출결 기록이 한 명도 없고 개강일이 지난 회차. 반환: (회차 수, 갱신한 사람 수).
+    """
+    today = today or datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+    cur = conn.cursor()
+    cur.execute(adapt_query("""
+        SELECT TRPR_ID, TRPR_DEGR, MIN(TR_STA_DT) AS TR_STA_DT FROM TB_ROSTER_MEMBER
+        GROUP BY TRPR_ID, TRPR_DEGR
+        HAVING SUM(CASE WHEN FIRST_ATTEND_DT IS NOT NULL OR DAY1_STATUS IS NOT NULL THEN 1 ELSE 0 END) = 0"""))
+    rounds = [(r[0], int(r[1]), _s(r[2])) for r in cur.fetchall() if _s(r[2]) and _s(r[2])[:10] <= today]
+    if not rounds:
+        return 0, 0
+    targets = [(cid, degr, start.replace("-", "")[:6]) for cid, degr, start in rounds]
+    attend, err, _ = fetch_all_attendance(pairs, targets)
+    if err:
+        logger.warning(f"[KPI 명부] 소급 출결 일부 실패: {err}")
+    first = first_attendance(attend, {(cid, degr): start for cid, degr, start in rounds})
+    update = adapt_query(
+        "UPDATE TB_ROSTER_MEMBER SET FIRST_ATTEND_DT = COALESCE(FIRST_ATTEND_DT, ?), FIRST_IN_TIME = COALESCE(FIRST_IN_TIME, ?), "
+        "DAY1_STATUS = COALESCE(DAY1_STATUS, ?) WHERE TRPR_ID = ? AND TRPR_DEGR = ? AND TRNEE_ID = ?")
+    n = 0
+    for r in first.itertuples(index=False):
+        cur.execute(update, [_s(r.FIRST_ATTEND_DT), _s(r.FIRST_IN_TIME), _s(r.DAY1_STATUS), r.TRPR_ID, int(r.TRPR_DEGR), str(r.TRNEE_ID)])
+        n += cur.rowcount
+    conn.commit()
+    return len(rounds), n
+
+
 def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_start, now=None, events=None):
     """명부 사람 단위 upsert + 이벤트 로그. 반환: {'joined','status','first_attend','left'} 건수.
 
@@ -321,6 +351,8 @@ def kpi_course_ids():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="HRD 회차·명부 스냅샷")
+    parser.add_argument("--backfill-day1", action="store_true",
+                        help="출결을 한 번도 못 읽은 과거 회차의 개강월 출결을 한 번 읽어 첫 참석일·개강일 상태를 채운다 (1회성)")
     parser.add_argument("--kpi-only", action="store_true",
                         help="KPI 과정(config.NOTION_KPI_COURSES)만, 그중 종료되지 않은 회차의 명부만 읽는다. 노션 웹훅 트리거(kpi_poll.yml)용")
     args = parser.parse_args(argv)
@@ -330,7 +362,15 @@ def main(argv=None):
     t0 = time.monotonic()
     init_all_tables(include_market=False)
     pairs = get_institutions(kpi_course_ids()) if args.kpi_only else get_funnel_institutions()
-    logger.info(f"[KPI 스냅샷] 과정 {len(pairs)}개 조회{' (AI캠퍼스만)' if args.kpi_only else ''}")
+    if args.backfill_day1:
+        conn = get_connection(timeout=30)
+        try:
+            rounds, people = backfill_day1(conn, pairs)
+        finally:
+            conn.close()
+        logger.info(f"[KPI 명부] 소급 출결: 회차 {rounds}개 · 사람 {people}명 채움 ({time.monotonic() - t0:.1f}s)")
+        return
+    logger.info(f"[KPI 스냅샷] 과정 {len(pairs)}개 조회{' (KPI 과정만)' if args.kpi_only else ''}")
     df, roster, errors = fetch_round_snapshots(pairs, active_only=args.kpi_only)
     if errors:
         logger.warning(f"[KPI 스냅샷] 일부 조회 실패: {errors}")

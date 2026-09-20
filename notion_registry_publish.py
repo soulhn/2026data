@@ -69,7 +69,7 @@ PERSON_SCHEMA = {
     "이름": {"title": {}},
     "기수": {"relation": {"database_id": None, "dual_property": {}}},   # database_id는 생성 시 채운다 (기수 DB)
     "등록일": {"date": {}},
-    "개강날 출석": {"select": {"options": [{"name": "출석"}, {"name": "미출석"}, {"name": "개강 전"}]}},
+    "개강날 출석": {"select": {"options": [{"name": "출석"}, {"name": "미출석"}, {"name": "개강 전"}, {"name": "기록 없음"}]}},
     "노션 상태": {"rich_text": {}},
     "HRD 승인": {"checkbox": {}},
     "원본 링크": {"url": {}},   # 신청자 리스트 원본 페이지. 관계 대신 URL — SKN DB는 데이터 소스가 둘이라 2022 API로 관계를 못 건다
@@ -131,12 +131,15 @@ def load_snapshots():
     return snap[snap["TR_STA_DT"].astype(str).str[:10] >= config.NOTION_REGISTRY_SINCE]
 
 
-def attend_verdict(first_attend_dt, start, today):
-    """개강날 출석 여부. 개강일에 입실했으면 출석, 개강이 지났으면 미출석, 아니면 개강 전."""
+def attend_verdict(first_attend_dt, start, today, known=True):
+    """개강날 출석 여부. 개강일에 입실했으면 출석, 개강이 지났으면 미출석, 아니면 개강 전.
+    known=False(그 회차 출결을 한 번도 못 읽음)이면 개강이 지났어도 '기록 없음'."""
     start = (_s(start) or "")[:10]
     if first_attend_dt and str(first_attend_dt)[:8] == start.replace("-", ""):
         return "출석"
-    return "미출석" if start and start < today else "개강 전"
+    if not (start and start < today):
+        return "개강 전"
+    return "미출석" if known else "기록 없음"
 
 
 def build_cohort_rows(today=None):
@@ -184,10 +187,15 @@ def build_person_rows(cohort_pages, today=None):
                      "FROM TB_APPLICANT WHERE COHORT IS NOT NULL")
     apps = apps[apps["NOTION_PAGE_ID"].isin(ever)]
     members = load_data("SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, STATUS, FIRST_SEEN_AT, GONE_AT, "
-                        "FIRST_ATTEND_DT, TR_STA_DT FROM TB_ROSTER_MEMBER")
+                        "FIRST_ATTEND_DT, DAY1_STATUS, TR_STA_DT FROM TB_ROSTER_MEMBER")
     members = members[members["TRPR_ID"].map(lambda t: config.COURSE_SHORT_NAMES.get(t) in config.NOTION_KPI_COURSES)
                       & (members["TR_STA_DT"].astype(str).str[:10] >= config.NOTION_REGISTRY_SINCE)]
     tracking_start = str(members["FIRST_SEEN_AT"].min())[:10] if not members.empty else None
+    # 회차별로 출결을 읽은 적이 있나 — 없으면 그 회차 사람은 '미출석'이 아니라 '기록 없음'
+    known_rounds = set()
+    for m in members.itertuples(index=False):
+        if _s(m.FIRST_ATTEND_DT) or _s(getattr(m, "DAY1_STATUS", None)):
+            known_rounds.add((m.TRPR_ID, int(m.TRPR_DEGR)))
     by_key, used = {}, set()
     for m in members.itertuples(index=False):
         by_key.setdefault((cohort_key(m.TRPR_ID, m.TRPR_DEGR), m.NAME_HASH), []).append(m)
@@ -206,8 +214,10 @@ def build_person_rows(cohort_pages, today=None):
             reg_dt = str(m.FIRST_SEEN_AT)[:10]      # 노션에 날짜가 없으면 명부에 처음 보인 날 (추적 시작 이후만)
         rows.append({
             "KEY": a.NOTION_PAGE_ID, "이름": f"{a.NAME_MASKED or '?'} · {a.COHORT}", "기수": cohort_pages[a.COHORT],
-            "등록일": reg_dt, "개강날 출석": attend_verdict(m.FIRST_ATTEND_DT if m is not None else None,
-                                                        m.TR_STA_DT if m is not None else _start_of(a.COHORT), today),
+            "등록일": reg_dt,
+            "개강날 출석": attend_verdict(m.FIRST_ATTEND_DT if m is not None else None,
+                                     m.TR_STA_DT if m is not None else _start_of(a.COHORT), today,
+                                     known=(m is None) or ((m.TRPR_ID, int(m.TRPR_DEGR)) in known_rounds)),
             "노션 상태": a.STATUS, "HRD 승인": bool(m is not None and not _s(m.GONE_AT)),
             "원본 링크": _s(a.NOTION_URL),
             "갱신 시각": now_iso,
@@ -221,7 +231,7 @@ def build_person_rows(cohort_pages, today=None):
             "KEY": f"roster:{m.TRPR_ID}:{int(m.TRPR_DEGR)}:{m.TRNEE_ID}", "이름": f"{m.NAME_MASKED or '?'} · {key}",
             "기수": cohort_pages[key],
             "등록일": str(m.FIRST_SEEN_AT)[:10] if tracking_start and str(m.FIRST_SEEN_AT)[:10] > tracking_start else None,
-            "개강날 출석": attend_verdict(m.FIRST_ATTEND_DT, m.TR_STA_DT, today),
+            "개강날 출석": attend_verdict(m.FIRST_ATTEND_DT, m.TR_STA_DT, today, known=(m.TRPR_ID, int(m.TRPR_DEGR)) in known_rounds),
             "노션 상태": "노션에 없음", "HRD 승인": not _s(m.GONE_AT),
             "원본 링크": None, "갱신 시각": now_iso,
         })
