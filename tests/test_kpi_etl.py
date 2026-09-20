@@ -106,6 +106,22 @@ class TestFetch:
 
     @patch("kpi_etl.fetch_all_rosters")
     @patch("kpi_etl.fetch_all_course_history")
+    def test_active_only_skips_finished_rounds(self, mock_hist, mock_roster):
+        """--kpi-only(웹훅 경로): 종강일이 지난 회차 명부는 읽지 않는다 (SKN 38회차 중 진행·예정만)."""
+        mock_hist.return_value = (pd.DataFrame([
+            {"TRPR_ID": "A", "TRPR_DEGR": "2", "TRPR_NM": "x", "TR_STA_DT": "2026-01-20", "TR_END_DT": "2026-07-10",
+             "TOT_FXNUM": "30", "TOT_TRP_CNT": "30", "TOT_PAR_MKS": "28", "FINI_CNT": "25", "INST_INO": "1"},
+            {"TRPR_ID": "A", "TRPR_DEGR": "3", "TRPR_NM": "x", "TR_STA_DT": "2026-09-15", "TR_END_DT": "2027-03-12",
+             "TOT_FXNUM": "30", "TOT_TRP_CNT": "13", "TOT_PAR_MKS": "9", "FINI_CNT": "0", "INST_INO": "1"},
+        ]), None)
+        mock_roster.return_value = (pd.DataFrame(columns=["TRPR_ID", "TRPR_DEGR", "TRNEE_ID", "TRNEE_NM", "TRNEE_STATUS"]), None, {("A", 3)})
+        fetch_round_snapshots([("k", "A")], active_only=True, today="2026-09-20")
+        mock_roster.assert_called_once_with([("k", "A")], [("A", 3)])
+        fetch_round_snapshots([("k", "A")], active_only=False, today="2026-09-20")
+        assert mock_roster.call_args.args[1] == [("A", 2), ("A", 3)]
+
+    @patch("kpi_etl.fetch_all_rosters")
+    @patch("kpi_etl.fetch_all_course_history")
     def test_errors_are_joined(self, mock_hist, mock_roster):
         mock_hist.return_value = (pd.DataFrame(columns=["TRPR_ID", "TRPR_DEGR", "TRPR_NM", "TR_STA_DT", "TR_END_DT",
                                                         "TOT_FXNUM", "TOT_TRP_CNT", "TOT_PAR_MKS", "FINI_CNT", "INST_INO"]), "B → timeout")

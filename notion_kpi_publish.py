@@ -34,7 +34,7 @@ logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s %(message)s", lev
 
 COHORT_DB_KEY = "notion_kpi_cohort_db"
 PERSON_DB_KEY = "notion_kpi_person_db"
-_HASH_EXCLUDE = {"변경 시각"}
+_HASH_EXCLUDE = {"변경 시각", "갱신 시각"}   # 매 실행 바뀌는 시각은 해시에서 뺀다 (안 그러면 전 행이 매번 갱신)
 
 # ── 노션 API (쓰기 포함, 우리 페이지 전용) ──────────────────────────
 
@@ -425,6 +425,8 @@ def to_properties(schema, row):
             props[name] = {"checkbox": bool(v)}
         elif t == "relation":
             props[name] = {"relation": [{"id": v}] if v else []}
+        elif t == "url":
+            props[name] = {"url": v or None}
     return props
 
 

@@ -67,13 +67,15 @@ def _s(v):
 # ── 1) 회차 스냅샷 ────────────────────────────────────────────────────
 
 
-def fetch_round_snapshots(pairs=None):
+def fetch_round_snapshots(pairs=None, active_only=False, today=None):
     """회차 집계 + 명부 상태 집계 → (SNAPSHOT_COLUMNS DataFrame, roster_df, error_detail).
 
     명부 원본(roster_df)은 2)에서 다시 쓰므로 함께 돌려준다 (호출 1회로 두 스냅샷을 만든다).
+    active_only: 종료되지 않은 회차(종강일 ≥ 오늘)만 명부를 읽는다 — 웹훅 경로용. 종료 회차 명부는 바뀌지 않는다.
     """
     if pairs is None:
         pairs = get_funnel_institutions()
+    today = today or datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
     history, hist_err = fetch_all_course_history(pairs)
     df = history.copy()
     df["TRPR_DEGR"] = pd.to_numeric(df["TRPR_DEGR"], errors="coerce").fillna(0).astype(int)
@@ -82,8 +84,10 @@ def fetch_round_snapshots(pairs=None):
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
     # 명부는 승인 인원이 있는 회차만 (개설예정·미승인 회차는 명부가 비어 호출 낭비)
-    rounds = [(r.TRPR_ID, int(r.TRPR_DEGR))
-              for r in df[df["TOT_PAR_MKS"].fillna(0) > 0][["TRPR_ID", "TRPR_DEGR"]].itertuples(index=False)]
+    target = df[df["TOT_PAR_MKS"].fillna(0) > 0]
+    if active_only:
+        target = target[target["TR_END_DT"].astype(str).str[:10] >= today]
+    rounds = [(r.TRPR_ID, int(r.TRPR_DEGR)) for r in target[["TRPR_ID", "TRPR_DEGR"]].itertuples(index=False)]
     roster, roster_err, done = fetch_all_rosters(pairs, rounds)
     counts = summarize_roster_status(roster)
     if counts.empty:
@@ -318,7 +322,7 @@ def kpi_course_ids():
 def main(argv=None):
     parser = argparse.ArgumentParser(description="HRD 회차·명부 스냅샷")
     parser.add_argument("--kpi-only", action="store_true",
-                        help="AI캠퍼스(config.NOTION_KPI_COURSES) 과정만 읽는다. 노션 웹훅 트리거(kpi_poll.yml)용 — 다른 과정 회차는 건드리지 않는다")
+                        help="KPI 과정(config.NOTION_KPI_COURSES)만, 그중 종료되지 않은 회차의 명부만 읽는다. 노션 웹훅 트리거(kpi_poll.yml)용")
     args = parser.parse_args(argv)
     if not (os.getenv("HRD_API_KEY") or os.getenv("ENCORE_API_KEY")):
         logger.error("HRD_API_KEY / ENCORE_API_KEY 가 없습니다.")
@@ -327,7 +331,7 @@ def main(argv=None):
     init_all_tables(include_market=False)
     pairs = get_institutions(kpi_course_ids()) if args.kpi_only else get_funnel_institutions()
     logger.info(f"[KPI 스냅샷] 과정 {len(pairs)}개 조회{' (AI캠퍼스만)' if args.kpi_only else ''}")
-    df, roster, errors = fetch_round_snapshots(pairs)
+    df, roster, errors = fetch_round_snapshots(pairs, active_only=args.kpi_only)
     if errors:
         logger.warning(f"[KPI 스냅샷] 일부 조회 실패: {errors}")
     first_att, att_err = fetch_first_attendance(pairs, df)

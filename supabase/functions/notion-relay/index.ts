@@ -11,8 +11,12 @@
 const OWNER_REPO = "soulhn/2026data";
 const WORKFLOW = "kpi_poll.yml";
 const NOTION_VERSION = "2022-06-28";
-const APPLICANTS_DB = ["375d943bcac280e7ba18cd107d5e40d2", "375d943bcac2804499a6000bf5cd7ad5"]; // DB ID · 데이터 소스 ID (2025-09 API)
-const STATUS_PROP_ID = "HnnX";        // 신청자 리스트 '최종결과' 속성 ID
+// 신청자 리스트 원본 — DB ID·데이터 소스 ID 둘 다 (이벤트 부모가 어느 쪽으로 오든). config.NOTION_APPLICANT_SOURCES와 같아야 한다
+const SOURCES: Record<string, string[]> = {
+  "375d943bcac280e7ba18cd107d5e40d2": ["HnnX"], "375d943bcac2804499a6000bf5cd7ad5": ["HnnX"],   // AI캠퍼스 · 최종결과
+  "dfe9c46469bb40e1aee143f91eaf0abd": ["sXGM"], "837e6b2f06db48f3862d8ccd769cd310": ["sXGM"],   // SKN · 최종결과 (2026-09-21)
+};
+const ALL_STATUS_PROP_IDS = Array.from(new Set(Object.values(SOURCES).flat()));
 const STATUS_PROP_NAME = "최종결과";
 
 const norm = (id: string) => (id ?? "").replace(/-/g, "");
@@ -28,7 +32,8 @@ async function validSignature(raw: string, header: string | null): Promise<boole
 }
 
 async function currentStatus(pageId: string): Promise<string | null> {
-  const r = await fetch(`https://api.notion.com/v1/pages/${pageId}?filter_properties=${STATUS_PROP_ID}`, {
+  const q = ALL_STATUS_PROP_IDS.map((id) => `filter_properties=${encodeURIComponent(id)}`).join("&");
+  const r = await fetch(`https://api.notion.com/v1/pages/${pageId}?${q}`, {
     headers: { Authorization: `Bearer ${Deno.env.get("NOTION_TOKEN")}`, "Notion-Version": NOTION_VERSION },
   });
   if (!r.ok) return null;
@@ -73,8 +78,9 @@ Deno.serve(async (req: Request) => {
   console.log(`[notion-relay] event type=${type} entity=${entityType} parent=${parent || "-"} updated=[${changed.join(",")}] keys=${Object.keys(body?.data ?? {}).join(",")}`);
 
   const isPage = type.startsWith("page.") || entityType === "page";
-  const parentOk = !parent || APPLICANTS_DB.includes(parent);          // 부모를 못 읽으면 통과시키고 아래에서 걸러진다
-  const propOk = !changedKnown || changed.includes(STATUS_PROP_ID) || changed.includes(decodeURIComponent(STATUS_PROP_ID));
+  const parentOk = !parent || parent in SOURCES;                        // 부모를 못 읽으면 통과시키고 아래에서 걸러진다
+  const wanted = parent && parent in SOURCES ? SOURCES[parent] : ALL_STATUS_PROP_IDS;
+  const propOk = !changedKnown || changed.some((c) => wanted.includes(c) || wanted.includes(decodeURIComponent(c)));
   if (!isPage || !entityId || !parentOk || !propOk || type.includes("deleted")) return new Response("ignored", { status: 200 });
 
   const status = await currentStatus(entityId);

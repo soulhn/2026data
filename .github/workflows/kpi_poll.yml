@@ -46,9 +46,9 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python -u notion_applicants_etl.py
 
-      - name: Publish Notion KPI page
+      - name: Publish Notion registry page (HRD 등록자 관리)
         if: always()
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python -u notion_kpi_publish.py
+        run: python -u notion_registry_publish.py
