@@ -32,7 +32,7 @@ from hrd_api import (
 )
 from init_db import init_all_tables
 from notify import discord_post
-from notion_applicants_etl import name_hash
+from notion_applicants_etl import name_hash, set_sync_state
 from utils import adapt_query, get_connection, mask_name
 
 load_dotenv()
@@ -381,6 +381,8 @@ def main(argv=None):
     round_start = {(r.TRPR_ID, int(r.TRPR_DEGR)): _s(r.TR_STA_DT) for r in df.itertuples(index=False)}
     conn = get_connection(timeout=30)
     try:
+        # 점검(health_check.py)이 읽는다 — 부분 실패도 여기 남겨야 조용히 묻히지 않는다
+        set_sync_state(conn, " / ".join(e for e in (errors, att_err) if e) or "", "kpi_last_errors")
         saved, skipped = save_snapshots(df, conn)
         events = []
         member = upsert_roster_members(conn, roster, first_att, roster.attrs.get("done_rounds", set()), round_start, events=events)

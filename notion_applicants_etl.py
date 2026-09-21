@@ -254,8 +254,10 @@ def main():
     events = []
     try:
         n, ins, upd, tr = run(token, conn, events=events)
+        set_sync_state(conn, "", "notion_applicants_last_error")
     except NotionFetchError as e:
         logger.error(f"[신청자 폴링] {e}")
+        set_sync_state(conn, str(e)[:300], "notion_applicants_last_error")   # 점검이 읽는다
         return
     finally:
         conn.close()

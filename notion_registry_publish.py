@@ -431,6 +431,7 @@ def main():
         b = publish_cohort_bodies(token, conn, pages, persons, person_db)
         stamp = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
         touch_updated(token, upd_block, f"마지막 갱신: {stamp} (KST) · 기수 {len(pages)}개 · 등록자 {sum(p)}명 — 하루 2회 + 노션 HRD등록 변경 즉시")
+        set_sync_state(conn, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "notion_registry_last_publish")   # 점검용
     except NotionFetchError as e:
         logger.error(f"[등록자 발행] {e}")
         return

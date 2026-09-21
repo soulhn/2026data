@@ -56,3 +56,11 @@ jobs:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -u notion_registry_publish.py
+
+      - name: Health check (이상할 때만 디스코드)
+        if: always()
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python -u health_check.py

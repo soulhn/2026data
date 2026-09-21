@@ -1,5 +1,17 @@
 # 개발 일지
 
+## 2026-09-21 — 파이프라인 자기 점검 (health_check.py)
+
+### 왜
+- 실패는 GitHub 메일이 잡지만 "조용히 틀리는 것"(노션 토큰 만료로 건너뜀, HRD API 한 기관 실패, 기수명 오타로 매칭 누락, 담당자 오기입)은 사람이 페이지·DB를 뒤져야 알았다
+
+### 구현
+- `health_check.py`: 4개 묶음 검사 → 걸리는 것만 `discord_post`. 내용 해시가 직전과 같으면 생략, 7일마다 재알림 (`health_last_hash`·`health_last_sent`)
+- ETL이 점검용 상태를 남김: kpi_etl `kpi_last_errors`(부분 실패 문자열), notion_applicants_etl `notion_applicants_last_error`(성공 시 빈 값), notion_registry_publish `notion_registry_last_publish`
+- hrd_etl.yml 마지막 단계로 추가(하루 2회). 웹훅 경로(kpi_poll)에는 넣지 않음 — 알림 노이즈 방지
+- 첫 실행 발견: MLE3 신청자 3명(HRD 미개설 회차 — 개설되면 저절로 해소), SKN33 명부 동명이인 2명, MLO2 운영현황표 15 vs API 14
+- 테스트 12건 (445 passed)
+
 ## 2026-09-21 — 「모집 KPI」 페이지 삭제, 옛 발행기 정리
 
 - 사용자가 옛 「모집 KPI」 페이지를 삭제 → `notion_kpi_publish.py`에서 노션 쓰기 공용 헬퍼만 `notion_publish.py`로 뽑고(요청·DB 생성/속성 추가·삭제/인라인·설명·값 변환·해시 upsert) 옛 페이지 전용 코드(스키마·행 생성·안내문 블록·main)와 테스트 삭제. `database_exists`는 참조 없어 제거
