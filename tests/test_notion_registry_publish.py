@@ -5,7 +5,7 @@ import pytest
 
 import init_db
 import notion_applicants_etl
-import notion_kpi_publish
+import notion_publish
 import notion_registry_publish as reg
 import utils
 from notion_registry_publish import attend_verdict, body_blocks, body_rows, build_cohort_rows, build_person_rows, publish_cohort_bodies
@@ -13,7 +13,7 @@ from notion_registry_publish import attend_verdict, body_blocks, body_rows, buil
 
 @pytest.fixture
 def db(monkeypatch, mock_db_connection):
-    for mod in (reg, notion_kpi_publish, notion_applicants_etl):
+    for mod in (reg, notion_publish, notion_applicants_etl):
         monkeypatch.setattr(mod, "adapt_query", utils.adapt_query)
     monkeypatch.setattr(reg, "load_data", lambda q, params=None, db=None: utils.load_data(q, params=params))
     reg._START_CACHE.clear()
@@ -127,13 +127,13 @@ class TestVerdict:
 
 
 def test_hash_ignores_updated_at():
-    from notion_kpi_publish import content_hash
+    from notion_publish import content_hash
     assert content_hash({"KEY": "x", "갱신 시각": "a"}) == content_hash({"KEY": "x", "갱신 시각": "b"})
     assert datetime  # 사용 표시
 
 
 def test_url_property_conversion():
-    from notion_kpi_publish import to_properties
+    from notion_publish import to_properties
     props = to_properties({"원본 링크": {"url": {}}}, {"원본 링크": "https://notion.so/x"})
     assert props["원본 링크"] == {"url": "https://notion.so/x"}
     assert to_properties({"원본 링크": {"url": {}}}, {"원본 링크": None})["원본 링크"] == {"url": None}

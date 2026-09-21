@@ -366,15 +366,9 @@ NOTION_ATTEND_PROP = "개강 참석일"        # 담당자에게 추가 요청�
 NOTION_HRD_APPLY_PROP = "HRD 신청 일시"   # 위와 같음 — HRD 신청 후 취소돼도 신청 사실이 남도록
 NOTION_SYNC_OVERLAP_MIN = 10              # 증분 폴링 시 마지막 동기화 시각에서 이만큼 되감아 조회 (시계 오차·지연 흡수)
 
-# ── 노션 "모집 KPI" 페이지 발행 (notion_kpi_publish.py) ──
-# 우리 소유 페이지(관리자 개인 공간). 담당자 DB는 여전히 읽기만 한다. 두 DB는 첫 실행 때 이 페이지 아래에 자동 생성.
-NOTION_KPI_PARENT_PAGE_ID = "3dcd943bcac281658623eefb32c40d9a"
-NOTION_REGISTRY_PAGE_ID = "3e1d943bcac2812fb3bcc9d4f2491abd"   # 「HRD 등록자 관리」 (2026-09-21, notion_registry_publish.py). 「모집 KPI」 페이지 아래에 생성, 옮겨도 됨
+# ── 노션 「HRD 등록자 관리」 페이지 발행 (notion_registry_publish.py) ──
+NOTION_REGISTRY_PAGE_ID = "3e1d943bcac2812fb3bcc9d4f2491abd"   # 「HRD 등록자 관리」 (2026-09-21). 우리 소유 페이지 — 담당자 DB는 여전히 읽기만
 NOTION_REGISTRY_SINCE = "2026-01-01"      # 이 날 이후 개강 회차만 등록자 페이지에 (SKN 1~25기는 노션 신청자 리스트 이전이라 대조 불가)
 NOTION_KPI_COURSES = ("AIO", "MLE", "MLO", "SKN")   # 신청자 리스트가 있는 과정 (한화는 모집 종료, 2026-09-21 SKN 추가)
-NOTION_KPI_PASS_STATUSES = (                     # 사람별 정합성 표 대상 = 합격 단계 이상
-    "인터뷰합격", "추가선발대기", "합격안내", "합격자등록", "HRD신청", "HRD등록",
-    "합격취소(연락두절)", "합격취소(신청자 요청)",
-)
 NOTION_KPI_CONFIRM_DAYS = 7                      # 개강 후 이 일수가 지나야 '확정자 신고율'을 계산 (확정 신고는 개강 1주 뒤)
 NOTION_WRITE_INTERVAL = 0.35                     # 초. 노션 API 초당 3건 제한

@@ -11,7 +11,7 @@
   노션과 명부는 (기수, 이름 해시)로 맞춘다. 명부에만 있으면 '노션에 없음'으로 표시한다.
 
 원칙: 담당자 DB(신청자 리스트·운영현황표)는 절대 쓰지 않는다. 쓰는 곳은 이 페이지 하나. 실명·연락처는 저장하지 않는다.
-「모집 KPI」(notion_kpi_publish.py)는 이 페이지로 대체됐다 — 옛 페이지는 갱신하지 않는다.
+(2026-09-15~21의 「모집 KPI」 페이지는 이 페이지로 대체·삭제됐다. 노션 쓰기 공용 헬퍼는 notion_publish.py)
 
 실행: python notion_registry_publish.py   (hrd_etl.yml 하루 2회 + 노션 웹훅 → kpi_poll.yml)
 """
@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 import config
 from init_db import init_all_tables
 from notion_applicants_etl import get_sync_state, set_sync_state
-from notion_kpi_publish import (
+from notion_publish import (
     _num, _request, _rt, content_hash, create_database, ensure_database_layout, ensure_properties, get_database,
     publish, remove_properties,
 )

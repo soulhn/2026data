@@ -74,7 +74,7 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
   `DB_FALLBACK`·`realtime_error`를 구분해 "실시간 조회 실패"임을 명확히 알릴 것
 
 ### ETL 자동화
-- `hrd_etl.yml` — cron은 평일 KST 09:00~18:00 매시간이지만 **GitHub 예약 실행이 지연·누락돼 실제로는 하루 2회(약 13:30·18:35 KST)만 돈다** (2026-09 실측, 2주 이상 일관). 정확한 주기가 필요하면 외부 트리거(workflow_dispatch API 호출)로 바꿀 것. 4단계: `hrd_etl.py`(한화 출결) → `kpi_etl.py`(회차 스냅샷 TB_COURSE_SNAPSHOT 변화 시만 기록 + 명부 사람 스냅샷 TB_ROSTER_MEMBER: 승인 감지·상태 변화·첫 참석일. 참석 판정 = 입실 시간 있거나 출석 계열 상태) → `notion_applicants_etl.py`(신청자 리스트 미러 TB_APPLICANT + 전이 로그) → `notion_registry_publish.py`(우리 소유 노션 「HRD 등록자 관리」 페이지: 「기수」 표(API 신청인원 vs 노션 수집 등록 인원·개강 참석률) + 「등록자」 DB(한 번이라도 HRD 등록한 사람 = 노션 HRD신청·HRD등록 이력 ∪ 명부, 기수 관계로 연결). 2026-09-21부터 SKN 포함, `config.NOTION_REGISTRY_SINCE` 이후 개강 회차만. 「모집 KPI」(`notion_kpi_publish.py`)는 더 이상 실행하지 않되 헬퍼(`publish`·`to_properties`·DB 관리)는 여기서 재사용). 뒤 셋은 `if: always()`, NOTION_TOKEN 필요. **노션 쓰기는 이 페이지 하나뿐, 담당자 DB는 항상 읽기만**. 신청자 리스트는 `config.NOTION_APPLICANT_SOURCES`(AI·SKN)를 데이터 소스 API(2025-09-03)로 읽는다 — SKN DB는 데이터 소스가 둘이라 2022 API·관계 속성 모두 거부됨
+- `hrd_etl.yml` — cron은 평일 KST 09:00~18:00 매시간이지만 **GitHub 예약 실행이 지연·누락돼 실제로는 하루 2회(약 13:30·18:35 KST)만 돈다** (2026-09 실측, 2주 이상 일관). 정확한 주기가 필요하면 외부 트리거(workflow_dispatch API 호출)로 바꿀 것. 4단계: `hrd_etl.py`(한화 출결) → `kpi_etl.py`(회차 스냅샷 TB_COURSE_SNAPSHOT 변화 시만 기록 + 명부 사람 스냅샷 TB_ROSTER_MEMBER: 승인 감지·상태 변화·첫 참석일. 참석 판정 = 입실 시간 있거나 출석 계열 상태) → `notion_applicants_etl.py`(신청자 리스트 미러 TB_APPLICANT + 전이 로그) → `notion_registry_publish.py`(우리 소유 노션 「HRD 등록자 관리」 페이지: 「기수」 표(API 신청인원 vs 노션 수집 등록 인원·개강 참석률) + 「등록자」 DB(한 번이라도 HRD 등록한 사람 = 노션 HRD신청·HRD등록 이력 ∪ 명부, 기수 관계로 연결). 2026-09-21부터 SKN 포함, `config.NOTION_REGISTRY_SINCE` 이후 개강 회차만. 노션 쓰기 공용 헬퍼(요청·DB 생성/속성 관리·값 변환·해시 upsert)는 `notion_publish.py`. 2026-09-15~21의 「모집 KPI」 페이지·`notion_kpi_publish.py`는 삭제됨). 뒤 셋은 `if: always()`, NOTION_TOKEN 필요. **노션 쓰기는 이 페이지 하나뿐, 담당자 DB는 항상 읽기만**. 신청자 리스트는 `config.NOTION_APPLICANT_SOURCES`(AI·SKN)를 데이터 소스 API(2025-09-03)로 읽는다 — SKN DB는 데이터 소스가 둘이라 2022 API·관계 속성 모두 거부됨
 - `kpi_poll.yml` — **예약 없음, 노션 웹훅 전용**: 노션 API 웹훅 → `supabase/functions/notion-relay`(서명 검증 → 최종결과가 HRD등록으로 바뀐 경우만, AI·SKN 두 DB) → workflow_dispatch. 3단계(`kpi_etl.py --kpi-only`(KPI 과정 중 종료되지 않은 회차 명부만) → notion_applicants_etl → notion_registry_publish, 약 3분), `concurrency: kpi-poll`로 겹침 방지. 설정 절차는 `recruit-kpi/docs/SETUP_REALTIME.md`. "한 번이라도 HRD 등록"은 명부 스냅샷(사라져도 행 유지) + 노션 전이 로그로 모은다
 - 디스코드 알림(`notify.py`): `DISCORD_WEBHOOK_URL`이 있으면 kpi_etl(승인 감지·명부 이탈)과 notion_applicants_etl(HRD신청·HRD등록·합격취소 전이)이 실행당 한 메시지. 없으면 무동작. **가린 이름 + 기수만** 보낸다
 - `market_etl.yml` — 매일 KST 21:00
@@ -234,15 +234,15 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 | **정원 충원율** | 승인 인원 / 정원 × 100 |
 | **개강일 참석률** | 개강일 참석 / 승인 인원 × 100 — 진짜 개강 참석률 (Streamlit 페이지) |
 
-**노션 「모집 KPI」 기수별 핵심 지표 ①②③** (`notion_kpi_publish.build_cohort_rows`, 2026-09-17) — 분모는 셋 다 **명부 인원**(HRD에 한 번이라도 등록된 사람 = `TB_ROSTER_MEMBER` 행 수):
+**노션 「HRD 등록자 관리」 기수 표** (`notion_registry_publish.build_cohort_rows`, 2026-09-21) — 운영TF 구간 7 정의를 따른다. 분모는 **API 신청인원** = HRD-Net `totTrpCnt`(한 번이라도 수강신청한 사람의 누적, 취소자 포함):
 
-| 지표 | 원천 | 계산식 | 조건 |
+| 열 | 원천 | 계산식 | 조건 |
 |---|---|---|---|
-| ① 개강 참석률 | 출결 API → `FIRST_ATTEND_DT` | 개강일 참석 ÷ 명부 인원 | 개강 다음 날부터 |
-| ② 확정자 신고율 | `_3.jsp` `totParMks` (= 확정 신고 인원) | 승인(API) ÷ 명부 인원 | 개강 + `config.NOTION_KPI_CONFIRM_DAYS`(7)일부터 |
-| ③ 참석 기록 채움률 | 출결 API 개강일 행 유무 → `DAY1_STATUS` (결석도 기록) | 개강일 기록 ÷ 명부 인원 | 개강 다음 날부터 |
+| 노션 수집 등록 인원 · 일치 여부 | 신청자 리스트(AI·SKN) HRD신청·HRD등록 이력 ∪ 신청/등록 일자 | API 신청인원과 같으면 일치 | — |
+| 개강일 출석 인원 · 개강 참석률(%) | 출결 API → `FIRST_ATTEND_DT` = 개강일 | 개강일 출석 ÷ API 신청인원 | 개강 다음 날부터. 출결을 못 읽은 회차는 비움 |
+| 확정 신고(API) · 확정자 신고율(%) | `_3.jsp` `totParMks` (= 명부 건수 = 노션 운영표 확정자신고) | 확정 신고 ÷ API 신청인원 | 개강 + `config.NOTION_KPI_CONFIRM_DAYS`(7)일부터 |
 
-상세·근거는 `docs/GLOSSARY.md` "모집 KPI 핵심 지표". 구 열 `개강일 참석률(%)`은 ①로 대체.
+운영TF 「일별 액션 측정」용 분모·분자(등록 = 노션 HRD등록·합격자등록 기준 참석률·기록 채움률)는 `python scripts/tf_section7.py`가 출력한다. 상세는 `docs/GLOSSARY.md` "HRD 등록자 관리".
 
 > **API 한계**: 명부(`_4.jsp`)에는 승인자만 내려오므로 신청만 하고 미승인인 개인은 식별 불가 — 인원 차이로만 잡힌다.
 > 시점 정보도 없어(스냅샷) 승인 반영일은 알 수 없다 → `kpi_etl.py`가 TB_COURSE_SNAPSHOT·TB_ROSTER_MEMBER에 변화 이력을 남긴다.

@@ -1,5 +1,12 @@
 # 개발 일지
 
+## 2026-09-21 — 「모집 KPI」 페이지 삭제, 옛 발행기 정리
+
+- 사용자가 옛 「모집 KPI」 페이지를 삭제 → `notion_kpi_publish.py`에서 노션 쓰기 공용 헬퍼만 `notion_publish.py`로 뽑고(요청·DB 생성/속성 추가·삭제/인라인·설명·값 변환·해시 upsert) 옛 페이지 전용 코드(스키마·행 생성·안내문 블록·main)와 테스트 삭제. `database_exists`는 참조 없어 제거
+- config: `NOTION_KPI_PARENT_PAGE_ID`·`NOTION_KPI_PASS_STATUSES` 삭제. `NOTION_KPI_COURSES`·`NOTION_KPI_CONFIRM_DAYS`·`NOTION_WRITE_INTERVAL`은 유지
+- DB: TB_NOTION_PUBLISH의 cohort·person·guide 272행, TB_SYNC_STATE의 notion_kpi_* 2행 삭제
+- `scripts/tf_section7.py`: 운영TF 「일별 액션 측정」 분모·분자 출력(등록 = 노션 HRD등록·합격자등록 기준). 옛 페이지의 채움률 열이 사라져도 TF 액션 ①(자동화, 지표 = 채움률)을 계속 잴 수 있게. 확정자 신고율은 개강 + 7일 지난 기수만 합산(9/21: 164/211 = 77.7%, AIO3 제외)
+
 ## 2026-09-21 — 운영TF 구간 7 반영: 기수 표에 확정 신고 열 + 액션아이템·측정 입력
 
 - 운영TF 구간 7(HRD 등록 → 개강참석·확정자신고) 요청으로 TF 액션아이템 DB에 2건(페이지 자동화 · 개강~확정 기간 적응 이벤트/리워드), 일별 측정 DB에 3행(9/21)을 노션 커넥터로 입력. TF 정의: 등록 = 노션 최종결과 HRD등록·합격자등록
