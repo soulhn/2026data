@@ -10,6 +10,12 @@ class TestFormat:
         msgs = format_sections([("A", []), ("B", ["x", "y"])])
         assert len(msgs) == 1 and msgs[0].startswith("**B** · 2건") and "• x" in msgs[0] and "A" not in msgs[0]
 
+    def test_masked_names_are_escaped_for_discord(self):
+        """'홍*동'의 별표가 기울임으로 먹히면 이름이 사라진다 (2026-09-21 실측) → 백슬래시 이스케이프."""
+        msg = format_sections([("A", ["홍*동 · AIO3: 합격자등록 → HRD등록", "이_름 · SKN38"])])[0]
+        assert "• 홍\\*동 · AIO3" in msg and "이\\_름" in msg
+        assert msg.startswith("**A**")                     # 제목의 굵게 표시는 유지
+
     def test_nothing_to_send(self):
         assert format_sections([("A", [])]) == []
 

@@ -20,14 +20,21 @@ def webhook_url():
     return _clean_secret(os.getenv("DISCORD_WEBHOOK_URL"))
 
 
+_MD_SPECIAL = "*_~`|>"   # 디스코드 마크다운 기호 — 가린 이름 '홍*동'의 별표가 기울임으로 먹히지 않게 이스케이프
+
+
+def escape_md(text):
+    return "".join("\\" + c if c in _MD_SPECIAL else c for c in str(text))
+
+
 def format_sections(sections):
-    """[(제목, [줄, …]), …] → 메시지 문자열 목록 (상한에 맞춰 나눔). 빈 섹션은 뺀다."""
+    """[(제목, [줄, …]), …] → 메시지 문자열 목록 (상한에 맞춰 나눔). 빈 섹션은 뺀다. 본문은 마크다운 이스케이프."""
     lines = []
     for title, items in sections:
         if not items:
             continue
-        lines.append(f"**{title}** · {len(items)}건")
-        lines += [f"• {i}" for i in items]
+        lines.append(f"**{escape_md(title)}** · {len(items)}건")
+        lines += [f"• {escape_md(i)}" for i in items]
         lines.append("")
     if not lines:
         return []
