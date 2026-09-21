@@ -72,12 +72,12 @@ class TestSources:
         assert normalize_cohort("AIO3", "") == "AIO3" and normalize_cohort("35기", "") == "35기"   # 접두어 없으면 그대로
         assert normalize_cohort(None, "SKN") is None and normalize_cohort("", "SKN") is None
 
-    def test_skn_page_uses_prefix_and_reg_date(self):
+    def test_skn_page_uses_prefix_and_apply_date(self):
         skn = dict(config.NOTION_APPLICANT_SOURCES["SKN"], key="SKN")
         page = _page("s1", "홍길동", "HRD등록", cohort="35기",
-                     extra={"HRD 등록 일자": {"type": "date", "date": {"start": "2026-06-30"}}})
+                     extra={"HRD 신청 일시": {"type": "date", "date": {"start": "2026-06-30"}}})   # 2026-09-21 두 리스트 이름 통일
         row = parse_applicant_page(page, skn)
-        assert row["COHORT"] == "SKN35" and row["SOURCE_KEY"] == "SKN" and row["HRD_REG_AT"] == "2026-06-30"
+        assert row["COHORT"] == "SKN35" and row["SOURCE_KEY"] == "SKN" and row["HRD_APPLY_AT"] == "2026-06-30"
         # SKN은 '합격자등록'(날짜)·'합격자 등록'(체크박스) 이름이 AI와 반대 — 정수 컬럼에 날짜가 들어가 PG가 거부했던 사고
         page2 = _page("s2", "김철수", "HRD등록", cohort="35기",
                       extra={"합격자등록": {"type": "date", "date": {"start": "2026-06-20"}}, "합격자 등록": {"type": "checkbox", "checkbox": True}})

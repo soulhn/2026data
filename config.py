@@ -351,7 +351,7 @@ NOTION_API_VERSION_DS = "2025-09-03"      # 데이터 소스 API. DB 하나에 �
 
 # 신청자 리스트 원본 — 과정군마다 담당자 DB가 따로 있다. 전부 **읽기만**. 폴링·웹훅·발행이 이 목록을 공유한다.
 #   cohort_prefix: 노션 '최종기수' 값이 "35기"처럼 번호만이면 앞에 붙여 "SKN35"로 만든다. AI캠퍼스는 이미 "AIO3" 꼴이라 빈 문자열
-#   prop_map: 기본 매핑(notion_applicants_etl._PROP_MAP)에 덮어쓸 속성명 → 컬럼. SKN은 'HRD 등록 일자'가 등록 시점 기록
+#   prop_map: 기본 매핑(notion_applicants_etl._PROP_MAP)에 덮어쓸 속성명 → 컬럼. 'HRD 신청 일시'는 두 리스트 공통(2026-09-21 통일)
 NOTION_APPLICANT_SOURCES = {
     "AI": {"name": "엔코아 AI 캠퍼스 신청자 리스트", "db_id": NOTION_APPLICANTS_DB_ID,
            "data_source_id": NOTION_APPLICANTS_DATA_SOURCE_ID, "status_prop_id": NOTION_APPLICANTS_STATUS_PROP_ID,
@@ -360,7 +360,7 @@ NOTION_APPLICANT_SOURCES = {
             "data_source_id": "837e6b2f06db48f3862d8ccd769cd310", "status_prop_id": "sXGM",
             "cohort_prefix": "SKN",
             # SKN은 이름이 뒤바뀌어 있다: '합격자등록'이 날짜, '합격자 등록'이 체크박스 (AI는 반대). OT 참석은 띄어쓰기
-            "prop_map": {"HRD 등록 일자": "HRD_REG_AT", "합격자등록": "PASS_REG_AT", "합격자 등록": "PASS_REG", "OT 참석": "OT_ATTEND"}},
+            "prop_map": {"합격자등록": "PASS_REG_AT", "합격자 등록": "PASS_REG", "OT 참석": "OT_ATTEND"}},
 }
 NOTION_ATTEND_PROP = "개강 참석일"        # 담당자에게 추가 요청한 날짜 속성. 생기면 ETL이 자동으로 읽는다
 NOTION_HRD_APPLY_PROP = "HRD 신청 일시"   # 위와 같음 — HRD 신청 후 취소돼도 신청 사실이 남도록

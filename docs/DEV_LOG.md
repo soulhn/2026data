@@ -1,5 +1,10 @@
 # 개발 일지
 
+## 2026-09-21 — 신청자 리스트 날짜 속성 'HRD 신청 일시'로 통일 (AI·SKN)
+
+- 사용자가 SKN 리스트의 'HRD 등록 일자'를 'HRD 신청 일시'로 이름 변경(속성 ID 동일, 값 유지). SKN prop_map에서 옛 이름 제거 — 기본 매핑(`config.NOTION_HRD_APPLY_PROP`)이 두 리스트를 같이 읽는다
+- 속성 이름 변경은 페이지 last_edited_time을 바꾸지 않아 증분 폴링이 안 잡음 → SKN 동기화 키를 지워 전량 재조회(1,254건). HRD_REG_AT 26 → HRD_APPLY_AT 26으로 이동
+
 ## 2026-09-21 — 파이프라인 자기 점검 (health_check.py)
 
 ### 왜
