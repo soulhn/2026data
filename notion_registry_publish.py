@@ -61,6 +61,8 @@ COHORT_SCHEMA = {
     "일치 여부": {"select": {"options": [{"name": "일치"}, {"name": "불일치"}, {"name": "미확인"}]}},
     "개강일 출석 인원": _num(),
     "개강 참석률(%)": _num(),
+    "확정 신고(API)": _num(),
+    "확정자 신고율(%)": _num(),
     "갱신 시각": {"date": {}},
 }
 COHORT_DESC = "기수 하나가 한 줄. API 신청인원 = HRD-Net에 한 번이라도 수강신청한 사람(누적). 노션 수집 등록 인원과 같아야 정상. 기수를 열면 등록자 명단"
@@ -82,6 +84,7 @@ GUIDE_LINES = [
     "API 신청인원 = HRD-Net 훈련일정 상세 API의 수강신청 인원(totTrpCnt). 한 번이라도 신청한 사람의 누적 수라 취소자도 포함",
     "노션 수집 등록 인원 = 신청자 리스트에서 HRD신청·HRD등록을 거쳤거나 HRD 신청/등록 일자가 있는 사람. 둘이 같으면 '일치', 다르면 노션에 안 적힌 사람이 있는 것",
     "개강 참석률(%) = 개강일 출석 인원 ÷ API 신청인원 × 100. 개강일 출석 = HRD 출결에서 개강 당일 입실 기록이 있는 사람. 개강 다음 날부터 값이 생김",
+    "확정 신고(API) = HRD-Net 훈련일정 상세 API의 확정 신고 인원(totParMks, 명부 건수와 같음). 확정자 신고율(%) = 확정 신고 ÷ API 신청인원 × 100 — 확정 신고는 개강 후 약 1주라 개강 + 7일부터 값이 생김 (운영TF 구간 7 정의, 2026-09-21)",
 ]
 
 HRD_STATUSES = ("HRD신청", "HRD등록")
@@ -167,6 +170,8 @@ def build_cohort_rows(today=None):
         notion = collected.get(key, 0) if key in has_source or collected.get(key) else None
         day1 = day1_map.get((s.TRPR_ID, int(s.TRPR_DEGR)))
         started = bool(start) and start[:10] < today
+        confirmed = _i(s.TOT_PAR_MKS)
+        confirm_due = bool(start) and (datetime.fromisoformat(start[:10]) + timedelta(days=config.NOTION_KPI_CONFIRM_DAYS)).strftime("%Y-%m-%d") <= today
         rows.append({
             "KEY": key, "기수": key, "과정": config.COURSE_SHORT_NAMES[s.TRPR_ID],
             "상태": _status(start, s.TR_END_DT, today), "개강일": start,
@@ -174,6 +179,8 @@ def build_cohort_rows(today=None):
             "일치 여부": "미확인" if applied is None or notion is None else ("일치" if applied == notion else "불일치"),
             "개강일 출석 인원": day1 if started else None,
             "개강 참석률(%)": round(day1 / applied * 100, 1) if started and day1 is not None and applied else None,
+            "확정 신고(API)": confirmed if confirm_due else None,
+            "확정자 신고율(%)": round(confirmed / applied * 100, 1) if confirm_due and confirmed is not None and applied else None,
             "갱신 시각": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         })
     return rows

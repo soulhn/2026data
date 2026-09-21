@@ -57,6 +57,9 @@ class TestCohorts:
         assert a["API 신청인원"] == 5 and a["노션 수집 등록 인원"] == 4 and a["일치 여부"] == "불일치"   # p1·p2·p3·p4
         assert a["개강일 출석 인원"] == 1 and a["개강 참석률(%)"] == 20.0                          # t1 ÷ API 5
         assert a["상태"] == "진행중" and a["과정"] == "AIO"
+        assert a["확정 신고(API)"] is None and a["확정자 신고율(%)"] is None                      # 개강 + 7일 전
+        later = {r["기수"]: r for r in build_cohort_rows(today="2026-09-22")}["AIO3"]
+        assert later["확정 신고(API)"] == 2 and later["확정자 신고율(%)"] == 40.0                  # totParMks 2 ÷ 수강신청 5
         s = rows["SKN37"]
         assert s["API 신청인원"] == 2 and s["노션 수집 등록 인원"] == 2 and s["일치 여부"] == "일치"
         assert s["개강일 출석 인원"] is None and s["개강 참석률(%)"] is None                     # 명부를 읽은 적 없으면 모름
