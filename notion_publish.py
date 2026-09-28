@@ -148,6 +148,8 @@ def to_properties(schema, row):
             props[name] = {"number": None if v is None else float(v)}
         elif t == "select":
             props[name] = {"select": {"name": str(v)} if v not in (None, "") else None}
+        elif t == "multi_select":
+            props[name] = {"multi_select": [{"name": str(x)} for x in (v or [])]}
         elif t == "date":
             props[name] = _date(v)
         elif t == "checkbox":
