@@ -49,6 +49,17 @@ class TestBuildRows:
         assert r["고용형태"] == [] and r["해당 과정"] == [] and r["신입 가능"] is False
 
 
+    def test_nan_int_columns(self, rows_from):
+        """PG NULL이 pandas에서 NaN(float)으로 오는 경우 — int(NaN)으로 터지지 않고 마감·신입 아님으로."""
+        df = pd.DataFrame([{**_df().iloc[0].to_dict(), "ACTIVE": float("nan"), "ENTRY_LEVEL": float("nan")}])
+        r = rows_from(df)[0]
+        assert r["상태"] == "마감" and r["신입 가능"] is False
+
+
+def test_int_helper():
+    assert jobs._i(None) == 0 and jobs._i(float("nan")) == 0 and jobs._i(1.0) == 1 and jobs._i("2") == 2
+
+
 def test_split_dedup_and_strip():
     assert jobs._split(" a, b ,a,,c") == ["a", "b", "c"]
     assert jobs._split(None) == [] and jobs._split(float("nan")) == []

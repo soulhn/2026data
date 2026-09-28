@@ -62,6 +62,11 @@ def _s(v):
     return None if v is None or (isinstance(v, float) and v != v) else str(v)
 
 
+def _i(v):
+    """정수 컬럼 — NULL·NaN은 0. ACTIVE·ENTRY_LEVEL이 비어 있어도 int()에서 터지지 않게."""
+    return 0 if v is None or (isinstance(v, float) and v != v) else int(v)
+
+
 def _split(v):
     """쉼표 목록 → 중복 제거한 리스트 (순서 유지)."""
     return list(dict.fromkeys(x.strip() for x in (_s(v) or "").split(",") if x.strip()))
@@ -82,13 +87,13 @@ def build_rows(today=None):
     rows = []
     for r in df.to_dict("records"):
         exp = _s(r["EXPIRATION_DT"])
-        active = int(r["ACTIVE"] or 0) == 1 and (exp is None or exp[:10] >= today)
+        active = _i(r["ACTIVE"]) == 1 and (exp is None or exp[:10] >= today)
         rows.append({
             "KEY": str(r["JOB_ID"]),
             "공고 제목": _s(r["POSITION_TITLE"]) or "(제목 없음)",
             "기업명": _s(r["COMPANY_NM"]),
             "해당 과정": [t for t in (r["TRACKS"] or "").split(",") if t],
-            "신입 가능": int(r["ENTRY_LEVEL"] or 0) == 1,
+            "신입 가능": _i(r["ENTRY_LEVEL"]) == 1,
             "상태": "진행중" if active else "마감",
             "경력": _s(r["EXPERIENCE_NM"]),
             "학력": (_s(r["EDU_LV_NM"]) or "").replace(",", "·") or None,   # '대학졸업(2,3년)이상' — 옵션명 쉼표 금지
