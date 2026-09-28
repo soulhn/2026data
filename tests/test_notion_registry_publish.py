@@ -72,6 +72,15 @@ class TestCohorts:
         assert s["개강일 출석 인원"] is None and s["개강 참석률(%)"] is None                     # 명부를 읽은 적 없으면 모름
         assert s["확정 신고(API)"] == 2 and s["승인 인원(현재)"] == 2                              # +7일(9/11)이 추적 시작 전 → 첫 스냅샷 값
 
+    def test_ops_columns_from_manual_table(self, db):
+        _seed(db)
+        ops = {"AIO3": {"개강인원": 14, "확정자신고": 14}}
+        rows = {r["기수"]: r for r in build_cohort_rows(today="2026-09-16", ops=ops)}
+        assert rows["AIO3"][reg.OPS_OPEN_COL] == 14 and rows["AIO3"][reg.OPS_CONFIRM_COL] == 14
+        assert rows["SKN37"][reg.OPS_OPEN_COL] is None and rows["SKN37"][reg.OPS_CONFIRM_COL] is None   # 운영현황표에 없는 기수는 빈칸
+        plain = build_cohort_rows(today="2026-09-16")[0]
+        assert reg.OPS_OPEN_COL not in plain and reg.OPS_CONFIRM_COL not in plain                      # 조회 못 하면 열을 건드리지 않는다
+
     def test_confirmed_frozen_at_due(self, db):
         _seed(db)
         f = reg.load_confirmed_at_due()
@@ -207,3 +216,12 @@ class TestCohortBody:
         assert publish_cohort_bodies("tok", db, pages, persons, "pdb", session=session) == (1, 1)
         archived = [c for c in calls[n:] if c[0] == "PATCH" and c[2] == {"archived": True}]
         assert len(archived) == 2 and all("/blocks/blk-" in c[1] for c in archived)     # AIO3의 옛 표·문단만 보관
+
+
+def test_load_ops_counts(monkeypatch):
+    import pandas as pd
+    df = pd.DataFrame([{"과정명": "멀티에이전트 AI 오케스트레이션 캠프 3기", "개강인원": 14.0, "확정자신고": float("nan")},
+                       {"과정명": "SK네트웍스 Family AI 캠프 37기", "개강인원": 21, "확정자신고": 22},
+                       {"과정명": "기수 번호 없는 과정", "개강인원": 1, "확정자신고": 1}])
+    monkeypatch.setattr(reg, "fetch_ops_table", lambda token, session=None: df)
+    assert reg.load_ops_counts("t") == {"AIO3": {"개강인원": 14, "확정자신고": None}, "SKN37": {"개강인원": 21, "확정자신고": 22}}

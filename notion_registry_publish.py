@@ -4,6 +4,7 @@
   상단 콜아웃  마지막 갱신 시각 + 읽는 법 세 줄
   「기수」 표   기수 · 개강일 · API 신청인원 · 노션 수집 등록 인원 · 일치 여부 · 개강일 출석 인원 · 개강 참석률(%) · 확정 신고(API) · 확정자 신고율(%) · 승인 인원(현재) · 갱신 시각
                 확정 신고(API)는 개강 + 7일 0시(KST) 이후 첫 스냅샷의 totParMks로 고정(2026-09-28). 승인 인원(현재)는 지금 명부 인원 — 둘이 다르면 신고 뒤 명부가 바뀐 것
+                + 개강인원(운영현황표, 오프라인) · 확정 신고(노션 기준) = 담당자 운영현황표(회사 노션, 읽기만)의 수기 값을 그대로 옮김 (2026-09-28). 조회 실패 시 그 실행은 두 열을 건드리지 않는다
   └ 기수 페이지  (사용자가 만든 템플릿의 「등록자」 필터 보기) — 등록일 · 개강날 출석 여부
   「등록자」 DB  한 사람 한 줄 (전체 페이지, 기수 표에서 관계로 연결)
 
@@ -31,7 +32,7 @@ from notion_publish import (
     _num, _request, _rt, content_hash, create_database, ensure_database_layout, ensure_properties, get_database,
     publish, remove_properties,
 )
-from notion_ops import NotionFetchError
+from notion_ops import NotionFetchError, cohort_number, course_group, fetch_ops_table
 from utils import _clean_secret, adapt_query, get_connection, load_data
 
 load_dotenv()
@@ -66,6 +67,8 @@ COHORT_SCHEMA = {
     "확정 신고(API)": _num(),
     "확정자 신고율(%)": _num(),
     "승인 인원(현재)": _num(),
+    "개강인원(운영현황표, 오프라인)": _num(),
+    "확정 신고(노션 기준)": _num(),
     "갱신 시각": {"date": {}},
 }
 COHORT_DESC = "기수 하나가 한 줄. API 신청인원 = HRD-Net에 한 번이라도 수강신청한 사람(누적). 노션 수집 등록 인원과 같아야 정상. 기수를 열면 등록자 명단"
@@ -95,6 +98,8 @@ GUIDE_LINES = [
     "확정 신고(API) = 개강 + 7일 0시(KST) 이후 첫 스냅샷의 HRD-Net 승인 명부 인원(totParMks). 그 뒤 명부가 바뀌어도 이 값은 고정 (2026-09-28 규칙). "
     "추적 시작(2026-09-15) 전에 +7일이 지난 기수는 첫 스냅샷 값. 확정자 신고율(%) = 확정 신고 ÷ API 신청인원 × 100",
     "승인 인원(현재) = 지금 HRD-Net 승인 명부에 있는 사람 수(totParMks 최신값). 개강 전에도 값이 있고, 확정 신고(API)와 다르면 신고 뒤 승인 취소·추가가 있었다는 뜻",
+    "개강인원(운영현황표, 오프라인) · 확정 신고(노션 기준) = 담당자가 「운영현황」 페이지의 운영현황표에 손으로 적은 값을 그대로 옮김(읽기만, 하루 2회). 개강인원은 첫날 강의실에 온 사람 수라 HRD 미등록자도 포함돼 API 개강일 출석보다 크다. 확정 신고(노션 기준) = 개강인원 − 초기이탈 + 추가인원. "
+    "운영현황표에 그 기수가 없거나 비어 있으면 빈칸",
     "갱신 시각 = 그 행을 마지막으로 다시 쓴 시각. 값이 안 바뀐 행은 건너뛰므로 오래돼 보여도 정상. 전체 실행 시각은 위 '마지막 갱신' 콜아웃",
     "등록자 DB — 이름: 가린 이름 · 기수 / 등록일: 노션 HRD 신청 일시(없으면 등록 일자, 그것도 없으면 명부에 처음 보인 날) / "
     "개강날 출석: 출석 · 미출석 · 개강 전 · 기록 없음(그 기수 출결을 못 읽음) / 노션 상태: 신청자 리스트 최종결과, '노션에 없음'은 명부에만 있는 사람 / "
@@ -166,6 +171,22 @@ def load_confirmed_at_due():
     return out
 
 
+OPS_OPEN_COL = "개강인원(운영현황표, 오프라인)"
+OPS_CONFIRM_COL = "확정 신고(노션 기준)"
+
+
+def load_ops_counts(token, session=None):
+    """담당자 운영현황표(회사 노션, 읽기만) → {기수 키: {"개강인원": n, "확정자신고": n}}.
+    기수 키는 과정명의 과정 그룹 + 'N기'(health_check의 대조와 같은 규칙). 그룹이나 기수 번호를 못 읽는 행은 버린다."""
+    ops = fetch_ops_table(token, session=session)
+    out = {}
+    for r in ops.itertuples(index=False):
+        g, n = course_group(r.과정명), cohort_number(r.과정명)
+        if g and n:
+            out[f"{g}{n}"] = {"개강인원": _i(r.개강인원), "확정자신고": _i(r.확정자신고)}
+    return out
+
+
 def attend_verdict(first_attend_dt, start, today, known=True):
     """개강날 출석 여부. 개강일에 입실했으면 출석, 개강이 지났으면 미출석, 아니면 개강 전.
     known=False(그 회차 출결을 한 번도 못 읽음)이면 개강이 지났어도 '기록 없음'."""
@@ -177,7 +198,8 @@ def attend_verdict(first_attend_dt, start, today, known=True):
     return "미출석" if known else "기록 없음"
 
 
-def build_cohort_rows(today=None):
+def build_cohort_rows(today=None, ops=None):
+    """기수 표 행. ops = load_ops_counts() 결과. None이면(조회 실패·점검 호출) 운영현황표 두 열을 행에 넣지 않아 노션 값을 건드리지 않는다."""
     today = today or datetime.now(KST).strftime("%Y-%m-%d")
     snap = load_snapshots()
     frozen = load_confirmed_at_due()
@@ -218,6 +240,10 @@ def build_cohort_rows(today=None):
             "승인 인원(현재)": approved_now,
             "갱신 시각": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         })
+        if ops is not None:
+            o = ops.get(key) or {}
+            rows[-1][OPS_OPEN_COL] = o.get("개강인원")
+            rows[-1][OPS_CONFIRM_COL] = o.get("확정자신고")
     return rows
 
 
@@ -479,7 +505,12 @@ def main():
         upd_block = ensure_page(token, conn)
         ensure_guide(token, conn)
         cohort_db, person_db = ensure_databases(token, conn)
-        c = publish(token, conn, COHORT_PUB, cohort_db, COHORT_SCHEMA, build_cohort_rows())
+        try:
+            ops = load_ops_counts(token)
+        except NotionFetchError as e:
+            logger.warning(f"[등록자 발행] 운영현황표 조회 실패 — 이번 실행은 수기 두 열을 건드리지 않음: {e}")
+            ops = None
+        c = publish(token, conn, COHORT_PUB, cohort_db, COHORT_SCHEMA, build_cohort_rows(ops=ops))
         pages = cohort_page_map(conn)
         persons = build_person_rows(pages)
         p = publish(token, conn, PERSON_PUB, person_db, {**PERSON_SCHEMA, "기수": {"relation": {}}}, persons)
