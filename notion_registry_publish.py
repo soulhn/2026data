@@ -2,7 +2,8 @@
 
 페이지 구조 (2026-09-21, 사용자 설계)
   상단 콜아웃  마지막 갱신 시각 + 읽는 법 세 줄
-  「기수」 표   기수 · 개강일 · API 신청인원 · 노션 수집 등록 인원 · 일치 여부 · 개강일 출석 인원 · 개강 참석률(%) · 갱신 시각
+  「기수」 표   기수 · 개강일 · API 신청인원 · 노션 수집 등록 인원 · 일치 여부 · 개강일 출석 인원 · 개강 참석률(%) · 확정 신고(API) · 확정자 신고율(%) · 승인 인원(현재) · 갱신 시각
+                확정 신고(API)는 개강 + 7일 0시(KST) 이후 첫 스냅샷의 totParMks로 고정(2026-09-28). 승인 인원(현재)는 지금 명부 인원 — 둘이 다르면 신고 뒤 명부가 바뀐 것
   └ 기수 페이지  (사용자가 만든 템플릿의 「등록자」 필터 보기) — 등록일 · 개강날 출석 여부
   「등록자」 DB  한 사람 한 줄 (전체 페이지, 기수 표에서 관계로 연결)
 
@@ -41,6 +42,7 @@ COHORT_DB_KEY = "notion_reg_cohort_db"
 PERSON_DB_KEY = "notion_reg_person_db"
 UPDATED_BLOCK_KEY = "notion_reg_updated_block"
 GUIDE_BLOCK_KEY = "notion_reg_guide_block"
+GUIDE_HASH_KEY = "notion_reg_guide_hash"     # 읽는 법 문구 해시 — 바뀐 실행에서만 콜아웃을 다시 쓴다
 COHORT_PUB = "reg_cohort"
 PERSON_PUB = "reg_person"
 BODY_PUB = "reg_body"            # 기수 페이지 본문(명단 표) — ROW_KEY 기수, NOTION_PAGE_ID 에 블록 ID 목록(JSON)
@@ -63,6 +65,7 @@ COHORT_SCHEMA = {
     "개강 참석률(%)": _num(),
     "확정 신고(API)": _num(),
     "확정자 신고율(%)": _num(),
+    "승인 인원(현재)": _num(),
     "갱신 시각": {"date": {}},
 }
 COHORT_DESC = "기수 하나가 한 줄. API 신청인원 = HRD-Net에 한 번이라도 수강신청한 사람(누적). 노션 수집 등록 인원과 같아야 정상. 기수를 열면 등록자 명단"
@@ -80,11 +83,22 @@ PERSON_SCHEMA = {
 }
 PERSON_DESC = "한 번이라도 HRD에 등록한 사람 한 명이 한 줄 (노션 HRD신청·HRD등록 이력 ∪ HRD 명부). 이름은 가려서 저장. '메모'는 담당자 열"
 
+GUIDE_TITLE = "읽는 법 — 열별 수집 기준"
 GUIDE_LINES = [
-    "API 신청인원 = HRD-Net 훈련일정 상세 API의 수강신청 인원(totTrpCnt). 한 번이라도 신청한 사람의 누적 수라 취소자도 포함",
-    "노션 수집 등록 인원 = 신청자 리스트에서 HRD신청·HRD등록을 거쳤거나 HRD 신청/등록 일자가 있는 사람. 둘이 같으면 '일치', 다르면 노션에 안 적힌 사람이 있는 것",
-    "개강 참석률(%) = 개강일 출석 인원 ÷ API 신청인원 × 100. 개강일 출석 = HRD 출결에서 개강 당일 입실 기록이 있는 사람. 개강 다음 날부터 값이 생김",
-    "확정 신고(API) = HRD-Net 훈련일정 상세 API의 확정 신고 인원(totParMks, 명부 건수와 같음). 확정자 신고율(%) = 확정 신고 ÷ API 신청인원 × 100 — 확정 신고는 개강 후 약 1주라 개강 + 7일부터 값이 생김 (운영TF 구간 7 정의, 2026-09-21)",
+    "보는 기준 — 2026-10-07 개강 MLO3부터가 자동 수집 이후 기수(신청·등록·취소가 HRD 일자와 함께 기록됨). 그 전 기수는 취소자에게 HRD 일자가 없어 "
+    "노션 수집 인원에 확정자만 남고 '불일치'가 정상. 두 그룹의 일치 여부·등록 인원은 서로 비교하지 않는다. API 값(신청·확정·출석)은 기수 구분 없이 같은 품질",
+    "기수 · 과정 · 상태 · 개강일 = HRD-Net 훈련일정 상세 API. 상태는 개강일·종료일을 오늘과 비교(개설예정 · 진행중 · 종료)",
+    "API 신청인원 = totTrpCnt. 한 번이라도 수강신청한 사람의 누적 수라 취소자 포함. 최신 스냅샷 값",
+    "노션 수집 등록 인원 = 신청자 리스트(AI·SKN)에서 최종결과가 HRD신청·HRD등록을 한 번이라도 거쳤거나 HRD 신청/등록 일자가 있는 사람 수. 취소자도 일자가 있으면 포함",
+    "일치 여부 = API 신청인원과 노션 수집 등록 인원이 같으면 일치. 다르면 HRD-Net에는 있는데 노션에 일자 없이 빠진 사람이 있는 것(대부분 수집 전 기수의 취소자)",
+    "개강일 출석 인원 = HRD-Net 출결 API에서 개강 당일 입실 기록이 있는 명부 인원. 개강 다음 날부터 값이 생김. 개강 참석률(%) = 개강일 출석 ÷ API 신청인원 × 100",
+    "확정 신고(API) = 개강 + 7일 0시(KST) 이후 첫 스냅샷의 HRD-Net 승인 명부 인원(totParMks). 그 뒤 명부가 바뀌어도 이 값은 고정 (2026-09-28 규칙). "
+    "추적 시작(2026-09-15) 전에 +7일이 지난 기수는 첫 스냅샷 값. 확정자 신고율(%) = 확정 신고 ÷ API 신청인원 × 100",
+    "승인 인원(현재) = 지금 HRD-Net 승인 명부에 있는 사람 수(totParMks 최신값). 개강 전에도 값이 있고, 확정 신고(API)와 다르면 신고 뒤 승인 취소·추가가 있었다는 뜻",
+    "갱신 시각 = 그 행을 마지막으로 다시 쓴 시각. 값이 안 바뀐 행은 건너뛰므로 오래돼 보여도 정상. 전체 실행 시각은 위 '마지막 갱신' 콜아웃",
+    "등록자 DB — 이름: 가린 이름 · 기수 / 등록일: 노션 HRD 신청 일시(없으면 등록 일자, 그것도 없으면 명부에 처음 보인 날) / "
+    "개강날 출석: 출석 · 미출석 · 개강 전 · 기록 없음(그 기수 출결을 못 읽음) / 노션 상태: 신청자 리스트 최종결과, '노션에 없음'은 명부에만 있는 사람 / "
+    "HRD 승인: 지금 HRD-Net 명부에 있음(중도탈락도 명부에 남아 ✓) / 원본 링크: 신청자 리스트 페이지 / 메모: 담당자 열, 파이프라인은 쓰지 않음",
 ]
 
 HRD_STATUSES = ("HRD신청", "HRD등록")
@@ -134,6 +148,24 @@ def load_snapshots():
     return snap[snap["TR_STA_DT"].astype(str).str[:10] >= config.NOTION_REGISTRY_SINCE]
 
 
+def load_confirmed_at_due():
+    """회차별 '확정 신고' 고정값 — 개강 + NOTION_KPI_CONFIRM_DAYS일 0시(KST) 이후 첫 스냅샷의 totParMks.
+    그 뒤 명부가 바뀌어도 움직이지 않는다. 추적 시작(첫 스냅샷) 전에 +7일이 지난 회차는 첫 스냅샷 값이 된다.
+    아직 그 시점 스냅샷이 없는 회차는 없음. 반환: {(TRPR_ID, DEGR): (값, 스냅샷 날짜 KST)}"""
+    snap = load_data("SELECT TRPR_ID, TRPR_DEGR, SNAP_AT, TR_STA_DT, TOT_PAR_MKS FROM TB_COURSE_SNAPSHOT ORDER BY SNAP_AT")
+    out = {}
+    for s in snap.itertuples(index=False):
+        key = (s.TRPR_ID, int(s.TRPR_DEGR))
+        start = _s(s.TR_STA_DT)
+        if key in out or not start or _i(s.TOT_PAR_MKS) is None:
+            continue
+        cutoff = datetime.fromisoformat(start[:10]) + timedelta(days=config.NOTION_KPI_CONFIRM_DAYS) - timedelta(hours=9)   # KST 0시 → UTC
+        snap_at = datetime.fromisoformat(str(s.SNAP_AT)[:19])
+        if snap_at >= cutoff:
+            out[key] = (_i(s.TOT_PAR_MKS), (snap_at + timedelta(hours=9)).strftime("%Y-%m-%d"))
+    return out
+
+
 def attend_verdict(first_attend_dt, start, today, known=True):
     """개강날 출석 여부. 개강일에 입실했으면 출석, 개강이 지났으면 미출석, 아니면 개강 전.
     known=False(그 회차 출결을 한 번도 못 읽음)이면 개강이 지났어도 '기록 없음'."""
@@ -148,6 +180,7 @@ def attend_verdict(first_attend_dt, start, today, known=True):
 def build_cohort_rows(today=None):
     today = today or datetime.now(KST).strftime("%Y-%m-%d")
     snap = load_snapshots()
+    frozen = load_confirmed_at_due()
     roster = load_data("""
         SELECT TRPR_ID, TRPR_DEGR,
                SUM(CASE WHEN FIRST_ATTEND_DT IS NOT NULL AND FIRST_ATTEND_DT = REPLACE(TR_STA_DT, '-', '') THEN 1 ELSE 0 END) AS DAY1_CNT,
@@ -170,8 +203,9 @@ def build_cohort_rows(today=None):
         notion = collected.get(key, 0) if key in has_source or collected.get(key) else None
         day1 = day1_map.get((s.TRPR_ID, int(s.TRPR_DEGR)))
         started = bool(start) and start[:10] < today
-        confirmed = _i(s.TOT_PAR_MKS)
+        approved_now = _i(s.TOT_PAR_MKS)
         confirm_due = bool(start) and (datetime.fromisoformat(start[:10]) + timedelta(days=config.NOTION_KPI_CONFIRM_DAYS)).strftime("%Y-%m-%d") <= today
+        confirmed = frozen.get((s.TRPR_ID, int(s.TRPR_DEGR)), (None, None))[0] if confirm_due else None
         rows.append({
             "KEY": key, "기수": key, "과정": config.COURSE_SHORT_NAMES[s.TRPR_ID],
             "상태": _status(start, s.TR_END_DT, today), "개강일": start,
@@ -179,8 +213,9 @@ def build_cohort_rows(today=None):
             "일치 여부": "미확인" if applied is None or notion is None else ("일치" if applied == notion else "불일치"),
             "개강일 출석 인원": day1 if started else None,
             "개강 참석률(%)": round(day1 / applied * 100, 1) if started and day1 is not None and applied else None,
-            "확정 신고(API)": confirmed if confirm_due else None,
-            "확정자 신고율(%)": round(confirmed / applied * 100, 1) if confirm_due and confirmed is not None and applied else None,
+            "확정 신고(API)": confirmed,
+            "확정자 신고율(%)": round(confirmed / applied * 100, 1) if confirmed is not None and applied else None,
+            "승인 인원(현재)": approved_now,
             "갱신 시각": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         })
     return rows
@@ -267,7 +302,7 @@ def ensure_page(token, conn, session=None):
     if not upd:
         res = _request(token, "PATCH", f"/blocks/{page}/children", {"children": [
             {"type": "callout", "callout": {"rich_text": _rt("마지막 갱신: 아직 없음"), "icon": {"type": "emoji", "emoji": "🕒"}}},
-            {"type": "callout", "callout": {"rich_text": _rt("읽는 법"), "icon": {"type": "emoji", "emoji": "📖"},
+            {"type": "callout", "callout": {"rich_text": _rt(GUIDE_TITLE), "icon": {"type": "emoji", "emoji": "📖"},
                                             "children": [{"type": "bulleted_list_item", "bulleted_list_item": {"rich_text": _rt(t)}} for t in GUIDE_LINES]}},
         ]}, session)
         ids = [b["id"] for b in res.get("results", [])]
@@ -277,6 +312,25 @@ def ensure_page(token, conn, session=None):
             set_sync_state(conn, ids[1], GUIDE_BLOCK_KEY)
         logger.info("[등록자 발행] 페이지 상단 콜아웃 생성")
     return upd
+
+
+def ensure_guide(token, conn, session=None):
+    """읽는 법 콜아웃의 글머리 항목을 GUIDE_LINES와 맞춘다 — 문구가 바뀐 실행에서만 기존 항목을 보관하고 다시 쓴다."""
+    block = get_sync_state(conn, GUIDE_BLOCK_KEY)
+    if not block:
+        return
+    h = content_hash({"title": GUIDE_TITLE, "lines": list(GUIDE_LINES)})
+    if get_sync_state(conn, GUIDE_HASH_KEY) == h:
+        return
+    res = _request(token, "GET", f"/blocks/{block}/children?page_size=100", None, session)
+    for child in res.get("results", []):
+        if child.get("type") == "bulleted_list_item" and not child.get("archived"):
+            _request(token, "PATCH", f"/blocks/{child['id']}", {"archived": True}, session)
+    _request(token, "PATCH", f"/blocks/{block}", {"callout": {"rich_text": _rt(GUIDE_TITLE)}}, session)
+    _request(token, "PATCH", f"/blocks/{block}/children",
+             {"children": [{"type": "bulleted_list_item", "bulleted_list_item": {"rich_text": _rt(t)}} for t in GUIDE_LINES]}, session)
+    set_sync_state(conn, h, GUIDE_HASH_KEY)
+    logger.info("[등록자 발행] 읽는 법 콜아웃 갱신")
 
 
 def touch_updated(token, block_id, text, session=None):
@@ -423,6 +477,7 @@ def main():
     conn = get_connection(timeout=30)
     try:
         upd_block = ensure_page(token, conn)
+        ensure_guide(token, conn)
         cohort_db, person_db = ensure_databases(token, conn)
         c = publish(token, conn, COHORT_PUB, cohort_db, COHORT_SCHEMA, build_cohort_rows())
         pages = cohort_page_map(conn)
