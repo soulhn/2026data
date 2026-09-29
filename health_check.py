@@ -4,7 +4,8 @@
 기수명 오타로 매칭 누락, 담당자 오기입. 그래서 실행마다 아래를 검사하고 걸리는 것만 보낸다. 정상이면 조용하다.
 
   1 신선도   회차 스냅샷·명부·신청자 폴링(AI/SKN)·페이지 발행이 36시간 안에 돌았나, 직전 실행의 원천 오류가 남았나
-  2 값       노션 수집 > API 신청인원, 확정 신고 > API 신청인원, 개강 지났는데 출결 기록 없음
+  2 값       노션 수집 > API 신청인원, 확정 신고 > API 신청인원, 개강 지났는데 출결 기록 없음,
+            완전 기록 관리 기수(config.NOTION_FULL_RECORD_SINCE 이후 개강)에서 API 신청 > 노션 수집 (HRD-Net엔 신청했는데 노션에 HRD신청으로 없는 사람)
   3 매칭     스냅샷에 없는 기수명(오타), 같은 기수 동명이인, 최근 24시간에 새로 생긴 '노션에 없음'
   4 담당자   운영현황표 확정자신고 vs API 확정 신고 (확정 신고 끝난 기수)
 
@@ -94,6 +95,11 @@ def check_values(cohort_rows, today):
         if applied is not None and r["확정 신고(API)"] is not None and r["확정 신고(API)"] > applied:
             out.append(f"{k}: 확정 신고 {r['확정 신고(API)']} > API 신청인원 {applied}")
         start = str(r["개강일"] or "")[:10]
+        notion = r["노션 수집 등록 인원"]
+        if applied is not None and notion is not None and applied > notion and start >= config.NOTION_FULL_RECORD_SINCE:
+            # 수집 전 기수는 취소자에게 HRD 일자가 없어 항상 걸리므로 완전 기록 관리 기수만
+            out.append(f"{k}: HRD-Net 신청 {applied} vs 노션 {notion} — {applied - notion}명이 노션에 HRD신청으로 없음. "
+                       f"최종결과를 HRD신청으로 바꾸고 HRD 신청 일시 기록 요청 (취소자도 일시는 남겨야 함)")
         day_after = start and (datetime.fromisoformat(start) + timedelta(days=1)).strftime("%Y-%m-%d") <= today
         if day_after and (applied or 0) > 0 and r["개강일 출석 인원"] is None and str(r["개강일"]) >= config.NOTION_REGISTRY_SINCE:
             out.append(f"{k}: 개강({start}) 지났는데 출결 기록 없음 — 출결 API 실패 또는 명부 없음")

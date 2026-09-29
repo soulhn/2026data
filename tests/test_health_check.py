@@ -72,6 +72,16 @@ class TestValues:
         out = check_values(rows, "2026-09-21")
         assert any("노션 수집 등록 9 > API 신청인원 5" in f for f in out) and any("출결 기록 없음" in f for f in out)
 
+    def test_api_more_than_notion_only_for_full_record_cohorts(self, db):
+        _seed(db)
+        rows = reg.build_cohort_rows(today="2026-10-08")
+        assert not any("HRD-Net 신청" in f for f in check_values(rows, "2026-10-08"))        # AIO3(9/15 개강): API 5 > 노션 3이지만 수집 전 기수라 조용
+        rows[0]["개강일"] = "2026-10-07"                                                        # 완전 기록 관리 기수로 바꾸면
+        out = [f for f in check_values(rows, "2026-10-08") if "HRD-Net 신청" in f]
+        assert len(out) == 1 and "HRD-Net 신청 5 vs 노션 3 — 2명이 노션에 HRD신청으로 없음" in out[0]
+        rows[0]["노션 수집 등록 인원"] = 5
+        assert not any("HRD-Net 신청" in f for f in check_values(rows, "2026-10-08"))        # 같아지면 조용
+
     def test_no_attendance_warning_before_day_after_start(self, db):
         _seed(db)
         rows = reg.build_cohort_rows(today="2026-09-15")

@@ -371,5 +371,6 @@ NOTION_REGISTRY_PAGE_ID = "3e1d943bcac2812fb3bcc9d4f2491abd"   # 「HRD 등록�
 NOTION_REGISTRY_SINCE = "2026-01-01"      # 이 날 이후 개강 회차만 등록자 페이지에 (SKN 1~25기는 노션 신청자 리스트 이전이라 대조 불가)
 NOTION_KPI_COURSES = ("AIO", "MLE", "MLO", "SKN")   # 신청자 리스트가 있는 과정 (한화는 모집 종료, 2026-09-21 SKN 추가)
 NOTION_KPI_CONFIRM_DAYS = 7                      # 개강 후 이 일수가 지나야 '확정자 신고율'을 계산 (확정 신고는 개강 1주 뒤)
+NOTION_FULL_RECORD_SINCE = "2026-10-07"          # 이 날 이후 개강 기수는 완전 기록 관리 대상(취소자도 HRD 신청 일시 기록). API 신청 > 노션 수집이면 health_check가 알림 (2026-09-29)
 NOTION_JOBS_PAGE_ID = "3e2d943bcac2807cbdb0c5c5db17eb0f"       # 「채용 동향」 공고 DB 페이지 (2026-09-21). 우리 소유 — notion_jobs_publish.py가 쓴다
 NOTION_WRITE_INTERVAL = 0.35                     # 초. 노션 API 초당 3건 제한
