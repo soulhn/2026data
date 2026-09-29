@@ -62,10 +62,10 @@ class TestCohorts:
         assert a["API 신청인원"] == 5 and a["노션 수집 등록 인원"] == 4 and a["일치 여부"] == "불일치"   # p1·p2·p3·p4
         assert a["개강일 출석 인원"] == 1 and a["개강 참석률(%)"] == 20.0                          # t1 ÷ API 5
         assert a["상태"] == "진행중" and a["과정"] == "AIO"
-        assert a["확정 신고(API)"] is None and a["확정자 신고율(%)"] is None                      # 개강 + 7일 전
+        assert a["확정 신고(API)"] is None and a["확정자 신고율(API, %)"] is None                      # 개강 + 7일 전
         assert a["승인 인원(현재)"] == 4                                                           # 최신 스냅샷은 항상 보임
         later = {r["기수"]: r for r in build_cohort_rows(today="2026-09-22")}["AIO3"]
-        assert later["확정 신고(API)"] == 3 and later["확정자 신고율(%)"] == 60.0                  # +7일 이후 첫 스냅샷 3 ÷ 수강신청 5 (최신 4가 아님)
+        assert later["확정 신고(API)"] == 3 and later["확정자 신고율(API, %)"] == 60.0                  # +7일 이후 첫 스냅샷 3 ÷ 수강신청 5 (최신 4가 아님)
         assert later["승인 인원(현재)"] == 4
         s = rows["SKN37"]
         assert s["API 신청인원"] == 2 and s["노션 수집 등록 인원"] == 2 and s["일치 여부"] == "일치"
@@ -78,6 +78,8 @@ class TestCohorts:
         rows = {r["기수"]: r for r in build_cohort_rows(today="2026-09-16", ops=ops)}
         assert rows["AIO3"][reg.OPS_OPEN_COL] == 14 and rows["AIO3"][reg.OPS_CONFIRM_COL] == 14
         assert rows["AIO3"][reg.OPS_EARLY_COL] == 1 and rows["AIO3"][reg.OPS_ADDED_COL] == 1
+        assert rows["AIO3"][reg.OPS_RATIO_COL] == 100.0 and rows["AIO3"][reg.OPS_EARLY_RATE_COL] == 7.1 and rows["AIO3"][reg.OPS_ADDED_RATE_COL] == 7.1
+        assert rows["SKN37"][reg.OPS_RATIO_COL] is None                                             # 개강인원 없으면 비율도 빈칸
         assert rows["SKN37"][reg.OPS_OPEN_COL] is None and rows["SKN37"][reg.OPS_CONFIRM_COL] is None   # 운영현황표에 없는 기수는 빈칸
         plain = build_cohort_rows(today="2026-09-16")[0]
         assert reg.OPS_OPEN_COL not in plain and reg.OPS_CONFIRM_COL not in plain and reg.OPS_EARLY_COL not in plain                      # 조회 못 하면 열을 건드리지 않는다
