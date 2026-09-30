@@ -108,7 +108,7 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 | **캐시 집계** | 2종만: `saramin_track_monthly` · `saramin_query_hits`. **진행중 분포·목록은 페이지가 PG 직접 조회**(`UNNEST`·`STRING_AGG` 등 PG 전용 SQL — 트랙·신입 필터 조합이 많아 캐시 부적합). 구 캐시 키 11종은 집계 시 자동 삭제 | `saramin_etl.py`, `pages/채용_동향.py` |
 | **실행 모드** | 기본(수집→삭제→태깅→집계) / `--cleanup-only`(삭제→태깅→집계) / `--tag-only`(태깅→집계, 규칙 조정 후 소급용). 뒤 둘은 API 쿼터 소모 없음 | `saramin_etl.py` |
 | **백필** | `SARAMIN_END_DATE=YYYY-MM-DD`(+`SARAMIN_PUBLISHED_DAYS`)로 `[종료일-N, 종료일]` 창을 수집. 워크플로 수동 실행 입력 `end_date`·`published_days`. 호출 수는 평소와 같은 42×(N+1) — **같은 날 예약 실행과 겹치면 두 배** 소모 | `saramin_etl.py`, `saramin_etl.yml` |
-| **한도 공유** | 사람인 키는 **키별 일일 500회**이고 현재 키를 팀장이 별도 수집(매일 00:10 KST)에 함께 쓴다 (2026-09-24~10/5 우리 수집 0건의 원인. 키 추가 발급 불가. 팀장 수집은 10/5쯤 종료, 백필 절차는 docs/DEV_LOG.md 2026-09-30). 한도 초과는 HTTP 200 + `{"code": 4}` 본문 → `_error_code()`가 감지해 남은 호출을 멈추고 **종료 코드 1로 워크플로를 실패**시킨다. 코드 3은 파라미터 오류(옛 문서가 3·4를 바꿔 적었었음) | `saramin_etl.QUOTA_EXCEEDED` |
+| **한도 공유** | 사람인 키는 **키별 일일 500회**이고 현재 키를 팀장이 별도 수집(매일 00:10 KST)에 함께 쓴다 (2026-09-24~30 우리 수집 0건의 원인. 키 추가 발급 불가. 10/1~10/5는 팀장 300·우리 168, 팀장 수집은 10/5쯤 종료. 백필 절차는 docs/DEV_LOG.md 2026-09-30). 한도 초과는 HTTP 200 + `{"code": 4}` 본문 → `_error_code()`가 감지해 남은 호출을 멈추고 **종료 코드 1로 워크플로를 실패**시킨다. 코드 3은 파라미터 오류(옛 문서가 3·4를 바꿔 적었었음) | `saramin_etl.QUOTA_EXCEEDED` |
 | **저장 테이블** | `TB_JOB_POSTING` (33 컬럼, PK: `JOB_ID`), `TB_JOB_POSTING_KEYWORD`, `TB_JOB_POSTING_REGION`, `TB_JOB_POSTING_TRACK` | `init_db.py` |
 | **노션 발행** | `notion_jobs_publish.py` — 트랙 태깅된 공고 전량(진행중+마감)을 우리 소유 노션 「채용 동향」 페이지(`config.NOTION_JOBS_PAGE_ID`)의 「채용공고」 DB에 upsert. 행 키 `JOB_ID`, 기록은 `TB_NOTION_PUBLISH`(DB_KEY `jobs`), DB ID는 `TB_SYNC_STATE` `notion_jobs_db`. 수집 원본 전체(트랙 무관 6천 건+)는 올리지 않음. 사람인 쉼표 목록(고용형태·업종)은 multi_select, 노션 select 옵션명에 쉼표 불가라 학력의 쉼표는 `·`로 치환. **예약 실행 없음** — 2026-09-21 수동 1회 발행, 워크플로에 넣으려면 `saramin_etl.yml`에 단계 추가 | `notion_jobs_publish.py`, `notion_publish.py` |
 
@@ -116,6 +116,7 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 
 - **홈 수치는 스냅샷 고정**: DB를 갱신해도 홈 화면에는 반영되지 않음 → `build_home_snapshot.py` 재실행 후 `data/home_snapshot.json` 커밋 필요
 - **adapt_query() 필수**: 모든 SQL 쿼리는 `adapt_query()` 통과 → PG 호환. 직접 `pd.read_sql()` 대신 `load_data()` 사용 권장
+- **Supabase RLS**: `public` 테이블은 anon 키 + REST API로 자동 노출된다. 이 프로젝트는 REST를 쓰지 않으므로(`DATABASE_URL`의 `postgres` 역할은 RLS 우회) **정책 없이 RLS만 켠다**. `init_db.enable_rls()`가 초기화 때마다 꺼진 테이블을 찾아 켜므로 새 테이블에 손댈 것 없음. 정책(policy)을 만들면 오히려 열리는 것 — 만들지 말 것. Data API 노출 스키마에서 `public`을 빼두면 2중 방어 (docs/DEV_LOG.md 2026-10-01)
 - **날짜 형식**: `TB_MARKET_TREND.TR_STA_DT` = `YYYY-MM-DD`. WHERE 절에 `strftime('%Y-%m-%d')` 사용 (`YYYYMMDD` 사용 시 데이터 누락)
 - **PG COUNT**: `COUNT(*) AS cnt` 별칭 필수 (`RealDictCursor`에서 `row[0]` 불가)
 - **exit() 금지**: ETL 파일 최상위 레벨에서 `exit()` 사용 시 Streamlit import 시 앱 종료됨

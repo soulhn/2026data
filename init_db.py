@@ -24,6 +24,26 @@ def _exec_ignore(conn, cursor, sql):
         return 0
 
 
+def enable_rls(conn, cursor):
+    """public 스키마의 모든 테이블에 Row-Level Security 활성화 (PG 전용, SQLite는 무동작).
+
+    Supabase는 public 테이블을 anon 키 + REST API로 자동 노출한다. 이 프로젝트는 REST를
+    쓰지 않고 DATABASE_URL(postgres 역할, RLS 우회)로만 접속하므로 정책 없이 켜기만 하면
+    외부 접근이 막히고 앱·ETL은 영향이 없다. 새 테이블을 만들 때 빠뜨리지 않도록
+    pg_tables에서 꺼진 테이블을 찾아 켠다 (2026-09-30 Supabase 보안 경고, docs/DEV_LOG.md).
+    """
+    if not is_pg():
+        return []
+    conn.commit()
+    cursor.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND NOT rowsecurity")
+    tables = [row[0] for row in cursor.fetchall()]
+    for t in tables:
+        _exec_ignore(conn, cursor, f'ALTER TABLE public."{t}" ENABLE ROW LEVEL SECURITY')
+    if tables:
+        print(f"[init_db] RLS 활성화: {', '.join(tables)}")
+    return tables
+
+
 def init_main_tables():
     """메인 DB 테이블 — 내부 과정·명부·출결, 채용공고, 집계 캐시."""
     conn = get_connection(timeout=30)
@@ -349,6 +369,7 @@ def init_main_tables():
         if affected and affected > 0:
             print(f"[init_db] 정리: {affected}건 삭제")
 
+    enable_rls(conn, cursor)
     conn.commit()
     conn.close()
 
@@ -428,6 +449,7 @@ def init_market_tables():
     for sql in backfill_queries:
         _exec_ignore(conn, cursor, sql)
 
+    enable_rls(conn, cursor)
     conn.commit()
     conn.close()
 

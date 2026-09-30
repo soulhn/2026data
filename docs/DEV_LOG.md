@@ -1,11 +1,29 @@
 # 개발 일지
 
+## 2026-10-01 — Supabase "Table publicly accessible" 경고 → public 테이블 RLS 활성화
+
+### 증상
+- 9/30 Supabase 보안 메일: 메인 프로젝트(`tyoxlhernofdrgqccvww`) `rls_disabled_in_public`(Critical). 조회해 보니 메인 15개 중 8개(`tb_roster_member`·`_log`, `tb_applicant`·`_status_log`, `tb_course_snapshot`, `tb_job_posting_track`, `tb_notion_publish`, `tb_sync_state`)와 시장 DB `tb_market_trend`가 RLS 꺼짐. 나머지 7개는 예전에 켜둔 상태 — 9월 KPI·노션 작업으로 새로 만든 테이블이 빠진 것
+- Supabase는 `public` 테이블을 anon 키 + REST API(`/rest/v1/`)로 자동 노출하고 anon 키는 공개 전제라, RLS 꺼진 테이블은 키만 있으면 읽기·쓰기·삭제 가능. 명부·신청자 개인정보 테이블이 포함돼 있었다
+
+### 영향 범위 확인
+- 코드 어디에도 anon 키·`supabase-js`·REST 호출 없음. 앱·ETL·노션 발행 전부 `DATABASE_URL`(`postgres` 역할, `rolbypassrls=true`)로 직접 접속 → RLS를 켜도 영향 없음
+- 노션 웹훅 경로(`supabase/functions/notion-relay`)는 Edge Function이고 DB를 읽지 않음 → Data API 노출 설정과 무관
+- 「HRD 등록자 관리」 페이지 갱신도 psycopg2 → 노션 API 경로라 무관
+
+### 결정 사항
+- **정책 없이 RLS만 켠다.** REST로 읽을 클라이언트가 없으니 정책 0개가 정답 — 정책을 만들면 오히려 여는 것
+- `init_db.enable_rls()`: PG일 때 `pg_tables`에서 `rowsecurity=false`인 public 테이블을 찾아 `ENABLE ROW LEVEL SECURITY`. `init_main_tables`·`init_market_tables` 끝에서 호출 → 모든 ETL이 `init_all_tables`를 부르므로 다음 실행에서 자동 적용되고, 새 테이블도 사람이 기억할 필요 없음. SQLite(테스트)는 무동작
+- Supabase 대시보드 Project Settings → Data API → Exposed schemas에서 `public` 제거(두 프로젝트) — REST 자체를 닫는 근본 조치, RLS는 누가 되돌렸을 때의 2중 방어. 대시보드 작업이라 담당자가 직접 수행
+- anon 키 재발급·DB 비밀번호 변경은 불필요(키를 외부 공유한 적 없음, 이 경고는 REST 경로 문제)
+- 하지 않은 것: `health_check`에 RLS 점검 추가 — `enable_rls`가 매 실행 켜므로 감시 대신 자동 복구로 충분
+
 ## 2026-09-30 — 사람인 한도 초과 6일간 무감지 → 오류 본문 감지·실패 종료·백필 창 추가
 
 ### 증상
 - 9/24~9/30 `saramin_etl` 예약 실행이 매일 `API 호출 168회, 총 저장 0건`(9/27만 앞 10개 쿼리 126건). 요청 실패·JSON 실패 0건이라 워크플로는 전부 success — 아무도 몰랐다
 - 원인은 코드가 아니라 **키 공유**: 팀장이 같은 키로 매일 00:10 KST에 별도 수집(AI캠퍼스 커리큘럼 공고, 추석 전부터)을 돌려 우리 07시 실행 전에 500회가 소진됨. 우리 몫은 하루 168회로 어떤 24시간 창에서도 500회를 못 넘긴다(로그 30일치·포크 0·다른 저장소 호출 없음·로컬 키 없음으로 확인)
-- 합의(10/1): 키 추가 발급은 불가. 팀장 수집은 **10/5쯤 종료** 예정이라 그때까지 우리 예약 실행은 매일 0건(실패 표시)이고, 10/6 팀장에게 알린 뒤 백필을 시작한다
+- 합의(10/1): 키 추가 발급은 불가. 팀장이 10/5까지 **하루 300회**로 줄여 우리 예약 실행 168회는 10/1부터 정상 수집 재개(여유 약 30회라 그 사이 백필은 불가). 팀장 수집은 10/5쯤 종료, 10/6 팀장에게 알린 뒤 백필
 
 ### 왜 못 잡았나
 - 사람인 오류는 HTTP 200 + `{"code": 4, "message": ...}` 본문. `parse_jobs_json`이 `jobs` 없는 dict를 빈 목록으로 취급해 한도 초과가 '0건'으로만 남음
@@ -16,9 +34,8 @@
 - `_error_code(data)`: `jobs` 없고 `code` 있으면 (code, message). code 4면 `QUOTA_EXCEEDED=True`, 그 쿼리와 남은 쿼리 호출 중단(어차피 전부 빈 응답). 다른 코드는 그 날만 건너뜀
 - `main()`이 `False`를 돌려주면 `sys.exit(1)`(`__main__` 안, 최상위 exit 아님) → GitHub Actions가 빨간 X + 기본 실패 메일. 삭제·태깅·집계는 그래도 끝까지 돈다
 - 백필: `SARAMIN_END_DATE`(+기존 `SARAMIN_PUBLISHED_DAYS`)로 `[종료일-N, 종료일]` 창. 워크플로 `workflow_dispatch` 입력 `end_date`·`published_days`. 예정 호출이 `SARAMIN_API_CALL_LIMIT`를 넘으면 실행 자체를 거부
-- 빠진 구간(9/24~10/2, 9일) 복구 계획 — 예약 실행이 매일 `오늘-3일~오늘`을 덮으므로 10/6 예약 실행이 10/3~10/6을 회수하고, 앞은 수동 2회로 나눈다 (하루 합계 500 이하, 프로세스당 `SARAMIN_API_CALL_LIMIT` 480 이하 둘 다 지켜야 함):
-  - 10/6 수동: `end_date=2026-10-02, published_days=3` → 9/29~10/2, 168회 (예약 168 포함 336)
-  - 10/7 수동: `end_date=2026-09-28, published_days=4` → 9/24~9/28, 210회 (예약 168 포함 378)
+- 빠진 구간(9/24~9/30, 7일) 복구 계획 — 예약 실행이 매일 `오늘-3일~오늘`을 덮으므로 10/1~10/3 실행이 9/28~9/30을 회수한다. 남는 9/24~9/27은 수동 1회 (하루 합계 500 이하, 프로세스당 `SARAMIN_API_CALL_LIMIT` 480 이하 둘 다 지켜야 함):
+  - 10/6 수동: `end_date=2026-09-27, published_days=3` → 9/24~9/27, 168회 (예약 168 포함 336)
   - 사람인은 진행 중 공고만 검색되므로 이미 마감된 단기 공고는 회수 불가 — 늦을수록 손실 커짐
 - 키 별도 발급은 불가하다고 확인(10/1). 키를 나눠 쓰는 한 00:10 실행이 항상 선점하므로, 앞으로 팀장이 다시 쓰게 되면 사용량을 먼저 맞춰야 한다
 
