@@ -37,6 +37,16 @@ load_dotenv()
 BASE_URL = "https://oapi.saramin.co.kr/job-search"
 API_KEY = os.getenv("SARAMIN_API_KEY")
 
+# 백필용: 수집 창의 마지막 날(YYYY-MM-DD). 비우면 오늘. SARAMIN_PUBLISHED_DAYS 와 짝을 이뤄
+# [종료일-N일, 종료일] 창을 1일 단위로 나눠 호출한다 (workflow_dispatch 입력 `end_date`)
+END_DATE = os.getenv("SARAMIN_END_DATE", "").strip() or None
+
+# 사람인 오류 본문 코드 (HTTP 200 + {"code": N, "message": ...} 로 온다 — docs/api/saramin.md)
+SARAMIN_ERR_QUOTA = "4"
+# 이번 실행에서 일일 한도 초과(code 4)를 만났는지. 이후 호출은 모두 빈 응답이라 수집을 멈추고,
+# 종료 코드 1로 워크플로를 실패시켜 조용한 결손(2026-09-24~30 사례)을 막는다
+QUOTA_EXCEEDED = False
+
 if not API_KEY:
     logger.warning("SARAMIN_API_KEY를 찾을 수 없습니다. ETL 실행 시 오류가 발생합니다.")
 
@@ -98,6 +108,19 @@ def _get_nested(d, *keys, default=''):
             return default
         d = d.get(k, default)
     return d if d is not None else default
+
+
+def _error_code(data):
+    """사람인 오류 본문이면 (code, message) 문자열 쌍, 정상 응답이면 None.
+
+    오류는 HTTP 200 으로 오고 `jobs` 대신 `code`/`message` 만 있다. 예전 파서는 이를 빈 목록으로
+    취급해 한도 초과가 6일간 '0건 저장'으로만 남았다.
+    """
+    if not isinstance(data, dict) or 'jobs' in data:
+        return None
+    if 'code' not in data:
+        return None
+    return str(data.get('code')), str(data.get('message', ''))
 
 
 def parse_jobs_json(data):
@@ -188,9 +211,16 @@ def _published_range(days):
     return str(int(start.timestamp())), str(int(end.timestamp()))
 
 
-def _daily_ranges(days):
-    """SARAMIN_PUBLISHED_DAYS를 1일 단위로 분할하여 (min, max) 쌍 리스트 반환."""
-    now = dt.datetime.now()
+def _parse_end_date(value):
+    """SARAMIN_END_DATE(YYYY-MM-DD) → datetime. 없으면 지금."""
+    if not value:
+        return dt.datetime.now()
+    return dt.datetime.strptime(value, "%Y-%m-%d")
+
+
+def _daily_ranges(days, end=None):
+    """[end-days일, end] 를 1일 단위로 분할하여 (min, max) 쌍 리스트 반환. end 생략 시 오늘."""
+    now = end or dt.datetime.now()
     ranges = []
     for d in range(days, 0, -1):
         day_start = (now - dt.timedelta(days=d)).replace(hour=0, minute=0, second=0)
@@ -230,9 +260,12 @@ def collect_query(session, query, api_call_count):
     all_extended = []
     truncated_days = 0
 
-    for pub_min, pub_max in _daily_ranges(SARAMIN_PUBLISHED_DAYS):
+    global QUOTA_EXCEEDED
+    for pub_min, pub_max in _daily_ranges(SARAMIN_PUBLISHED_DAYS, _parse_end_date(END_DATE)):
         if api_call_count >= SARAMIN_API_CALL_LIMIT:
             logger.warning(f"API 호출 한도 도달 ({api_call_count}회). 수집 조기 종료.")
+            break
+        if QUOTA_EXCEEDED:
             break
 
         params = build_query_params(query, pub_min, pub_max)
@@ -250,6 +283,16 @@ def collect_query(session, query, api_call_count):
         except Exception:
             preview = resp.content[:500].decode('utf-8', errors='replace')
             logger.warning(f"[{label}] JSON 파싱 실패. 응답 미리보기: {preview}")
+            continue
+
+        err = _error_code(data)
+        if err is not None:
+            code, msg = err
+            if code == SARAMIN_ERR_QUOTA:
+                QUOTA_EXCEEDED = True
+                logger.error(f"[{label}] 사람인 일일 한도 초과 (code {code}: {msg}). 남은 호출 중단.")
+                break
+            logger.error(f"[{label}] 사람인 오류 응답 (code {code}: {msg})")
             continue
 
         rows, total = parse_jobs_json(data)
@@ -711,11 +754,17 @@ def main():
 
     daily_calls = SARAMIN_PUBLISHED_DAYS + 1
     planned = len(SARAMIN_QUERIES) * daily_calls
+    end_dt = _parse_end_date(END_DATE)
+    window = f"{(end_dt - dt.timedelta(days=SARAMIN_PUBLISHED_DAYS)):%Y-%m-%d}~{end_dt:%Y-%m-%d}"
     logger.info(
-        f"[설정] published={SARAMIN_PUBLISHED_DAYS}일 (1일 단위 분할, "
-        f"쿼리당 {daily_calls}회), 수집 쿼리 {len(SARAMIN_QUERIES)}개 → 예정 호출 {planned}회 "
+        f"[설정] published={SARAMIN_PUBLISHED_DAYS}일 (창 {window}{' 백필' if END_DATE else ''}, "
+        f"1일 단위 분할, 쿼리당 {daily_calls}회), 수집 쿼리 {len(SARAMIN_QUERIES)}개 → 예정 호출 {planned}회 "
         f"(한도 {SARAMIN_API_CALL_LIMIT}), 최대 {SARAMIN_PAGE_SIZE}건/호출"
     )
+    if planned > SARAMIN_API_CALL_LIMIT:
+        logger.error(f"예정 호출 {planned}회가 한도 {SARAMIN_API_CALL_LIMIT}를 넘어 실행하지 않습니다. "
+                     f"SARAMIN_PUBLISHED_DAYS 를 줄이세요.")
+        return False
     session = get_retry_session()
     api_call_count = 0
     total_saved = 0
@@ -723,6 +772,9 @@ def main():
     for query in SARAMIN_QUERIES:
         if api_call_count >= SARAMIN_API_CALL_LIMIT:
             logger.warning("API 호출 한도 도달. 남은 수집 쿼리 건너뜀.")
+            break
+        if QUOTA_EXCEEDED:
+            logger.warning("사람인 일일 한도 초과. 남은 수집 쿼리 건너뜀.")
             break
 
         api_call_count, rows = collect_query(session, query, api_call_count)
@@ -739,6 +791,11 @@ def main():
     cleanup_old_postings()
     tag_tracks()
     compute_and_cache_aggregations()
+    if QUOTA_EXCEEDED:
+        logger.error("[Summary] 사람인 일일 한도 초과로 수집이 불완전합니다. "
+                     "다른 사용자의 호출량을 확인하고, 빠진 날은 SARAMIN_END_DATE 백필로 메우세요.")
+        return False
+    return True
 
 
 def cleanup_only():
@@ -763,4 +820,6 @@ if __name__ == "__main__":
     elif "--tag-only" in sys.argv:
         tag_only()
     else:
-        main()
+        ok = main()
+        if ok is False:
+            sys.exit(1)  # 워크플로를 실패로 표시해 결손을 알린다 (최상위 exit() 아님)

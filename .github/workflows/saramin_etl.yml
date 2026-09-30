@@ -5,6 +5,15 @@ on:
     # UTC 19:43 = KST 04:43 (매일 새벽) — 정각·정시를 피해 러너 대기열 지연 최소화
     - cron: '43 19 * * *'
   workflow_dispatch:  # 수동 실행 버튼
+    inputs:
+      end_date:
+        description: '백필 종료일 YYYY-MM-DD (비우면 오늘). published_days 와 함께 [종료일-N, 종료일] 창을 수집'
+        required: false
+        default: ''
+      published_days:
+        description: '창 길이(일). 호출 = 42 × (N+1) → 3이면 168회. 다른 사용자와 500회를 나눠 쓰므로 함부로 늘리지 말 것'
+        required: false
+        default: '3'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -30,4 +39,6 @@ jobs:
           SARAMIN_API_KEY: ${{ secrets.SARAMIN_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_URL_MARKET: ${{ secrets.DATABASE_URL_MARKET }}
+          SARAMIN_END_DATE: ${{ inputs.end_date }}
+          SARAMIN_PUBLISHED_DAYS: ${{ inputs.published_days || '3' }}
         run: python -u saramin_etl.py
