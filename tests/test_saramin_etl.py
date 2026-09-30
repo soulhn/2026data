@@ -161,6 +161,77 @@ class TestHelpers:
         for i in range(len(ranges) - 1):
             assert int(ranges[i][1]) < int(ranges[i + 1][0])
 
+    def test_daily_ranges_with_end_date(self):
+        """백필: 종료일을 주면 [종료일-N, 종료일] 창을 1일 단위로 나눈다 (오늘 기준 아님)."""
+        import datetime as dt
+        end = saramin_etl._parse_end_date("2026-09-27")
+        ranges = saramin_etl._daily_ranges(3, end)
+        assert len(ranges) == 4
+        first = dt.datetime.fromtimestamp(int(ranges[0][0]))
+        last = dt.datetime.fromtimestamp(int(ranges[-1][1]))
+        assert first.strftime("%Y-%m-%d %H:%M:%S") == "2026-09-24 00:00:00"
+        assert last.strftime("%Y-%m-%d %H:%M:%S") == "2026-09-27 23:59:59"
+
+    def test_parse_end_date_empty_is_now(self):
+        import datetime as dt
+        assert (dt.datetime.now() - saramin_etl._parse_end_date(None)).total_seconds() < 5
+        assert (dt.datetime.now() - saramin_etl._parse_end_date("")).total_seconds() < 5
+
+
+class TestErrorBody:
+    """사람인 오류는 HTTP 200 + {"code", "message"} 본문 — 빈 목록으로 삼키면 안 된다."""
+
+    def test_quota_body_detected(self):
+        assert saramin_etl._error_code({"code": 4, "message": "일일 최대 요청 가능 횟수 초과"}) == \
+            ("4", "일일 최대 요청 가능 횟수 초과")
+
+    def test_normal_body_is_not_error(self):
+        assert saramin_etl._error_code(SAMPLE_JSON) is None
+        assert saramin_etl._error_code({"jobs": {"count": 0, "job": []}}) is None
+
+    def test_non_dict_is_not_error(self):
+        assert saramin_etl._error_code([]) is None
+        assert saramin_etl._error_code({}) is None
+
+    def test_collect_query_stops_on_quota(self, monkeypatch):
+        """code 4를 받으면 QUOTA_EXCEEDED 를 세우고 같은 쿼리의 남은 호출을 멈춘다."""
+        class _Resp:
+            def raise_for_status(self):
+                pass
+            def json(self):
+                return {"code": 4, "message": "일일 최대 요청 가능 횟수 초과"}
+        class _Session:
+            calls = 0
+            def get(self, *a, **k):
+                self.calls += 1
+                return _Resp()
+        monkeypatch.setattr(saramin_etl, "QUOTA_EXCEEDED", False)
+        monkeypatch.setattr(saramin_etl, "SARAMIN_PUBLISHED_DAYS", 3)
+        session = _Session()
+        count, rows = saramin_etl.collect_query(session, {"label": "t", "keywords": "LLM"}, 0)
+        assert saramin_etl.QUOTA_EXCEEDED is True
+        assert session.calls == 1          # 4일 창이지만 첫 호출에서 멈춤
+        assert count == 1 and rows == []
+
+    def test_collect_query_other_error_continues(self, monkeypatch):
+        """code 4가 아닌 오류(파라미터 등)는 그 날만 건너뛰고 계속한다."""
+        class _Resp:
+            def raise_for_status(self):
+                pass
+            def json(self):
+                return {"code": 3, "message": "유효하지 않은 request param"}
+        class _Session:
+            calls = 0
+            def get(self, *a, **k):
+                self.calls += 1
+                return _Resp()
+        monkeypatch.setattr(saramin_etl, "QUOTA_EXCEEDED", False)
+        monkeypatch.setattr(saramin_etl, "SARAMIN_PUBLISHED_DAYS", 1)
+        session = _Session()
+        count, rows = saramin_etl.collect_query(session, {"label": "t", "keywords": "LLM"}, 0)
+        assert saramin_etl.QUOTA_EXCEEDED is False
+        assert session.calls == 2 and count == 2 and rows == []
+
 
 class TestSaveRows:
     def test_save_and_upsert(self, mock_saramin_db):

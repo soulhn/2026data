@@ -107,6 +107,8 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 | **누적 추이 캐시** | `saramin_track_monthly`(TRACK × YEAR_MONTH, `ALL` 행 포함)는 **누적 병합** — 같은 키는 max 채택. 원본이 삭제돼도 과거 추이 유지. **전체 재계산으로 되돌리면 삭제 시점에 추이 소실** | `saramin_etl.merge_cumulative()` |
 | **캐시 집계** | 2종만: `saramin_track_monthly` · `saramin_query_hits`. **진행중 분포·목록은 페이지가 PG 직접 조회**(`UNNEST`·`STRING_AGG` 등 PG 전용 SQL — 트랙·신입 필터 조합이 많아 캐시 부적합). 구 캐시 키 11종은 집계 시 자동 삭제 | `saramin_etl.py`, `pages/채용_동향.py` |
 | **실행 모드** | 기본(수집→삭제→태깅→집계) / `--cleanup-only`(삭제→태깅→집계) / `--tag-only`(태깅→집계, 규칙 조정 후 소급용). 뒤 둘은 API 쿼터 소모 없음 | `saramin_etl.py` |
+| **백필** | `SARAMIN_END_DATE=YYYY-MM-DD`(+`SARAMIN_PUBLISHED_DAYS`)로 `[종료일-N, 종료일]` 창을 수집. 워크플로 수동 실행 입력 `end_date`·`published_days`. 호출 수는 평소와 같은 42×(N+1) — **같은 날 예약 실행과 겹치면 두 배** 소모 | `saramin_etl.py`, `saramin_etl.yml` |
+| **한도 공유** | 사람인 키는 **키별 일일 500회**이고 현재 키를 팀장이 별도 수집(매일 00:10 KST)에 함께 쓴다 (2026-09-24~10/5 우리 수집 0건의 원인. 키 추가 발급 불가. 팀장 수집은 10/5쯤 종료, 백필 절차는 docs/DEV_LOG.md 2026-09-30). 한도 초과는 HTTP 200 + `{"code": 4}` 본문 → `_error_code()`가 감지해 남은 호출을 멈추고 **종료 코드 1로 워크플로를 실패**시킨다. 코드 3은 파라미터 오류(옛 문서가 3·4를 바꿔 적었었음) | `saramin_etl.QUOTA_EXCEEDED` |
 | **저장 테이블** | `TB_JOB_POSTING` (33 컬럼, PK: `JOB_ID`), `TB_JOB_POSTING_KEYWORD`, `TB_JOB_POSTING_REGION`, `TB_JOB_POSTING_TRACK` | `init_db.py` |
 | **노션 발행** | `notion_jobs_publish.py` — 트랙 태깅된 공고 전량(진행중+마감)을 우리 소유 노션 「채용 동향」 페이지(`config.NOTION_JOBS_PAGE_ID`)의 「채용공고」 DB에 upsert. 행 키 `JOB_ID`, 기록은 `TB_NOTION_PUBLISH`(DB_KEY `jobs`), DB ID는 `TB_SYNC_STATE` `notion_jobs_db`. 수집 원본 전체(트랙 무관 6천 건+)는 올리지 않음. 사람인 쉼표 목록(고용형태·업종)은 multi_select, 노션 select 옵션명에 쉼표 불가라 학력의 쉼표는 `·`로 치환. **예약 실행 없음** — 2026-09-21 수동 1회 발행, 워크플로에 넣으려면 `saramin_etl.yml`에 단계 추가 | `notion_jobs_publish.py`, `notion_publish.py` |
 
