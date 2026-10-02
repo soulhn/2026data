@@ -94,7 +94,10 @@ PERSON_DESC = "한 번이라도 HRD에 등록한 사람 한 명이 한 줄 (노�
 
 GUIDE_TITLE = "읽는 법 — 열별 수집 기준"
 GUIDE_LINES = [
-    "보는 기준 — 2026-10-07 개강 MLO3부터가 자동 수집 이후 기수(신청·등록·취소가 HRD 일자와 함께 기록됨). 그 전 기수는 취소자에게 HRD 일자가 없어 "
+    "KPI 기준 기수: 운영TF 20개 기수 (SKN 22·25~37기 14개, AIO 1·2기, MLE 1·2기, MLO 1·2기). 개강 대비 확정 비율 기준값 90.8% (확정 신고 433 ÷ 개강인원 477, "
+    "초기이탈률 12.8% · 추가인원율 3.6%, 2026-10-02 산출). AIO 3기는 기준 밖이고 MLO 3기부터가 측정 대상. SKN 22·25기는 이 기준을 맞추려고 넣은 2025년 개강 기수라 "
+    "노션 수집 등록 인원은 참고하지 않는다(SKN 22기는 신청자 리스트에 등록 이력 없음)",
+    "보는 기준 —2026-10-07 개강 MLO3부터가 자동 수집 이후 기수(신청·등록·취소가 HRD 일자와 함께 기록됨). 그 전 기수는 취소자에게 HRD 일자가 없어 "
     "노션 수집 인원에 확정자만 남고 '불일치'가 정상. 두 그룹의 일치 여부·등록 인원은 서로 비교하지 않는다. API 값(신청·확정·출석)은 기수 구분 없이 같은 품질",
     "기수 · 과정 · 상태 · 개강일 = HRD-Net 훈련일정 상세 API. 상태는 개강일·종료일을 오늘과 비교(개설예정 · 진행중 · 종료)",
     "API 신청인원 = totTrpCnt. 한 번이라도 수강신청한 사람의 누적 수라 취소자 포함. 최신 스냅샷 값",
@@ -143,6 +146,13 @@ def cohort_key(trpr_id, degr):
     return f"{short}{int(degr)}" if short else None
 
 
+def in_registry(trpr_id, degr, start):
+    """등록자 페이지에 넣는 회차인가 — KPI 과정이면서 시작일 이후 개강이거나 `NOTION_REGISTRY_EXTRA`에 지정된 기수."""
+    if config.COURSE_SHORT_NAMES.get(trpr_id) not in config.NOTION_KPI_COURSES:
+        return False
+    return str(start)[:10] >= config.NOTION_REGISTRY_SINCE or cohort_key(trpr_id, degr) in config.NOTION_REGISTRY_EXTRA
+
+
 def ever_registered_pages():
     """노션 기준 '한 번이라도 HRD 등록' 페이지 ID 집합 — 현재 상태 ∪ 전이 로그 ∪ 신청/등록 일자."""
     now = load_data("SELECT NOTION_PAGE_ID FROM TB_APPLICANT WHERE STATUS IN ('HRD신청', 'HRD등록') "
@@ -158,8 +168,7 @@ def load_snapshots():
         SELECT s.* FROM TB_COURSE_SNAPSHOT s
         JOIN (SELECT TRPR_ID, TRPR_DEGR, MAX(SNAP_AT) AS MAX_AT FROM TB_COURSE_SNAPSHOT GROUP BY TRPR_ID, TRPR_DEGR) m
           ON m.TRPR_ID = s.TRPR_ID AND m.TRPR_DEGR = s.TRPR_DEGR AND m.MAX_AT = s.SNAP_AT""")
-    snap = snap[snap["TRPR_ID"].map(lambda t: config.COURSE_SHORT_NAMES.get(t) in config.NOTION_KPI_COURSES)]
-    return snap[snap["TR_STA_DT"].astype(str).str[:10] >= config.NOTION_REGISTRY_SINCE]
+    return snap.loc[[in_registry(t, d, s) for t, d, s in zip(snap["TRPR_ID"], snap["TRPR_DEGR"], snap["TR_STA_DT"])]]
 
 
 def load_confirmed_at_due():
@@ -277,8 +286,7 @@ def build_person_rows(cohort_pages, today=None):
     apps = apps[apps["NOTION_PAGE_ID"].isin(ever)]
     members = load_data("SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, STATUS, FIRST_SEEN_AT, GONE_AT, "
                         "FIRST_ATTEND_DT, DAY1_STATUS, TR_STA_DT FROM TB_ROSTER_MEMBER")
-    members = members[members["TRPR_ID"].map(lambda t: config.COURSE_SHORT_NAMES.get(t) in config.NOTION_KPI_COURSES)
-                      & (members["TR_STA_DT"].astype(str).str[:10] >= config.NOTION_REGISTRY_SINCE)]
+    members = members.loc[[in_registry(t, d, s) for t, d, s in zip(members["TRPR_ID"], members["TRPR_DEGR"], members["TR_STA_DT"])]]
     tracking_start = str(members["FIRST_SEEN_AT"].min())[:10] if not members.empty else None
     # 회차별로 출결을 읽은 적이 있나 — 없으면 그 회차 사람은 '미출석'이 아니라 '기록 없음'
     known_rounds = set()

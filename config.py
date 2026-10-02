@@ -369,6 +369,7 @@ NOTION_SYNC_OVERLAP_MIN = 10              # 증분 폴링 시 마지막 동기�
 # ── 노션 「HRD 등록자 관리」 페이지 발행 (notion_registry_publish.py) ──
 NOTION_REGISTRY_PAGE_ID = "3e1d943bcac2812fb3bcc9d4f2491abd"   # 「HRD 등록자 관리」 (2026-09-21). 우리 소유 페이지 — 담당자 DB는 여전히 읽기만
 NOTION_REGISTRY_SINCE = "2026-01-01"      # 이 날 이후 개강 회차만 등록자 페이지에 (SKN 1~25기는 노션 신청자 리스트 이전이라 대조 불가)
+NOTION_REGISTRY_EXTRA = ("SKN22", "SKN25")   # 시작일 이전 개강이지만 페이지에 넣는 기수 — 운영TF 20개 기수 기준을 맞추기 위함 (2026-10-02). SKN23·24는 TF 기준 밖
 NOTION_KPI_COURSES = ("AIO", "MLE", "MLO", "SKN")   # 신청자 리스트가 있는 과정 (한화는 모집 종료, 2026-09-21 SKN 추가)
 NOTION_KPI_CONFIRM_DAYS = 7                      # 개강 후 이 일수가 지나야 '확정자 신고율'을 계산 (확정 신고는 개강 1주 뒤)
 NOTION_FULL_RECORD_SINCE = "2026-10-07"          # 이 날 이후 개강 기수는 완전 기록 관리 대상(취소자도 HRD 신청 일시 기록). API 신청 > 노션 수집이면 health_check가 알림 (2026-09-29)

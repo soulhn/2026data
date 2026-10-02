@@ -72,6 +72,24 @@ class TestCohorts:
         assert s["개강일 출석 인원"] is None and s["개강 참석률(%)"] is None                     # 명부를 읽은 적 없으면 모름
         assert s["확정 신고(API)"] == 2 and s["승인 인원(현재)"] == 2                              # +7일(9/11)이 추적 시작 전 → 첫 스냅샷 값
 
+    def test_extra_cohorts_before_since(self, db):
+        """시작일 이전 개강이라도 NOTION_REGISTRY_EXTRA에 지정한 기수는 표·등록자에 들어온다 (SKN23처럼 지정 안 한 기수는 제외)."""
+        _seed(db)
+        cur = db.cursor()
+        for degr, sta in [(22, "2025-10-29"), (23, "2025-11-24")]:
+            cur.execute("INSERT INTO TB_COURSE_SNAPSHOT (TRPR_ID, TRPR_DEGR, SNAP_AT, TR_STA_DT, TR_END_DT, TOT_FXNUM, TOT_TRP_CNT, TOT_PAR_MKS, FINI_CNT, CHANGED) "
+                        "VALUES ('AIG20240000459068', ?, '2026-09-15 08:00:00', ?, '2026-04-24', 30, 28, 19, 14, 'first')", [degr, sta])
+            cur.execute("INSERT INTO TB_ROSTER_MEMBER (TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, TR_STA_DT, STATUS, FIRST_SEEN_AT, LAST_SEEN_AT, FIRST_ATTEND_DT) "
+                        "VALUES ('AIG20240000459068', ?, 'o1', 'h_old', '홍*동', ?, '정상수료', '2026-09-15 08:00:00', '2026-09-15 08:00:00', ?)", [degr, sta, sta.replace("-", "")])
+        db.commit()
+        rows = {r["기수"]: r for r in build_cohort_rows(today="2026-09-16")}
+        assert set(rows) == {"AIO3", "SKN37", "SKN22"}
+        assert rows["SKN22"]["API 신청인원"] == 28 and rows["SKN22"]["확정 신고(API)"] == 19 and rows["SKN22"]["개강일 출석 인원"] == 1
+        assert rows["SKN22"]["노션 수집 등록 인원"] is None and rows["SKN22"]["일치 여부"] == "미확인"      # 신청자 리스트에 없는 기수
+        people = build_person_rows({"AIO3": "c", "SKN22": "d", "SKN23": "e"}, today="2026-09-16")
+        assert [r["KEY"] for r in people if r["기수"] == "d"] == ["roster:AIG20240000459068:22:o1"]
+        assert not [r for r in people if r["기수"] == "e"]
+
     def test_ops_columns_from_manual_table(self, db):
         _seed(db)
         ops = {"AIO3": {"개강인원": 14, "확정자신고": 14, "초기이탈": 1, "추가인원": 1}}
