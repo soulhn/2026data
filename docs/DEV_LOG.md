@@ -1,5 +1,21 @@
 # 개발 일지
 
+## 2026-10-02 — 예약 실행과 웹훅 실행이 겹쳐 명부 INSERT 중복 키로 실패 → 중복 무시로 변경
+
+### 증상
+- 14:27 KST 예약 `hrd_etl.yml`의 `kpi_etl.py` 단계가 `UniqueViolation: tb_roster_member_pkey (AIG20240000459068, 38, 100050873321)`로 종료 코드 1
+- 같은 분(14:28)에 노션 웹훅으로 `kpi_poll.yml`이 시작돼 두 실행이 같은 명부 테이블에 동시에 썼다. 마침 SKN 38기에 새 승인자가 생긴 시점
+
+### 원인
+- `upsert_roster_members`는 "DB 목록(existing)을 읽고 → 없으면 INSERT" 2단계. 웹훅 실행이 05:30:17~05:31:16(UTC)에 그 사람을 넣고 커밋했는데, 예약 실행은 그 커밋 전에 existing 을 읽어 둔 상태라 신규로 판단하고 05:35에 다시 넣으려다 실패
+- `kpi_poll.yml`의 `concurrency: kpi-poll`은 웹훅 실행끼리만 줄 세운다. `hrd_etl.yml`은 그룹 밖
+- 같은 겹침으로 웹훅 쪽 노션 발행도 "Can't edit block that is archived" 400을 한 번 냈다 (예약 쪽 발행이 같은 블록을 보관 처리). 예약 쪽 발행이 성공해 페이지는 최신, 다음 발행에서 자동 복구
+
+### 결정 사항
+- INSERT 를 `INSERT OR IGNORE`(PG 에서는 `ON CONFLICT DO NOTHING`)로 바꾸고 `rowcount == 1`일 때만 JOINED 로그·디스코드 알림·첫 참석 로그를 남긴다. 진 쪽은 그 사람을 건너뛰고 다음 실행이 정상 갱신
+- 대안(두 워크플로를 같은 concurrency 그룹으로 묶기)은 채택하지 않음: GitHub 은 그룹당 대기 실행을 하나만 남겨, 웹훅이 몰리면 하루 2회뿐인 예약 실행이 취소될 수 있다. 노션 발행 충돌은 자동 복구되므로 그 위험을 질 이유가 없다
+- 영향: 새 승인자는 웹훅 실행이 정상 기록·알림. 예약 실행의 명부 갱신분만 롤백됐고 다음 예약 실행이 다시 처리 (재실행 불필요)
+
 ## 2026-10-01 — Supabase "Table publicly accessible" 경고 → public 테이블 RLS 활성화
 
 ### 증상

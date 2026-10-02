@@ -115,6 +115,25 @@ class TestUpsert:
         cur.execute(sql)
         return cur.fetchall()
 
+    def test_concurrent_insert_is_ignored(self, db):
+        """겹친 실행이 같은 사람을 먼저 넣은 경우: 죽지 않고 건너뛰며 JOINED 로그·알림을 중복으로 남기지 않는다.
+
+        existing 을 읽은 뒤 다른 실행이 커밋한 상황을, 이미 있는 회차를 done_rounds 에서 빼서(= existing 이 비어서) 재현한다.
+        """
+        rs = {("A", 3): "2026-09-15"}
+        c = upsert_roster_members(db, _roster(("t1", "홍길동", "훈련중")), first_attendance(pd.DataFrame()),
+                                  {("A", 3)}, rs, now=datetime(2026, 10, 2, 5))
+        assert c["joined"] == 1
+        events = []
+        c = upsert_roster_members(db, _roster(("t1", "홍길동", "훈련중"), ("t2", "김철수", "훈련중")),
+                                  first_attendance(_att([("t1", "20260915", "09:00", "출석")])),
+                                  set(), rs, now=datetime(2026, 10, 2, 6), events=events)
+        assert c["joined"] == 1 and c["first_attend"] == 0          # t2만 신규, t1은 건너뜀(첫 참석 로그도 없음)
+        assert self._rows(db, "SELECT TRNEE_ID, EVENT FROM TB_ROSTER_MEMBER_LOG ORDER BY DETECTED_AT, TRNEE_ID") == [
+            ("t1", "JOINED"), ("t2", "JOINED")]
+        first_seen = self._rows(db, "SELECT FIRST_SEEN_AT FROM TB_ROSTER_MEMBER WHERE TRNEE_ID='t1'")[0][0]
+        assert str(first_seen).startswith("2026-10-02 05")          # 먼저 넣은 쪽 기록이 그대로
+
     def test_join_then_status_change_then_leave(self, db):
         rs = {("A", 3): "2026-09-15"}
         t1 = datetime(2026, 9, 15, 0)

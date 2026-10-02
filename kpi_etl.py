@@ -294,12 +294,17 @@ def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_star
         fa_dt, fa_time, day1 = first_map.get(key, (None, None, None))
         prev = existing.get(key)
         if prev is None:
+            # INSERT OR IGNORE: 예약 실행(hrd_etl.yml)과 웹훅 실행(kpi_poll.yml)이 겹치면, 위에서 existing 을 읽은 뒤
+            # 다른 실행이 같은 사람을 먼저 넣을 수 있다 (2026-10-02 SKN 38기, UniqueViolation 으로 실행 실패).
+            # 실제로 넣은 쪽만 JOINED 로그·알림을 남기고, 진 쪽은 이 사람을 건너뛴다 (다음 실행이 정상 갱신)
             cur.execute(adapt_query(
-                "INSERT INTO TB_ROSTER_MEMBER (TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, TR_STA_DT, STATUS, "
+                "INSERT OR IGNORE INTO TB_ROSTER_MEMBER (TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, TR_STA_DT, STATUS, "
                 "FIRST_SEEN_AT, LAST_SEEN_AT, STATUS_CHANGED_AT, FIRST_ATTEND_DT, FIRST_IN_TIME, DAY1_STATUS) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
                 [key[0], key[1], key[2], name_hash(r.get("TRNEE_NM")), mask_name(r.get("TRNEE_NM")),
                  round_start.get((key[0], key[1])), status, now, now, now, fa_dt, fa_time, day1])
+            if cur.rowcount != 1:
+                continue
             cur.execute(log, [key[0], key[1], key[2], now, "JOINED", None, status])
             counts["joined"] += 1
             if events is not None and config.COURSE_SHORT_NAMES.get(key[0]) in config.NOTION_KPI_COURSES:
