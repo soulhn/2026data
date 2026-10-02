@@ -9,7 +9,7 @@ import init_db
 import notion_publish as pub
 import utils
 from notion_publish import (
-    content_hash, ensure_database_layout, ensure_properties, publish, remove_properties, to_properties,
+    content_hash, ensure_database_layout, ensure_properties, publish, remove_properties, rename_properties, to_properties,
 )
 
 
@@ -101,6 +101,15 @@ class TestDatabaseAdmin:
         assert remove_properties("tok", "db1", ("놓침", "KEY"), {"properties": {"기수": {}, "놓침": {}}}, session=session) == ["놓침"]
         assert session.request.call_args.kwargs["json"] == {"properties": {"놓침": None}}         # null = 삭제
         assert remove_properties("tok", "db1", ("놓침",), {"properties": {"기수": {}}}, session=session) == []
+
+    def test_rename_properties_in_place_once(self, monkeypatch):
+        monkeypatch.setattr(config, "NOTION_WRITE_INTERVAL", 0)
+        session = _fake_session()
+        assert rename_properties("tok", "db1", {"출석": "출석(API)", "없음": "없음(API)"}, {"properties": {"기수": {}, "출석": {}}}, session=session) == ["출석"]
+        assert session.request.call_args.kwargs["json"] == {"properties": {"출석": {"name": "출석(API)"}}}   # 값·보기 설정을 지키는 제자리 변경
+        session.request.reset_mock()
+        assert rename_properties("tok", "db1", {"출석": "출석(API)"}, {"properties": {"기수": {}, "출석(API)": {}}}, session=session) == []
+        session.request.assert_not_called()                                                              # 이미 바뀐 뒤에는 요청 없음
 
     @patch("notion_publish.time.sleep")
     def test_429_retries(self, _sleep, monkeypatch):

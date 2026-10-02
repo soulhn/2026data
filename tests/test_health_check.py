@@ -68,7 +68,7 @@ class TestValues:
         rows = reg.build_cohort_rows(today="2026-09-21")
         assert check_values(rows, "2026-09-21") == []                                   # 노션 3 ≤ API 5, 출결 있음
         rows[0]["노션 수집 등록 인원"] = 9
-        rows[0]["개강일 출석 인원"] = None
+        rows[0]["개강일 출석 인원(API)"] = None
         out = check_values(rows, "2026-09-21")
         assert any("노션 수집 등록 9 > API 신청인원 5" in f for f in out) and any("출결 기록 없음" in f for f in out)
 

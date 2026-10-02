@@ -27,7 +27,7 @@ def _seed(conn):
     cur = conn.cursor()
     cur.execute("INSERT INTO TB_COURSE_SNAPSHOT (TRPR_ID, TRPR_DEGR, SNAP_AT, TR_STA_DT, TR_END_DT, TOT_FXNUM, TOT_TRP_CNT, TOT_PAR_MKS, FINI_CNT, CHANGED) "
                 "VALUES ('AIG20260000578396', 3, '2026-09-15 08:00:00', '2026-09-15', '2027-03-12', 30, 5, 2, 0, 'first')")
-    # 개강 + 7일(9/22) 이후 첫 스냅샷 = 3 → 확정 신고 고정값. 그 뒤 명부가 4로 늘어도 확정 신고는 3, 승인 인원(현재)만 4
+    # 개강 + 7일(9/22) 이후 첫 스냅샷 = 3 → 확정 신고 고정값. 그 뒤 명부가 4로 늘어도 확정 신고는 3, 승인 인원(API, 현재)만 4
     cur.execute("INSERT INTO TB_COURSE_SNAPSHOT (TRPR_ID, TRPR_DEGR, SNAP_AT, TR_STA_DT, TR_END_DT, TOT_FXNUM, TOT_TRP_CNT, TOT_PAR_MKS, FINI_CNT, CHANGED) "
                 "VALUES ('AIG20260000578396', 3, '2026-09-22 01:00:00', '2026-09-15', '2027-03-12', 30, 5, 3, 0, 'TOT_PAR_MKS')")
     cur.execute("INSERT INTO TB_COURSE_SNAPSHOT (TRPR_ID, TRPR_DEGR, SNAP_AT, TR_STA_DT, TR_END_DT, TOT_FXNUM, TOT_TRP_CNT, TOT_PAR_MKS, FINI_CNT, CHANGED) "
@@ -60,17 +60,17 @@ class TestCohorts:
         assert set(rows) == {"AIO3", "SKN37"}
         a = rows["AIO3"]
         assert a["API 신청인원"] == 5 and a["노션 수집 등록 인원"] == 4 and a["일치 여부"] == "불일치"   # p1·p2·p3·p4
-        assert a["개강일 출석 인원"] == 1 and a["개강 참석률(%)"] == 20.0                          # t1 ÷ API 5
+        assert a["개강일 출석 인원(API)"] == 1 and a["개강 참석률(API, %)"] == 20.0                          # t1 ÷ API 5
         assert a["상태"] == "진행중" and a["과정"] == "AIO"
         assert a["확정 신고(API)"] is None and a["확정자 신고율(API, %)"] is None                      # 개강 + 7일 전
-        assert a["승인 인원(현재)"] == 4                                                           # 최신 스냅샷은 항상 보임
+        assert a["승인 인원(API, 현재)"] == 4                                                           # 최신 스냅샷은 항상 보임
         later = {r["기수"]: r for r in build_cohort_rows(today="2026-09-22")}["AIO3"]
         assert later["확정 신고(API)"] == 3 and later["확정자 신고율(API, %)"] == 60.0                  # +7일 이후 첫 스냅샷 3 ÷ 수강신청 5 (최신 4가 아님)
-        assert later["승인 인원(현재)"] == 4
+        assert later["승인 인원(API, 현재)"] == 4
         s = rows["SKN37"]
         assert s["API 신청인원"] == 2 and s["노션 수집 등록 인원"] == 2 and s["일치 여부"] == "일치"
-        assert s["개강일 출석 인원"] is None and s["개강 참석률(%)"] is None                     # 명부를 읽은 적 없으면 모름
-        assert s["확정 신고(API)"] == 2 and s["승인 인원(현재)"] == 2                              # +7일(9/11)이 추적 시작 전 → 첫 스냅샷 값
+        assert s["개강일 출석 인원(API)"] is None and s["개강 참석률(API, %)"] is None                     # 명부를 읽은 적 없으면 모름
+        assert s["확정 신고(API)"] == 2 and s["승인 인원(API, 현재)"] == 2                              # +7일(9/11)이 추적 시작 전 → 첫 스냅샷 값
 
     def test_extra_cohorts_before_since(self, db):
         """시작일 이전 개강이라도 NOTION_REGISTRY_EXTRA에 지정한 기수는 표·등록자에 들어온다 (SKN23처럼 지정 안 한 기수는 제외)."""
@@ -84,7 +84,7 @@ class TestCohorts:
         db.commit()
         rows = {r["기수"]: r for r in build_cohort_rows(today="2026-09-16")}
         assert set(rows) == {"AIO3", "SKN37", "SKN22"}
-        assert rows["SKN22"]["API 신청인원"] == 28 and rows["SKN22"]["확정 신고(API)"] == 19 and rows["SKN22"]["개강일 출석 인원"] == 1
+        assert rows["SKN22"]["API 신청인원"] == 28 and rows["SKN22"]["확정 신고(API)"] == 19 and rows["SKN22"]["개강일 출석 인원(API)"] == 1
         assert rows["SKN22"]["노션 수집 등록 인원"] is None and rows["SKN22"]["일치 여부"] == "미확인"      # 신청자 리스트에 없는 기수
         people = build_person_rows({"AIO3": "c", "SKN22": "d", "SKN23": "e"}, today="2026-09-16")
         assert [r["KEY"] for r in people if r["기수"] == "d"] == ["roster:AIG20240000459068:22:o1"]
@@ -115,7 +115,7 @@ class TestCohorts:
         cur.execute("UPDATE TB_ROSTER_MEMBER SET FIRST_ATTEND_DT = NULL, DAY1_STATUS = NULL")
         db.commit()
         a = {r["기수"]: r for r in build_cohort_rows(today="2026-09-16")}["AIO3"]
-        assert a["개강일 출석 인원"] is None and a["개강 참석률(%)"] is None
+        assert a["개강일 출석 인원(API)"] is None and a["개강 참석률(API, %)"] is None
         rows = {r["KEY"]: r for r in build_person_rows({"AIO3": "c"}, today="2026-09-16")}
         assert rows["p1"]["개강날 출석"] == "기록 없음" and rows["roster:AIG20260000578396:3:t2"]["개강날 출석"] == "기록 없음"
         assert rows["p2"]["개강날 출석"] == "미출석"      # 명부에 없는 사람은 회차 기록과 무관하게 미출석
@@ -123,7 +123,7 @@ class TestCohorts:
     def test_before_start_no_attendance(self, db):
         _seed(db)
         a = {r["기수"]: r for r in build_cohort_rows(today="2026-09-15")}["AIO3"]
-        assert a["개강일 출석 인원"] is None and a["개강 참석률(%)"] is None and a["상태"] == "진행중"
+        assert a["개강일 출석 인원(API)"] is None and a["개강 참석률(API, %)"] is None and a["상태"] == "진행중"
 
 
 class TestPersons:

@@ -2,8 +2,8 @@
 
 페이지 구조 (2026-09-21, 사용자 설계)
   상단 콜아웃  마지막 갱신 시각 + 읽는 법 세 줄
-  「기수」 표   기수 · 개강일 · API 신청인원 · 노션 수집 등록 인원 · 일치 여부 · 개강일 출석 인원 · 개강 참석률(%) · 확정 신고(API) · 확정자 신고율(API, %) · 승인 인원(현재) · 갱신 시각
-                확정 신고(API)는 개강 + 7일 0시(KST) 이후 첫 스냅샷의 totParMks로 고정(2026-09-28). 승인 인원(현재)는 지금 명부 인원 — 둘이 다르면 신고 뒤 명부가 바뀐 것
+  「기수」 표   기수 · 개강일 · API 신청인원 · 노션 수집 등록 인원 · 일치 여부 · 개강일 출석 인원(API) · 개강 참석률(API, %) · 확정 신고(API) · 확정자 신고율(API, %) · 승인 인원(API, 현재) · 갱신 시각
+                확정 신고(API)는 개강 + 7일 0시(KST) 이후 첫 스냅샷의 totParMks로 고정(2026-09-28). 승인 인원(API, 현재)는 지금 명부 인원 — 둘이 다르면 신고 뒤 명부가 바뀐 것
                 + 개강인원(운영현황표, 오프라인) · 초기이탈(노션) · 추가인원(노션) · 확정 신고(노션 기준) = 담당자 운영현황표(회사 노션, 읽기만)의 수기 값을 그대로 옮김 (2026-09-28). 조회 실패 시 그 실행은 두 열을 건드리지 않는다
                 + 개강 대비 확정 비율(%) · 초기이탈률(%) · 추가인원율(%) = 위 수기 값으로 계산한 팀 제안 2안과 하위 2개 (2026-09-29 팀 확정 — 개강 대비 확정 비율이 TF 구간 7 책임 수치). 확정자 신고율(API, %)은 참고용
   └ 기수 페이지  (사용자가 만든 템플릿의 「등록자」 필터 보기) — 등록일 · 개강날 출석 여부
@@ -31,7 +31,7 @@ from init_db import init_all_tables
 from notion_applicants_etl import get_sync_state, set_sync_state
 from notion_publish import (
     _num, _request, _rt, content_hash, create_database, ensure_database_layout, ensure_properties, get_database,
-    publish, remove_properties,
+    publish, remove_properties, rename_properties,
 )
 from notion_ops import NotionFetchError, cohort_number, course_group, fetch_ops_table
 from utils import _clean_secret, adapt_query, get_connection, load_data
@@ -52,6 +52,8 @@ BODY_BLOCK_TYPES = ("table", "paragraph")   # 우리가 본문에 만드는 블�
 BODY_COLUMNS = ("이름", "등록일", "개강날 출석", "노션 상태", "HRD 승인")
 _ATTEND_ORDER = {"출석": 0, "미출석": 1, "개강 전": 2}
 REMOVED = {COHORT_PUB: ("확정자 신고율(%)",), PERSON_PUB: ()}   # 2026-09-29 「확정자 신고율(API, %)」로 이름 변경   # 스키마에서 뺀 속성 — 기존 DB에 남아 있으면 지운다
+RENAMED = {COHORT_PUB: {"개강일 출석 인원": "개강일 출석 인원(API)", "개강 참석률(%)": "개강 참석률(API, %)",
+                        "승인 인원(현재)": "승인 인원(API, 현재)"}}   # 2026-10-02 출처가 HRD-Net API인 열은 이름에 표기 — 제자리 이름 변경(값·보기 유지)
 
 KST = timezone(timedelta(hours=9))
 
@@ -63,11 +65,11 @@ COHORT_SCHEMA = {
     "API 신청인원": _num(),
     "노션 수집 등록 인원": _num(),
     "일치 여부": {"select": {"options": [{"name": "일치"}, {"name": "불일치"}, {"name": "미확인"}]}},
-    "개강일 출석 인원": _num(),
-    "개강 참석률(%)": _num(),
+    "개강일 출석 인원(API)": _num(),
+    "개강 참석률(API, %)": _num(),
     "확정 신고(API)": _num(),
     "확정자 신고율(API, %)": _num(),
-    "승인 인원(현재)": _num(),
+    "승인 인원(API, 현재)": _num(),
     "개강인원(운영현황표, 오프라인)": _num(),
     "확정 신고(노션 기준)": _num(),
     "초기이탈(노션)": _num(),
@@ -103,10 +105,10 @@ GUIDE_LINES = [
     "API 신청인원 = totTrpCnt. 한 번이라도 수강신청한 사람의 누적 수라 취소자 포함. 최신 스냅샷 값",
     "노션 수집 등록 인원 = 신청자 리스트(AI·SKN)에서 최종결과가 HRD신청·HRD등록을 한 번이라도 거쳤거나 HRD 신청/등록 일자가 있는 사람 수. 취소자도 일자가 있으면 포함",
     "일치 여부 = API 신청인원과 노션 수집 등록 인원이 같으면 일치. 다르면 HRD-Net에는 있는데 노션에 일자 없이 빠진 사람이 있는 것(대부분 수집 전 기수의 취소자)",
-    "개강일 출석 인원 = HRD-Net 출결 API에서 개강 당일 입실 기록이 있는 명부 인원. 개강 다음 날부터 값이 생김. 개강 참석률(%) = 개강일 출석 ÷ API 신청인원 × 100",
+    "개강일 출석 인원(API) = HRD-Net 출결 API에서 개강 당일 입실 기록이 있는 명부 인원. 개강 다음 날부터 값이 생김. 개강 참석률(API, %) = 개강일 출석 ÷ API 신청인원 × 100",
     "확정 신고(API) = 개강 + 7일 0시(KST) 이후 첫 스냅샷의 HRD-Net 승인 명부 인원(totParMks). 그 뒤 명부가 바뀌어도 이 값은 고정 (2026-09-28 규칙). "
     "추적 시작(2026-09-15) 전에 +7일이 지난 기수는 첫 스냅샷 값. 확정자 신고율(API, %) = 확정 신고(API) ÷ API 신청인원 × 100 — 참고용(2026-09-23~29 TF 책임 수치였음)",
-    "승인 인원(현재) = 지금 HRD-Net 승인 명부에 있는 사람 수(totParMks 최신값). 개강 전에도 값이 있고, 확정 신고(API)와 다르면 신고 뒤 승인 취소·추가가 있었다는 뜻",
+    "승인 인원(API, 현재) = 지금 HRD-Net 승인 명부에 있는 사람 수(totParMks 최신값). 개강 전에도 값이 있고, 확정 신고(API)와 다르면 신고 뒤 승인 취소·추가가 있었다는 뜻",
     "개강인원(운영현황표, 오프라인) · 초기이탈(노션) · 추가인원(노션) · 확정 신고(노션 기준) = 담당자가 「운영현황」 페이지의 운영현황표에 손으로 적은 값을 그대로 옮김(읽기만, 하루 2회). 개강인원은 첫날 강의실에 온 사람 수라 HRD 미등록자도 포함돼 API 개강일 출석보다 크다. 초기이탈·추가인원은 개강~확정자 신고 사이의 이탈·추가. 확정 신고(노션 기준) = 개강인원 − 초기이탈 + 추가인원. "
     "운영현황표에 그 기수가 없거나 비어 있으면 빈칸",
     "개강 대비 확정 비율(%) = 확정 신고(노션 기준) ÷ 개강인원(운영현황표, 오프라인) × 100 — 운영TF 구간 7 확정자 신고 책임 수치 (2026-09-29 팀 확정). "
@@ -256,11 +258,11 @@ def build_cohort_rows(today=None, ops=None):
             "상태": _status(start, s.TR_END_DT, today), "개강일": start,
             "API 신청인원": applied, "노션 수집 등록 인원": notion,
             "일치 여부": "미확인" if applied is None or notion is None else ("일치" if applied == notion else "불일치"),
-            "개강일 출석 인원": day1 if started else None,
-            "개강 참석률(%)": round(day1 / applied * 100, 1) if started and day1 is not None and applied else None,
+            "개강일 출석 인원(API)": day1 if started else None,
+            "개강 참석률(API, %)": round(day1 / applied * 100, 1) if started and day1 is not None and applied else None,
             "확정 신고(API)": confirmed,
             "확정자 신고율(API, %)": round(confirmed / applied * 100, 1) if confirmed is not None and applied else None,
-            "승인 인원(현재)": approved_now,
+            "승인 인원(API, 현재)": approved_now,
             "갱신 시각": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         })
         if ops is not None:
@@ -404,6 +406,8 @@ def ensure_databases(token, conn, session=None):
         logger.info(f"[등록자 발행] 기수 DB 생성 {cohort_db}")
         meta = {}
     ensure_database_layout(token, cohort_db, COHORT_DESC, meta, session)
+    if rename_properties(token, cohort_db, RENAMED[COHORT_PUB], meta, session):
+        meta = get_database(token, cohort_db, session) or {}
     ensure_properties(token, cohort_db, COHORT_SCHEMA, meta or get_database(token, cohort_db, session), session)
     remove_properties(token, cohort_db, REMOVED[COHORT_PUB], meta, session)
 

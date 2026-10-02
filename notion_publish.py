@@ -101,6 +101,17 @@ def ensure_properties(token, db_id, schema, meta, session=None):
     return list(missing)
 
 
+def rename_properties(token, db_id, renames, meta, session=None):
+    """기존 DB의 속성 이름을 바꾼다 (값·보기 설정 유지). renames: {옛 이름: 새 이름}. 옛 이름이 있고 새 이름이 없을 때만 요청."""
+    have = meta.get("properties") or {}
+    todo = {old: new for old, new in renames.items() if old in have and new not in have}
+    if not todo:
+        return []
+    _request(token, "PATCH", f"/databases/{db_id}", {"properties": {old: {"name": new} for old, new in todo.items()}}, session)
+    logger.info(f"[KPI 발행] 노션 DB 속성 이름 변경 {db_id}: {', '.join(f'{o} → {n}' for o, n in todo.items())}")
+    return list(todo)
+
+
 def remove_properties(token, db_id, names, meta, session=None):
     """기존 DB에서 더 이상 쓰지 않는 속성을 지운다 (노션은 값을 null로 보내면 삭제). 없으면 요청 없음."""
     have = meta.get("properties") or {}

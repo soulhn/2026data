@@ -101,7 +101,7 @@ def check_values(cohort_rows, today):
             out.append(f"{k}: HRD-Net 신청 {applied} vs 노션 {notion} — {applied - notion}명이 노션에 HRD신청으로 없음. "
                        f"최종결과를 HRD신청으로 바꾸고 HRD 신청 일시 기록 요청 (취소자도 일시는 남겨야 함)")
         day_after = start and (datetime.fromisoformat(start) + timedelta(days=1)).strftime("%Y-%m-%d") <= today
-        if day_after and (applied or 0) > 0 and r["개강일 출석 인원"] is None and str(r["개강일"]) >= config.NOTION_REGISTRY_SINCE:
+        if day_after and (applied or 0) > 0 and r["개강일 출석 인원(API)"] is None and str(r["개강일"]) >= config.NOTION_REGISTRY_SINCE:
             out.append(f"{k}: 개강({start}) 지났는데 출결 기록 없음 — 출결 API 실패 또는 명부 없음")
     return out
 
