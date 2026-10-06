@@ -253,11 +253,15 @@ def init_main_tables():
             OT_ATTEND TEXT,                  -- OT참석 O/X
             ATTEND_DT TEXT,                  -- 개강 참석일 (신규 속성, 없으면 NULL)
             CANCEL_REASON TEXT, TRANSFER_TO TEXT,
+            HRD_CANCEL_BY TEXT,              -- 특이사항 태그: ①본인(고용24 직접 취소) · ②기관취소(HRD-Net 기관 화면 처리). 2026-10-06
+            HRD_CANCEL_NOTE TEXT,            -- 그 태그 원문 한 줄 (날짜·괄호 종류 포함). 특이사항 본문은 저장하지 않음
             NOTION_CREATED_AT TEXT, NOTION_EDITED_AT TEXT,
             SYNCED_AT TIMESTAMP
         )
     ''')
     _exec_ignore(conn, cursor, "ALTER TABLE TB_APPLICANT ADD COLUMN SOURCE_KEY TEXT")   # 2026-09-21 추가 (기존 DB)
+    _exec_ignore(conn, cursor, "ALTER TABLE TB_APPLICANT ADD COLUMN HRD_CANCEL_BY TEXT")     # 2026-10-06 추가 (기존 DB)
+    _exec_ignore(conn, cursor, "ALTER TABLE TB_APPLICANT ADD COLUMN HRD_CANCEL_NOTE TEXT")
     _exec_ignore(conn, cursor, "UPDATE TB_APPLICANT SET SOURCE_KEY = 'AI' WHERE SOURCE_KEY IS NULL")   # SKN 추가 전 행은 전부 AI캠퍼스
     # 상태 전이 로그 — 추적 필드가 바뀔 때마다 한 줄. 노션 API엔 이력이 없어 스냅샷 차분이 유일한 이력
     cursor.execute('''

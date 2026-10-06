@@ -60,6 +60,18 @@ class TestParse:
         row = parse_applicant_page(_page("p1", "홍길동", "HRD등록", extra=extra))
         assert row["ATTEND_DT"] == "2026-09-15" and row["HRD_APPLY_AT"] == "2026-09-05"
 
+    def test_hrd_cancel_tag_from_notes(self):
+        # 담당자가 특이사항 맨 위에 쓰는 태그만 읽고, 본문(개인 사정 등)은 저장하지 않는다
+        notes = "09.29 HRD취소 ②기관취소(승인취소)\n09.29 합격 취소 : 타 과정 선택, 가족과 상의\n09.21 합격 안내"
+        extra = {config.NOTION_NOTES_PROP: {"type": "rich_text", "rich_text": [{"plain_text": notes}]}}
+        row = parse_applicant_page(_page("p1", "홍길동", "합격취소(신청자 요청)", extra=extra))
+        assert row["HRD_CANCEL_BY"] == "②기관취소" and row["HRD_CANCEL_NOTE"] == "09.29 HRD취소 ②기관취소(승인취소)"
+        assert "가족" not in str(row)
+        assert etl.parse_hrd_cancel("HRD 취소 ① 본인") == ("①본인", "HRD 취소 ① 본인")
+        assert etl.parse_hrd_cancel("10.02 HRD취소 2기관취소") == ("②기관취소", "10.02 HRD취소 2기관취소")
+        assert etl.parse_hrd_cancel("09.29 합격 취소 : 사유") == (None, None)
+        assert parse_applicant_page(_page("p2", "홍길동", "HRD등록"))["HRD_CANCEL_BY"] is None   # 속성 없음
+
     def test_name_hash_ignores_spaces(self):
         assert name_hash("홍 길동") == name_hash("홍길동")
         assert name_hash(None) is None

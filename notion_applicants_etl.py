@@ -49,10 +49,24 @@ APPLICANT_COLUMNS = [
     "COHORT", "COHORT_TEXT", "STATUS", "PROCESS_RESULT", "APPLIED_AT", "SOURCE",
     "INTERVIEW_AT", "INTERVIEW_GRADE", "PASS_NOTICE_AT", "PASS_REG_AT", "PASS_REG",
     "HRD_APPLY_AT", "HRD_REG_AT", "HRD_ONSITE", "OT_ATTEND", "ATTEND_DT",
-    "CANCEL_REASON", "TRANSFER_TO", "NOTION_CREATED_AT", "NOTION_EDITED_AT",
+    "CANCEL_REASON", "TRANSFER_TO", "HRD_CANCEL_BY", "HRD_CANCEL_NOTE", "NOTION_CREATED_AT", "NOTION_EDITED_AT",
 ]
 # 바뀌면 전이 로그를 남기는 필드
-TRACKED_FIELDS = ["STATUS", "COHORT", "PROCESS_RESULT", "HRD_APPLY_AT", "HRD_REG_AT", "ATTEND_DT", "OT_ATTEND"]
+TRACKED_FIELDS = ["STATUS", "COHORT", "PROCESS_RESULT", "HRD_APPLY_AT", "HRD_REG_AT", "ATTEND_DT", "OT_ATTEND", "HRD_CANCEL_BY"]
+
+# 특이사항의 HRD 취소 처리 태그 — "09.29 HRD취소 ①본인", "HRD취소 ②기관취소(승인취소)". ① 신청자가 고용24에서 직접 취소(API 신청인원에서 빠짐),
+# ② 우리가 HRD-Net 기관 화면에서 처리(남음). totTrpCnt 감소 사례와 대조해 2026-10-06 추정을 재검토하기 위한 것 (docs/DEV_LOG.md)
+_HRD_CANCEL_RE = re.compile(r"(?:(\d{1,2}\.\d{1,2})\s*)?HRD\s*취소\s*([①②12])\s*([^\s()]*)(?:\(([^)]*)\))?")
+_HRD_CANCEL_BY = {"①": "①본인", "1": "①본인", "②": "②기관취소", "2": "②기관취소"}
+
+
+def parse_hrd_cancel(notes):
+    """특이사항 텍스트 → (구분, 태그 원문 한 줄). 태그가 없으면 (None, None). 여러 개면 맨 위(담당자가 최신을 위에 쓴다) 하나.
+    구분은 ①본인 / ②기관취소로 정규화하고, 원문에는 날짜·괄호 종류(승인취소 등)가 남는다. 특이사항 본문 자체는 저장하지 않는다."""
+    m = _HRD_CANCEL_RE.search(notes or "")
+    if not m:
+        return None, None
+    return _HRD_CANCEL_BY[m.group(2)], " ".join(m.group(0).split())
 
 
 def name_hash(name):
@@ -107,6 +121,8 @@ def parse_applicant_page(page, source=None):
     # 담당자에게 추가 요청한 신규 속성 — 생기면 자동으로 읽힌다
     row["HRD_APPLY_AT"] = _norm(prop_value(props[config.NOTION_HRD_APPLY_PROP])) if config.NOTION_HRD_APPLY_PROP in props else None
     row["ATTEND_DT"] = _norm(prop_value(props[config.NOTION_ATTEND_PROP])) if config.NOTION_ATTEND_PROP in props else None
+    notes = prop_value(props[config.NOTION_NOTES_PROP]) if config.NOTION_NOTES_PROP in props else None
+    row["HRD_CANCEL_BY"], row["HRD_CANCEL_NOTE"] = parse_hrd_cancel(str(notes or ""))
     return {c: row.get(c) for c in APPLICANT_COLUMNS}
 
 

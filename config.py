@@ -364,6 +364,7 @@ NOTION_APPLICANT_SOURCES = {
 }
 NOTION_ATTEND_PROP = "개강 참석일"        # 담당자에게 추가 요청한 날짜 속성. 생기면 ETL이 자동으로 읽는다
 NOTION_HRD_APPLY_PROP = "HRD 신청 일시"   # 위와 같음 — HRD 신청 후 취소돼도 신청 사실이 남도록
+NOTION_NOTES_PROP = "특이사항"            # 담당자 자유 서술. "MM.DD HRD취소 ①본인 / ②기관취소(승인취소)" 태그만 읽는다 (2026-10-06 공지). 본문은 저장하지 않음
 NOTION_SYNC_OVERLAP_MIN = 10              # 증분 폴링 시 마지막 동기화 시각에서 이만큼 되감아 조회 (시계 오차·지연 흡수)
 
 # ── 노션 「HRD 등록자 관리」 페이지 발행 (notion_registry_publish.py) ──
