@@ -71,6 +71,10 @@ class TestValues:
         rows[0]["개강일 출석 인원(API)"] = None
         out = check_values(rows, "2026-09-21")
         assert any("노션 수집 등록 9 > API 신청인원 5" in f for f in out) and any("출결 기록 없음" in f for f in out)
+        rows[0]["_HRD 이력 취소"] = 4                                                      # HRD 신청 뒤 본인 취소 4명이면 차이 4는 정상
+        assert not any("노션 수집 등록" in f for f in check_values(rows, "2026-09-21"))
+        rows[0]["_HRD 이력 취소"] = 3                                                      # 3명으로는 설명 안 됨
+        assert any("차이 4명 중 HRD 이력 뒤 취소·전환 3명" in f for f in check_values(rows, "2026-09-21"))
 
     def test_api_more_than_notion_only_for_full_record_cohorts(self, db):
         _seed(db)

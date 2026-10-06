@@ -102,9 +102,9 @@ GUIDE_LINES = [
     "보는 기준 —2026-10-07 개강 MLO3부터가 자동 수집 이후 기수(신청·등록·취소가 HRD 일자와 함께 기록됨). 그 전 기수는 취소자에게 HRD 일자가 없어 "
     "노션 수집 인원에 확정자만 남고 '불일치'가 정상. 두 그룹의 일치 여부·등록 인원은 서로 비교하지 않는다. API 값(신청·확정·출석)은 기수 구분 없이 같은 품질",
     "기수 · 과정 · 상태 · 개강일 = HRD-Net 훈련일정 상세 API. 상태는 개강일·종료일을 오늘과 비교(개설예정 · 진행중 · 종료)",
-    "API 신청인원 = totTrpCnt. 한 번이라도 수강신청한 사람의 누적 수라 취소자 포함. 최신 스냅샷 값",
+    "API 신청인원 = totTrpCnt. HRD-Net에 남아 있는 수강신청 건수(승인 여부 무관, 미승인 대기 포함). 신청자가 고용24에서 직접 취소하면 빠지고, 우리가 HRD-Net 기관 화면에서 반려·승인취소 처리한 사람은 그대로 남는 것으로 추정(2026-10-06, 사례 3건 기준. 다음 감소 사례에서 재검토). 최신 스냅샷 값",
     "노션 수집 등록 인원 = 신청자 리스트(AI·SKN)에서 최종결과가 HRD신청·HRD등록을 한 번이라도 거쳤거나 HRD 신청/등록 일자가 있는 사람 수. 취소자도 일자가 있으면 포함",
-    "일치 여부 = API 신청인원과 노션 수집 등록 인원이 같으면 일치. 다르면 HRD-Net에는 있는데 노션에 일자 없이 빠진 사람이 있는 것(대부분 수집 전 기수의 취소자)",
+    "일치 여부 = API 신청인원과 노션 수집 등록 인원이 같으면 일치. API가 크면 HRD-Net에는 있는데 노션에 일자 없이 빠진 사람이 있는 것(대부분 수집 전 기수의 취소자). 노션이 크면 HRD 신청 뒤 고용24에서 본인 취소한 사람 수만큼이 정상(노션 수집은 누적, API는 현재 남은 건수)",
     "개강일 출석 인원(API) = HRD-Net 출결 API에서 개강 당일 입실 기록이 있는 명부 인원. 개강 다음 날부터 값이 생김. 개강 참석률(API, %) = 개강일 출석 ÷ API 신청인원 × 100",
     "확정 신고(API) = 개강 + 7일 0시(KST) 이후 첫 스냅샷의 HRD-Net 승인 명부 인원(totParMks). 그 뒤 명부가 바뀌어도 이 값은 고정 (2026-09-28 규칙). "
     "추적 시작(2026-09-15) 전에 +7일이 지난 기수는 첫 스냅샷 값. 확정자 신고율(API, %) = 확정 신고(API) ÷ API 신청인원 × 100 — 참고용(2026-09-23~29 TF 책임 수치였음)",
@@ -236,8 +236,11 @@ def build_cohort_rows(today=None, ops=None):
     # 출결을 한 번도 못 읽은 회차(추적 시작 전 종료)는 0이 아니라 '모름'
     day1_map = {(r.TRPR_ID, int(r.TRPR_DEGR)): (_i(r.DAY1_CNT) if _i(r.ATT_KNOWN) else None) for r in roster.itertuples(index=False)}
     ever = ever_registered_pages()
-    apps = load_data("SELECT NOTION_PAGE_ID, COHORT FROM TB_APPLICANT WHERE COHORT IS NOT NULL")
+    apps = load_data("SELECT NOTION_PAGE_ID, COHORT, STATUS FROM TB_APPLICANT WHERE COHORT IS NOT NULL")
     collected = apps[apps["NOTION_PAGE_ID"].isin(ever)].groupby("COHORT").size().to_dict()
+    # HRD 이력이 있는데 지금은 HRD신청·HRD등록이 아닌 사람(합격취소·되돌림·자부담결제 전환). 본인이 고용24에서 취소하면 totTrpCnt에서 빠지므로
+    # 노션 수집 > API 차이가 이 수 이내면 정상 (2026-10-06 확인, docs/DEV_LOG.md). 발행하지 않는 점검용 키(`_` 접두)
+    cancelled = apps[apps["NOTION_PAGE_ID"].isin(ever) & ~apps["STATUS"].isin(HRD_STATUSES)].groupby("COHORT").size().to_dict()
     has_source = set(apps["COHORT"])
 
     rows = []
@@ -257,6 +260,7 @@ def build_cohort_rows(today=None, ops=None):
             "KEY": key, "기수": key, "과정": config.COURSE_SHORT_NAMES[s.TRPR_ID],
             "상태": _status(start, s.TR_END_DT, today), "개강일": start,
             "API 신청인원": applied, "노션 수집 등록 인원": notion,
+            "_HRD 이력 취소": cancelled.get(key, 0) if notion is not None else None,
             "일치 여부": "미확인" if applied is None or notion is None else ("일치" if applied == notion else "불일치"),
             "개강일 출석 인원(API)": day1 if started else None,
             "개강 참석률(API, %)": round(day1 / applied * 100, 1) if started and day1 is not None and applied else None,

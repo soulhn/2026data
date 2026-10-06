@@ -17,7 +17,7 @@ from utils import adapt_query
 
 logger = logging.getLogger(__name__)
 
-_HASH_EXCLUDE = {"변경 시각", "갱신 시각"}   # 매 실행 바뀌는 시각은 해시에서 뺀다 (안 그러면 전 행이 매번 갱신)
+_HASH_EXCLUDE = {"변경 시각", "갱신 시각"}   # 매 실행 바뀌는 시각은 해시에서 뺀다 (안 그러면 전 행이 매번 갱신). `_`로 시작하는 키는 점검용 내부 값이라 함께 제외
 
 
 # ── 노션 API (쓰기 포함, 우리 페이지 전용) ──────────────────────────
@@ -173,7 +173,7 @@ def to_properties(schema, row):
 
 
 def content_hash(row):
-    return hashlib.sha256(json.dumps({k: v for k, v in row.items() if k not in _HASH_EXCLUDE},
+    return hashlib.sha256(json.dumps({k: v for k, v in row.items() if k not in _HASH_EXCLUDE and not k.startswith("_")},
                                      ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
 
 

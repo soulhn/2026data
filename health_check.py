@@ -91,7 +91,11 @@ def check_values(cohort_rows, today):
     for r in cohort_rows:
         k, applied = r["기수"], r["API 신청인원"]
         if applied is not None and r["노션 수집 등록 인원"] is not None and r["노션 수집 등록 인원"] > applied:
-            out.append(f"{k}: 노션 수집 등록 {r['노션 수집 등록 인원']} > API 신청인원 {applied} — 기수 매핑이나 중복 의심")
+            # 노션 수집은 누적, API totTrpCnt는 지금 남은 신청 건수(고용24 본인 취소는 빠짐) → HRD 이력 뒤 취소된 사람 수까지는 정상
+            gap, cancelled = r["노션 수집 등록 인원"] - applied, r.get("_HRD 이력 취소") or 0
+            if gap > cancelled:
+                out.append(f"{k}: 노션 수집 등록 {r['노션 수집 등록 인원']} > API 신청인원 {applied} — 차이 {gap}명 중 HRD 이력 뒤 취소·전환 {cancelled}명으로 "
+                           f"설명되지 않음. 기수 매핑이나 중복 의심")
         if applied is not None and r["확정 신고(API)"] is not None and r["확정 신고(API)"] > applied:
             out.append(f"{k}: 확정 신고 {r['확정 신고(API)']} > API 신청인원 {applied}")
         start = str(r["개강일"] or "")[:10]
