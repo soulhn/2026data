@@ -103,12 +103,14 @@ class TestCohorts:
         plain = build_cohort_rows(today="2026-09-16")[0]
         assert reg.OPS_OPEN_COL not in plain and reg.OPS_CONFIRM_COL not in plain and reg.OPS_EARLY_COL not in plain                      # 조회 못 하면 열을 건드리지 않는다
 
-    def test_match_verdict(self):
-        assert match_verdict(21, 21, 0) == "일치"
-        assert match_verdict(21, 22, 3) == "취소 차이"          # AIO4: 공문 이탈 1명이 API에서만 빠짐
-        assert match_verdict(21, 25, 3) == "불일치"            # 취소·전환 수로 설명 안 되는 노션 초과
-        assert match_verdict(17, 15, 1) == "불일치"            # API가 크면 노션 누락 (취소 수와 무관)
-        assert match_verdict(None, 3, 0) == "미확인" and match_verdict(3, None, None) == "미확인"
+    def test_match_verdict(self, monkeypatch):
+        monkeypatch.setattr(reg.config, "NOTION_MATCH_EXCEPTIONS", {"AIO4": 1})
+        assert match_verdict("AIO4", 21, 21) == "일치"
+        assert match_verdict("AIO4", 21, 22) == "일치(예외)"      # 담당자 확인한 차이와 정확히 같을 때만
+        assert match_verdict("AIO4", 21, 23) == "불일치"          # 등록한 예외보다 차이가 크면 다시 불일치
+        assert match_verdict("SKN38", 24, 25) == "불일치"         # 등록 안 한 기수는 노션 초과여도 불일치
+        assert match_verdict("AIO3", 17, 15) == "불일치"
+        assert match_verdict("AIO4", None, 3) == "미확인" and match_verdict("AIO4", 3, None) == "미확인"
 
     def test_confirmed_override(self, db, monkeypatch):
         """담당자 확인으로 바로잡은 기수는 고정값 대신 보정값. 확정 시점 전에는 보정값도 비운다."""
