@@ -199,12 +199,13 @@ def init_main_tables():
 
     # ==========================================
     # [KPI] 명부 사람 단위 스냅샷 — kpi_etl.py 가 매시간. 승인 감지 시각·상태 변화·첫 참석일을 사람마다 남긴다
-    # 이름은 해시·마스킹만 (HRD 명부 원본 이름은 TB_TRAINEE_INFO에 이미 있으나 KPI 테이블엔 복제하지 않음)
+    # 이름은 실명·해시·가린 이름. 실명(NAME)은 2026-10-26부터: 디스코드 알림·노션 등록자 표시용, 로그에는 쓰지 않는다 (public 레포)
     # ==========================================
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS TB_ROSTER_MEMBER (
             TRPR_ID TEXT NOT NULL, TRPR_DEGR INTEGER NOT NULL, TRNEE_ID TEXT NOT NULL,
             NAME_HASH TEXT, NAME_MASKED TEXT,
+            NAME TEXT,                       -- 실명 (2026-10-26 추가. 그 전에 명부에서 사라진 사람은 NULL)
             TR_STA_DT TEXT,                  -- 회차 개강일 (등록 지연 일수 계산용)
             STATUS TEXT,                     -- 현재 명부 상태 (훈련중·중도탈락·정상수료 …)
             FIRST_SEEN_AT TIMESTAMP,         -- 명부에 처음 나타난 시각 = HRD 승인 감지
@@ -218,6 +219,7 @@ def init_main_tables():
         )
     ''')
     _exec_ignore(conn, cursor, "ALTER TABLE TB_ROSTER_MEMBER ADD COLUMN DAY1_STATUS TEXT")   # 2026-09-17 추가 (기존 DB)
+    _exec_ignore(conn, cursor, "ALTER TABLE TB_ROSTER_MEMBER ADD COLUMN NAME TEXT")          # 2026-10-26 추가 (기존 DB)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS TB_ROSTER_MEMBER_LOG (
             TRPR_ID TEXT NOT NULL, TRPR_DEGR INTEGER NOT NULL, TRNEE_ID TEXT NOT NULL,
@@ -230,7 +232,7 @@ def init_main_tables():
 
     # ==========================================
     # [KPI] 노션 신청자 리스트 미러 — notion_applicants_etl.py 가 매시간 증분 폴링
-    # 한 사람 한 줄(노션 페이지 ID가 키). 이름은 sha256 해시·마스킹만, 연락처는 저장하지 않는다.
+    # 한 사람 한 줄(노션 페이지 ID가 키). 이름은 실명(2026-10-26부터)·sha256 해시·가린 이름, 연락처는 저장하지 않는다.
     # ==========================================
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS TB_APPLICANT (
@@ -239,6 +241,7 @@ def init_main_tables():
             NAME_HASH TEXT,                  -- sha256(이름). HRD 명부 이름을 즉석 해시해 대조
             SOURCE_KEY TEXT,                 -- 어느 신청자 리스트에서 왔나 (config.NOTION_APPLICANT_SOURCES 키: AI · SKN)
             NAME_MASKED TEXT,                -- 홍*동
+            NAME TEXT,                       -- 실명 (2026-10-26 추가)
             COHORT TEXT,                     -- 최종기수 (AIO1 …)
             COHORT_TEXT TEXT,                -- 기수 (자유 입력)
             STATUS TEXT,                     -- 최종결과 (HRD신청 · HRD등록 · 합격취소 …)
@@ -262,6 +265,7 @@ def init_main_tables():
     _exec_ignore(conn, cursor, "ALTER TABLE TB_APPLICANT ADD COLUMN SOURCE_KEY TEXT")   # 2026-09-21 추가 (기존 DB)
     _exec_ignore(conn, cursor, "ALTER TABLE TB_APPLICANT ADD COLUMN HRD_CANCEL_BY TEXT")     # 2026-10-06 추가 (기존 DB)
     _exec_ignore(conn, cursor, "ALTER TABLE TB_APPLICANT ADD COLUMN HRD_CANCEL_NOTE TEXT")
+    _exec_ignore(conn, cursor, "ALTER TABLE TB_APPLICANT ADD COLUMN NAME TEXT")            # 2026-10-26 추가 (기존 DB)
     _exec_ignore(conn, cursor, "UPDATE TB_APPLICANT SET SOURCE_KEY = 'AI' WHERE SOURCE_KEY IS NULL")   # SKN 추가 전 행은 전부 AI캠퍼스
     # 상태 전이 로그 — 추적 필드가 바뀔 때마다 한 줄. 노션 API엔 이력이 없어 스냅샷 차분이 유일한 이력
     cursor.execute('''

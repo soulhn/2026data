@@ -47,8 +47,7 @@ class TestParse:
     def test_columns_and_privacy(self):
         row = parse_applicant_page(_page("p1", "홍길동", "HRD등록"))
         assert list(row.keys()) == APPLICANT_COLUMNS
-        assert row["NAME_HASH"] == name_hash("홍길동") and row["NAME_MASKED"] == "홍*동"
-        assert "홍길동" not in str(row.values())
+        assert row["NAME_HASH"] == name_hash("홍길동") and row["NAME_MASKED"] == "홍*동" and row["NAME"] == "홍길동"   # 실명은 2026-10-26부터
         assert "010" not in str(row.values()) and "담당자" not in str(row.values())
         assert row["STATUS"] == "HRD등록" and row["COHORT"] == "AIO3" and row["HRD_REG_AT"] == "2026-09-10"
         assert row["PASS_REG"] == 1 and row["HRD_ONSITE"] == 0 and row["OT_ATTEND"] == "O"
@@ -195,7 +194,19 @@ class TestUpsert:
         upsert_applicants(db, self._rows(_page("p1", "홍길동", "HRD등록", edited="2026-09-16T00:00:00.000Z"),
                                          _page("p2", "김철수", "합격취소(신청자 요청)", edited="2026-09-16T00:00:00.000Z")),
                           now=datetime(2026, 9, 16, 1), events=events)
-        assert [(e["name"], e["old"], e["new"]) for e in events] == [("홍*동", "합격안내", "HRD등록"), ("김*수", "HRD등록", "합격취소(신청자 요청)")]
+        assert [(e["name"], e["old"], e["new"]) for e in events] == [("홍길동", "합격안내", "HRD등록"), ("김철수", "HRD등록", "합격취소(신청자 요청)")]
+
+    def test_fills_missing_real_name_on_unchanged_row(self, db):
+        """실명 열 추가(2026-10-26) 전 행은 내용이 그대로여도 다시 읽으면 실명을 채운다. 전이 로그는 남기지 않는다."""
+        upsert_applicants(db, self._rows(_page("p1", "홍길동", "HRD등록")), now=datetime(2026, 9, 15, 1))
+        cur = db.cursor()
+        cur.execute("UPDATE TB_APPLICANT SET NAME = NULL")
+        db.commit()
+        ins, upd, tr = upsert_applicants(db, self._rows(_page("p1", "홍길동", "HRD등록")), now=datetime(2026, 10, 26, 1))
+        assert (ins, upd, tr) == (0, 1, 0)
+        cur.execute("SELECT NAME FROM TB_APPLICANT")
+        assert cur.fetchone()[0] == "홍길동"
+        assert upsert_applicants(db, self._rows(_page("p1", "홍길동", "HRD등록")), now=datetime(2026, 10, 26, 2)) == (0, 0, 0)   # 채운 뒤엔 건너뜀
 
     def test_tracked_fields_include_attendance(self):
         assert {"STATUS", "COHORT", "HRD_REG_AT", "ATTEND_DT"} <= set(TRACKED_FIELDS)

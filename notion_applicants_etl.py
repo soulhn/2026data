@@ -45,7 +45,7 @@ _PROP_MAP = {
     "취소 상세 사유": "CANCEL_REASON", "이관 대상 과정/기수": "TRANSFER_TO",
 }
 APPLICANT_COLUMNS = [
-    "NOTION_PAGE_ID", "NOTION_URL", "NAME_HASH", "NAME_MASKED", "SOURCE_KEY",
+    "NOTION_PAGE_ID", "NOTION_URL", "NAME_HASH", "NAME_MASKED", "NAME", "SOURCE_KEY",
     "COHORT", "COHORT_TEXT", "STATUS", "PROCESS_RESULT", "APPLIED_AT", "SOURCE",
     "INTERVIEW_AT", "INTERVIEW_GRADE", "PASS_NOTICE_AT", "PASS_REG_AT", "PASS_REG",
     "HRD_APPLY_AT", "HRD_REG_AT", "HRD_ONSITE", "OT_ATTEND", "ATTEND_DT",
@@ -98,7 +98,7 @@ def normalize_cohort(value, prefix=""):
 
 
 def parse_applicant_page(page, source=None):
-    """노션 페이지 객체 → APPLICANT_COLUMNS 딕셔너리 (이름은 해시·마스킹만).
+    """노션 페이지 객체 → APPLICANT_COLUMNS 딕셔너리 (이름은 실명·해시·가린 이름, 연락처는 읽지 않는다).
 
     source: config.NOTION_APPLICANT_SOURCES 항목(+ "key"). None이면 AI캠퍼스.
     """
@@ -110,6 +110,7 @@ def parse_applicant_page(page, source=None):
         "NOTION_URL": page.get("url"),
         "NAME_HASH": name_hash(name),
         "NAME_MASKED": mask_name(name) if name else None,
+        "NAME": name,
         "SOURCE_KEY": source["key"],
         "NOTION_CREATED_AT": page.get("created_time"),
         "NOTION_EDITED_AT": page.get("last_edited_time"),
@@ -196,7 +197,7 @@ def upsert_applicants(conn, rows, now=None, events=None):
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     cur = conn.cursor()
     tracked_sql = ", ".join(TRACKED_FIELDS)
-    select = adapt_query(f"SELECT {tracked_sql}, NOTION_EDITED_AT FROM TB_APPLICANT WHERE NOTION_PAGE_ID = ?")
+    select = adapt_query(f"SELECT {tracked_sql}, NOTION_EDITED_AT, NAME FROM TB_APPLICANT WHERE NOTION_PAGE_ID = ?")
     insert = adapt_query(
         f"INSERT INTO TB_APPLICANT ({', '.join(APPLICANT_COLUMNS)}, SYNCED_AT) "
         f"VALUES ({', '.join('?' * len(APPLICANT_COLUMNS))}, ?)"
@@ -223,17 +224,17 @@ def upsert_applicants(conn, rows, now=None, events=None):
                 cur.execute(log, [pid, now, "STATUS", None, r["STATUS"], r.get("NOTION_EDITED_AT")])
                 transitions += 1
                 if events is not None and r.get("COHORT") and _notable(None, r["STATUS"]):
-                    events.append({"name": r.get("NAME_MASKED"), "cohort": r["COHORT"], "old": None, "new": r["STATUS"]})
+                    events.append({"name": r.get("NAME") or r.get("NAME_MASKED"), "cohort": r["COHORT"], "old": None, "new": r["STATUS"]})
             continue
         prev_vals = dict(zip(TRACKED_FIELDS, prev[:len(TRACKED_FIELDS)]))
         changed = [f for f in TRACKED_FIELDS if _norm(prev_vals.get(f)) != _norm(r.get(f))]
-        if prev[len(TRACKED_FIELDS)] == r.get("NOTION_EDITED_AT") and not changed:
-            continue                                  # 겹침 구간에서 다시 읽은 같은 행
+        if prev[len(TRACKED_FIELDS)] == r.get("NOTION_EDITED_AT") and not changed and prev[len(TRACKED_FIELDS) + 1] == r.get("NAME"):
+            continue                                  # 겹침 구간에서 다시 읽은 같은 행 (실명이 비어 있던 행은 채운다, 2026-10-26)
         for f in changed:
             cur.execute(log, [pid, now, f, _norm(prev_vals.get(f)), _norm(r.get(f)), r.get("NOTION_EDITED_AT")])
             transitions += 1
             if f == "STATUS" and events is not None and r.get("COHORT") and _notable(_norm(prev_vals.get(f)), _norm(r.get(f))):
-                events.append({"name": r.get("NAME_MASKED"), "cohort": r["COHORT"],
+                events.append({"name": r.get("NAME") or r.get("NAME_MASKED"), "cohort": r["COHORT"],
                                "old": _norm(prev_vals.get(f)), "new": _norm(r.get(f))})
         cur.execute(update, [r.get(c) for c in update_cols] + [now, pid])
         updated += 1

@@ -261,6 +261,7 @@ def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_star
     done_rounds: 이번에 명부를 성공적으로 읽은 (과정ID, 회차) 집합 — 그 회차에서만 '사라짐(LEFT)'을 판정한다.
     round_start: (과정ID, 회차) → 개강일.
     events: 리스트를 주면 알림용 승인(JOINED)·이탈(LEFT)을 {"kind","name","cohort"}로 덧붙인다 (AI캠퍼스 과정만).
+            이름은 실명(이탈은 명부에 있을 때 저장해 둔 실명, 없으면 가린 이름). 실명은 로그에 쓰지 않는다.
     """
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     cur = conn.cursor()
@@ -279,11 +280,12 @@ def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_star
     existing = {}
     if done_rounds:
         cur.execute(adapt_query(
-            "SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, STATUS, GONE_AT, FIRST_ATTEND_DT, DAY1_STATUS, NAME_MASKED FROM TB_ROSTER_MEMBER"))
+            "SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, STATUS, GONE_AT, FIRST_ATTEND_DT, DAY1_STATUS, NAME_MASKED, NAME FROM TB_ROSTER_MEMBER"))
         for row in cur.fetchall():
             if (row[0], int(row[1])) in done_rounds:
                 existing[(row[0], int(row[1]), str(row[2]))] = {"STATUS": row[3], "GONE_AT": row[4],
-                                                                 "FIRST_ATTEND_DT": row[5], "DAY1_STATUS": row[6], "NAME_MASKED": row[7]}
+                                                                 "FIRST_ATTEND_DT": row[5], "DAY1_STATUS": row[6], "NAME_MASKED": row[7],
+                                                                 "NAME": row[8]}
 
     seen = set()
     rows = roster_df.to_dict("records") if roster_df is not None and not roster_df.empty else []
@@ -298,22 +300,25 @@ def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_star
             # 다른 실행이 같은 사람을 먼저 넣을 수 있다 (2026-10-02 SKN 38기, UniqueViolation 으로 실행 실패).
             # 실제로 넣은 쪽만 JOINED 로그·알림을 남기고, 진 쪽은 이 사람을 건너뛴다 (다음 실행이 정상 갱신)
             cur.execute(adapt_query(
-                "INSERT OR IGNORE INTO TB_ROSTER_MEMBER (TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, TR_STA_DT, STATUS, "
+                "INSERT OR IGNORE INTO TB_ROSTER_MEMBER (TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, NAME, TR_STA_DT, STATUS, "
                 "FIRST_SEEN_AT, LAST_SEEN_AT, STATUS_CHANGED_AT, FIRST_ATTEND_DT, FIRST_IN_TIME, DAY1_STATUS) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-                [key[0], key[1], key[2], name_hash(r.get("TRNEE_NM")), mask_name(r.get("TRNEE_NM")),
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
+                [key[0], key[1], key[2], name_hash(r.get("TRNEE_NM")), mask_name(r.get("TRNEE_NM")), _s(r.get("TRNEE_NM")),
                  round_start.get((key[0], key[1])), status, now, now, now, fa_dt, fa_time, day1])
             if cur.rowcount != 1:
                 continue
             cur.execute(log, [key[0], key[1], key[2], now, "JOINED", None, status])
             counts["joined"] += 1
             if events is not None and config.COURSE_SHORT_NAMES.get(key[0]) in config.NOTION_KPI_COURSES:
-                events.append({"kind": "JOINED", "name": mask_name(r.get("TRNEE_NM")), "cohort": _label(key[0], key[1])})
+                events.append({"kind": "JOINED", "name": _s(r.get("TRNEE_NM")), "cohort": _label(key[0], key[1])})
             if fa_dt:
                 cur.execute(log, [key[0], key[1], key[2], now, "FIRST_ATTEND", None, fa_dt])
                 counts["first_attend"] += 1
             continue
         sets, params = ["LAST_SEEN_AT = ?", "GONE_AT = NULL"], [now]
+        if _s(r.get("TRNEE_NM")) and _s(r.get("TRNEE_NM")) != _s(prev["NAME"]):   # 실명 열 추가(2026-10-26) 전 행 채움
+            sets += ["NAME = ?"]
+            params += [_s(r.get("TRNEE_NM"))]
         if _s(prev["STATUS"]) != status:
             cur.execute(log, [key[0], key[1], key[2], now, "STATUS", _s(prev["STATUS"]), status])
             sets += ["STATUS = ?", "STATUS_CHANGED_AT = ?"]
@@ -341,7 +346,7 @@ def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_star
         cur.execute(log, [key[0], key[1], key[2], now, "LEFT", _s(prev["STATUS"]), None])
         counts["left"] += 1
         if events is not None and config.COURSE_SHORT_NAMES.get(key[0]) in config.NOTION_KPI_COURSES:
-            events.append({"kind": "LEFT", "name": prev.get("NAME_MASKED"), "cohort": _label(key[0], key[1])})
+            events.append({"kind": "LEFT", "name": _s(prev.get("NAME")) or prev.get("NAME_MASKED"), "cohort": _label(key[0], key[1])})
     conn.commit()
     return counts
 

@@ -92,7 +92,7 @@ PERSON_SCHEMA = {
     "갱신 시각": {"date": {}},
     "메모": {"rich_text": {}},   # 담당자 입력 — 파이프라인은 절대 쓰지 않는다
 }
-PERSON_DESC = "한 번이라도 HRD에 등록한 사람 한 명이 한 줄 (노션 HRD신청·HRD등록 이력 ∪ HRD 명부). 이름은 가려서 저장. '메모'는 담당자 열"
+PERSON_DESC = "한 번이라도 HRD에 등록한 사람 한 명이 한 줄 (노션 HRD신청·HRD등록 이력 ∪ HRD 명부). 이름은 실명(2026-10-26부터. 실명을 못 구한 사람만 가린 이름). '메모'는 담당자 열"
 
 GUIDE_TITLE = "읽는 법 — 열별 수집 기준"
 GUIDE_LINES = [
@@ -118,7 +118,7 @@ GUIDE_LINES = [
     "충원을 포함하므로 100%를 넘을 수 있는 지수이며 = 100% − 초기이탈률 + 추가인원율로 분해됨. 초기이탈률(%) = 초기이탈 ÷ 개강인원(낮을수록 좋음, 액션② 적응 이벤트·리워드가 움직이는 값), "
     "추가인원율(%) = 추가인원 ÷ 개강인원. 세 값 모두 운영현황표 수기 기준이라 확정자 신고 직후 담당자가 개강인원·초기이탈·추가인원을 확정 입력해야 함. 확정자 신고율(API, %)은 참고용",
     "갱신 시각 = 그 행을 마지막으로 다시 쓴 시각. 값이 안 바뀐 행은 건너뛰므로 오래돼 보여도 정상. 전체 실행 시각은 위 '마지막 갱신' 콜아웃",
-    "등록자 DB — 이름: 가린 이름 · 기수 / 등록일: 노션 HRD 신청 일시(없으면 등록 일자, 그것도 없으면 명부에 처음 보인 날) / "
+    "등록자 DB — 이름: 실명 · 기수(2026-10-26 이전에 명부에서 사라져 실명이 없는 사람만 가린 이름) / 등록일: 노션 HRD 신청 일시(없으면 등록 일자, 그것도 없으면 명부에 처음 보인 날) / "
     "개강날 출석: 출석 · 미출석 · 개강 전 · 기록 없음(그 기수 출결을 못 읽음) / 노션 상태: 신청자 리스트 최종결과, '노션에 없음'은 명부에만 있는 사람 / "
     "HRD 승인: 지금 HRD-Net 명부에 있음(중도탈락도 명부에 남아 ✓) / 원본 링크: 신청자 리스트 페이지 / 메모: 담당자 열, 파이프라인은 쓰지 않음",
 ]
@@ -302,10 +302,10 @@ def build_person_rows(cohort_pages, today=None):
     """등록자 행. cohort_pages: 기수 키 → 노션 기수 페이지 ID (관계 연결용)."""
     today = today or datetime.now(KST).strftime("%Y-%m-%d")
     ever = ever_registered_pages()
-    apps = load_data("SELECT NOTION_PAGE_ID, NOTION_URL, SOURCE_KEY, NAME_HASH, NAME_MASKED, COHORT, STATUS, HRD_APPLY_AT, HRD_REG_AT "
+    apps = load_data("SELECT NOTION_PAGE_ID, NOTION_URL, SOURCE_KEY, NAME_HASH, NAME_MASKED, NAME, COHORT, STATUS, HRD_APPLY_AT, HRD_REG_AT "
                      "FROM TB_APPLICANT WHERE COHORT IS NOT NULL")
     apps = apps[apps["NOTION_PAGE_ID"].isin(ever)]
-    members = load_data("SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, STATUS, FIRST_SEEN_AT, GONE_AT, "
+    members = load_data("SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, NAME, STATUS, FIRST_SEEN_AT, GONE_AT, "
                         "FIRST_ATTEND_DT, DAY1_STATUS, TR_STA_DT FROM TB_ROSTER_MEMBER")
     members = members.loc[[in_registry(t, d, s) for t, d, s in zip(members["TRPR_ID"], members["TRPR_DEGR"], members["TR_STA_DT"])]]
     tracking_start = str(members["FIRST_SEEN_AT"].min())[:10] if not members.empty else None
@@ -331,7 +331,7 @@ def build_person_rows(cohort_pages, today=None):
         if not reg_dt and m is not None and tracking_start and str(m.FIRST_SEEN_AT)[:10] > tracking_start:
             reg_dt = str(m.FIRST_SEEN_AT)[:10]      # 노션에 날짜가 없으면 명부에 처음 보인 날 (추적 시작 이후만)
         rows.append({
-            "KEY": a.NOTION_PAGE_ID, "이름": f"{a.NAME_MASKED or '?'} · {a.COHORT}", "기수": cohort_pages[a.COHORT],
+            "KEY": a.NOTION_PAGE_ID, "이름": f"{_s(a.NAME) or a.NAME_MASKED or '?'} · {a.COHORT}", "기수": cohort_pages[a.COHORT],
             "등록일": reg_dt,
             "개강날 출석": attend_verdict(m.FIRST_ATTEND_DT if m is not None else None,
                                      m.TR_STA_DT if m is not None else _start_of(a.COHORT), today,
@@ -346,7 +346,7 @@ def build_person_rows(cohort_pages, today=None):
         if key not in cohort_pages or (m.TRPR_ID, int(m.TRPR_DEGR), str(m.TRNEE_ID)) in used:
             continue
         rows.append({
-            "KEY": f"roster:{m.TRPR_ID}:{int(m.TRPR_DEGR)}:{m.TRNEE_ID}", "이름": f"{m.NAME_MASKED or '?'} · {key}",
+            "KEY": f"roster:{m.TRPR_ID}:{int(m.TRPR_DEGR)}:{m.TRNEE_ID}", "이름": f"{_s(m.NAME) or m.NAME_MASKED or '?'} · {key}",
             "기수": cohort_pages[key],
             "등록일": str(m.FIRST_SEEN_AT)[:10] if tracking_start and str(m.FIRST_SEEN_AT)[:10] > tracking_start else None,
             "개강날 출석": attend_verdict(m.FIRST_ATTEND_DT, m.TR_STA_DT, today, known=(m.TRPR_ID, int(m.TRPR_DEGR)) in known_rounds),

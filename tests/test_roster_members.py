@@ -143,7 +143,7 @@ class TestUpsert:
         row = self._rows(db, "SELECT NAME_HASH, NAME_MASKED, FIRST_SEEN_AT, FIRST_ATTEND_DT, FIRST_IN_TIME FROM TB_ROSTER_MEMBER WHERE TRNEE_ID='t1'")[0]
         assert row[0] == kpi_etl.name_hash("홍길동") and row[1] == "홍*동"
         assert row[3] == "20260915" and row[4] == "09:02"
-        assert "홍길동" not in str(self._rows(db, "SELECT * FROM TB_ROSTER_MEMBER"))
+        assert self._rows(db, "SELECT NAME FROM TB_ROSTER_MEMBER WHERE TRNEE_ID = 't1'")[0][0] == "홍길동"   # 실명 저장 (2026-10-26부터)
 
         # 다음 시간: t2가 첫 참석, t1 상태 변화 없음
         t2 = datetime(2026, 9, 15, 1)
@@ -166,7 +166,7 @@ class TestUpsert:
         assert ("t3", "JOINED", None, "훈련중") in events
 
     def test_events_collected_for_kpi_courses_only(self, db, monkeypatch):
-        """알림 이벤트는 AI캠퍼스 과정(config.NOTION_KPI_COURSES)만. JOINED·LEFT에 가린 이름·기수 라벨."""
+        """알림 이벤트는 AI캠퍼스 과정(config.NOTION_KPI_COURSES)만. JOINED는 API 실명, LEFT는 명부에 있을 때 저장한 실명 (2026-10-26)."""
         import config
         monkeypatch.setattr(config, "COURSE_SHORT_NAMES", {"A": "AIO", "S": "SKN"})
         monkeypatch.setattr(config, "NOTION_KPI_COURSES", ("AIO",))
@@ -176,10 +176,21 @@ class TestUpsert:
                               now=datetime(2026, 9, 15, 0), events=events)
         upsert_roster_members(db, _roster(("s1", "김철수", "훈련중"), cid="S", degr=1), first_attendance(pd.DataFrame()), {("S", 1)}, rs,
                               now=datetime(2026, 9, 15, 0), events=events)
-        assert events == [{"kind": "JOINED", "name": "홍*동", "cohort": "AIO3"}]
+        assert events == [{"kind": "JOINED", "name": "홍길동", "cohort": "AIO3"}]
         events.clear()
         upsert_roster_members(db, _roster(cid="A"), first_attendance(pd.DataFrame()), {("A", 3)}, rs, now=datetime(2026, 9, 16, 0), events=events)
+        assert events == [{"kind": "LEFT", "name": "홍길동", "cohort": "AIO3"}]
+        cur = db.cursor()
+        cur.execute("UPDATE TB_ROSTER_MEMBER SET NAME = NULL, GONE_AT = NULL")   # 실명 열 추가 전 행: 다음 실행에서 채우고, 그 전에 사라지면 가린 이름
+        db.commit()
+        events.clear()
+        upsert_roster_members(db, _roster(cid="A"), first_attendance(pd.DataFrame()), {("A", 3)}, rs, now=datetime(2026, 9, 17, 0), events=events)
         assert events == [{"kind": "LEFT", "name": "홍*동", "cohort": "AIO3"}]
+        cur.execute("UPDATE TB_ROSTER_MEMBER SET GONE_AT = NULL")
+        db.commit()
+        upsert_roster_members(db, _roster(("t1", "홍길동", "훈련중"), cid="A"), first_attendance(pd.DataFrame()), {("A", 3)}, rs, now=datetime(2026, 9, 18, 0))
+        cur.execute("SELECT NAME FROM TB_ROSTER_MEMBER WHERE TRNEE_ID = 't1'")
+        assert cur.fetchone()[0] == "홍길동"
 
     def test_left_only_judged_for_fetched_rounds(self, db):
         rs = {("A", 3): "2026-09-15", ("B", 1): "2026-07-09"}

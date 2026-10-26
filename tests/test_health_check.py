@@ -106,6 +106,16 @@ class TestMatching:
         assert any("같은 기수에 같은 이름 등록자: AIO3 2명" in f for f in out)
         assert any("노션 신청자 리스트에 없음 1명" in f and "박*희 · AIO3" in f for f in out)
 
+    def test_new_roster_only_real_name_goes_to_discord_only(self, db):
+        """'노션에 없음' 줄: 문자열 값(로그·해시)은 가린 이름, .discord만 실명 (public 레포 Actions 로그 보호)."""
+        _seed(db)
+        db.cursor().execute("INSERT INTO TB_ROSTER_MEMBER (TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, NAME, TR_STA_DT, STATUS, FIRST_SEEN_AT, LAST_SEEN_AT) "
+                            "VALUES ('AIG20260000578396', 3, 't9', 'h_new', '박*희', '박영희', '2026-09-15', '훈련중', '2026-09-21 04:00:00', '2026-09-21 04:00:00')")
+        db.commit()
+        line = next(f for f in check_matching(NOW) if "노션 신청자 리스트에 없음" in f)
+        assert "박*희 · AIO3" in line and "박영희" not in f"{line}"
+        assert "박영희 · AIO3" in line.discord
+
     def test_old_roster_only_member_is_not_new(self, db):
         _seed(db)
         cur = db.cursor()

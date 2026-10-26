@@ -10,6 +10,7 @@
   4 담당자   운영현황표 확정자신고 vs API 확정 신고 (확정 신고 끝난 기수)
 
 같은 내용이면 다시 보내지 않고(해시), 그래도 7일마다 한 번은 다시 알린다. 읽기만 한다 — 노션엔 쓰지 않는다.
+사람 이름은 디스코드에만 실명으로 보내고 로그·해시에는 가린 이름을 쓴다 (public 레포라 Actions 로그가 공개, 2026-10-26).
 실행: python health_check.py
 """
 import hashlib
@@ -113,6 +114,15 @@ def check_values(cohort_rows, today):
 # ── 3 매칭 ───────────────────────────────────────────────────────────
 
 
+class Named(str):
+    """점검 한 줄. 문자열 값(가린 이름)은 로그·해시에, .discord(실명)는 디스코드에만 쓴다 (public 레포라 Actions 로그가 공개된다)."""
+
+    def __new__(cls, masked, discord):
+        s = super().__new__(cls, masked)
+        s.discord = discord
+        return s
+
+
 def check_matching(now):
     out = []
     snap = load_data("SELECT DISTINCT TRPR_ID, TRPR_DEGR FROM TB_COURSE_SNAPSHOT")
@@ -126,7 +136,7 @@ def check_matching(now):
     dup = dup[dup > 1]
     if len(dup):
         out.append("같은 기수에 같은 이름 등록자: " + ", ".join(f"{c} {n}명" for (c, _), n in dup.items()))
-    mem = load_data("SELECT TRPR_ID, TRPR_DEGR, NAME_HASH, NAME_MASKED, FIRST_SEEN_AT, TR_STA_DT, GONE_AT FROM TB_ROSTER_MEMBER")
+    mem = load_data("SELECT TRPR_ID, TRPR_DEGR, NAME_HASH, NAME_MASKED, NAME, FIRST_SEEN_AT, TR_STA_DT, GONE_AT FROM TB_ROSTER_MEMBER")
     if not mem.empty:
         mem["COHORT"] = [cohort_key(t, d) for t, d in zip(mem.TRPR_ID, mem.TRPR_DEGR)]
         mem = mem[mem.COHORT.map(lambda c: c and c.rstrip("0123456789") in config.NOTION_KPI_COURSES)
@@ -135,8 +145,10 @@ def check_matching(now):
         fresh = [m for m in mem.itertuples(index=False)
                  if (m.COHORT, m.NAME_HASH) not in have and (_hours_since(m.FIRST_SEEN_AT, now) or 1e9) <= NEW_WINDOW_HOURS]
         if fresh:
-            out.append(f"명부에 새로 잡혔는데 노션 신청자 리스트에 없음 {len(fresh)}명: "
-                       + ", ".join(f"{m.NAME_MASKED or '?'} · {m.COHORT}" for m in fresh[:10]))
+            shown = fresh[:10]
+            head = f"명부에 새로 잡혔는데 노션 신청자 리스트에 없음 {len(fresh)}명: "
+            out.append(Named(head + ", ".join(f"{m.NAME_MASKED or '?'} · {m.COHORT}" for m in shown),
+                             head + ", ".join(f"{m.NAME or m.NAME_MASKED or '?'} · {m.COHORT}" for m in shown)))
         rdup = mem.groupby(["COHORT", "NAME_HASH"]).size()
         rdup = rdup[rdup > 1]
         if len(rdup):
@@ -218,7 +230,7 @@ def main(now=None):
             set_sync_state(conn, h, "health_last_hash")
             return
         if should_send(conn, h, now):
-            n = discord_post([("⚠️ 파이프라인 점검 · " + t, f) for t, f in sections])
+            n = discord_post([("⚠️ 파이프라인 점검 · " + t, [getattr(x, "discord", x) for x in f]) for t, f in sections])
             if n:
                 set_sync_state(conn, now.strftime("%Y-%m-%dT%H:%M:%SZ"), "health_last_sent")
             logger.info(f"[점검] 발견 {sum(len(f) for _, f in sections)}건 · 디스코드 {n}건 전송 ({time.monotonic() - t0:.1f}s)")
