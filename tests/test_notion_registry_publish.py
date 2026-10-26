@@ -8,7 +8,8 @@ import notion_applicants_etl
 import notion_publish
 import notion_registry_publish as reg
 import utils
-from notion_registry_publish import attend_verdict, body_blocks, body_rows, build_cohort_rows, build_person_rows, publish_cohort_bodies
+from notion_registry_publish import (attend_verdict, body_blocks, body_rows, build_cohort_rows, build_person_rows, match_verdict,
+                                     publish_cohort_bodies)
 
 
 @pytest.fixture
@@ -101,6 +102,13 @@ class TestCohorts:
         assert rows["SKN37"][reg.OPS_OPEN_COL] is None and rows["SKN37"][reg.OPS_CONFIRM_COL] is None   # 운영현황표에 없는 기수는 빈칸
         plain = build_cohort_rows(today="2026-09-16")[0]
         assert reg.OPS_OPEN_COL not in plain and reg.OPS_CONFIRM_COL not in plain and reg.OPS_EARLY_COL not in plain                      # 조회 못 하면 열을 건드리지 않는다
+
+    def test_match_verdict(self):
+        assert match_verdict(21, 21, 0) == "일치"
+        assert match_verdict(21, 22, 3) == "취소 차이"          # AIO4: 공문 이탈 1명이 API에서만 빠짐
+        assert match_verdict(21, 25, 3) == "불일치"            # 취소·전환 수로 설명 안 되는 노션 초과
+        assert match_verdict(17, 15, 1) == "불일치"            # API가 크면 노션 누락 (취소 수와 무관)
+        assert match_verdict(None, 3, 0) == "미확인" and match_verdict(3, None, None) == "미확인"
 
     def test_confirmed_override(self, db, monkeypatch):
         """담당자 확인으로 바로잡은 기수는 고정값 대신 보정값. 확정 시점 전에는 보정값도 비운다."""

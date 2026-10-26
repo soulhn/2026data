@@ -64,7 +64,7 @@ COHORT_SCHEMA = {
     "개강일": {"date": {}},
     "API 신청인원": _num(),
     "노션 수집 등록 인원": _num(),
-    "일치 여부": {"select": {"options": [{"name": "일치"}, {"name": "불일치"}, {"name": "미확인"}]}},
+    "일치 여부": {"select": {"options": [{"name": "일치"}, {"name": "취소 차이"}, {"name": "불일치"}, {"name": "미확인"}]}},
     "개강일 출석 인원(API)": _num(),
     "개강 참석률(API, %)": _num(),
     "확정 신고(API)": _num(),
@@ -104,7 +104,9 @@ GUIDE_LINES = [
     "기수 · 과정 · 상태 · 개강일 = HRD-Net 훈련일정 상세 API. 상태는 개강일·종료일을 오늘과 비교(개설예정 · 진행중 · 종료)",
     "API 신청인원 = totTrpCnt. HRD-Net에 남아 있는 수강신청 건수(승인 여부 무관, 미승인 대기 포함). 신청자가 고용24에서 직접 취소하면 빠지고, 우리가 HRD-Net 기관 화면에서 반려·승인취소 처리한 사람은 그대로 남는 것으로 추정(2026-10-06, 사례 3건 기준. 다음 감소 사례에서 재검토). 최신 스냅샷 값",
     "노션 수집 등록 인원 = 신청자 리스트(AI·SKN)에서 최종결과가 HRD신청·HRD등록을 한 번이라도 거쳤거나 HRD 신청/등록 일자가 있는 사람 수. 취소자도 일자가 있으면 포함",
-    "일치 여부 = API 신청인원과 노션 수집 등록 인원이 같으면 일치. API가 크면 HRD-Net에는 있는데 노션에 일자 없이 빠진 사람이 있는 것(대부분 수집 전 기수의 취소자). 노션이 크면 HRD 신청 뒤 고용24에서 본인 취소한 사람 수만큼이 정상(노션 수집은 누적, API는 현재 남은 건수)",
+    "일치 여부 = API 신청인원과 노션 수집 등록 인원이 같으면 일치. 노션이 크고 그 차이가 HRD 이력 뒤 취소·전환된 사람 수 이내면 '취소 차이'로 정상"
+    "(노션 수집은 누적, API는 지금 남은 건수라 고용24 본인 취소·확정 뒤 공문 이탈처럼 HRD-Net에서 빠진 사람만큼 API가 작다. 2026-10-26 추가, 파이프라인 점검과 같은 기준). "
+    "그 밖의 차이는 불일치: API가 크면 HRD-Net에는 있는데 노션에 일자 없이 빠진 사람이 있는 것(대부분 수집 전 기수의 취소자)",
     "개강일 출석 인원(API) = HRD-Net 출결 API에서 개강 당일 입실 기록이 있는 명부 인원. 개강 다음 날부터 값이 생김. 개강 참석률(API, %) = 개강일 출석 ÷ API 신청인원 × 100",
     "확정 신고(API) = 개강 + 7일 0시(KST) 이후 첫 스냅샷의 HRD-Net 승인 명부 인원(totParMks). 그 뒤 명부가 바뀌어도 이 값은 고정 (2026-09-28 규칙). "
     "추적 시작(2026-09-15) 전에 +7일이 지난 기수는 첫 스냅샷 값. 담당자 확인으로 바로잡은 기수는 그 값(AIO 4기 20 → 19: 고정 시점 뒤 같은 날 1명이 공문으로 이탈해 확정자 신고에서 빠짐, 2026-10-26). "
@@ -224,6 +226,16 @@ def attend_verdict(first_attend_dt, start, today, known=True):
     return "미출석" if known else "기록 없음"
 
 
+def match_verdict(applied, notion, cancelled):
+    """API 신청인원 vs 노션 수집 등록 인원. 노션이 크고 차이가 HRD 이력 뒤 취소·전환 수 이내면 '취소 차이'
+    (본인 취소·공문 이탈은 totTrpCnt에서 빠지지만 노션 수집은 누적). health_check 2번이 조용한 범위와 같다."""
+    if applied is None or notion is None:
+        return "미확인"
+    if applied == notion:
+        return "일치"
+    return "취소 차이" if applied < notion <= applied + (cancelled or 0) else "불일치"
+
+
 def build_cohort_rows(today=None, ops=None):
     """기수 표 행. ops = load_ops_counts() 결과. None이면(조회 실패·점검 호출) 운영현황표 두 열을 행에 넣지 않아 노션 값을 건드리지 않는다."""
     today = today or datetime.now(KST).strftime("%Y-%m-%d")
@@ -264,7 +276,7 @@ def build_cohort_rows(today=None, ops=None):
             "상태": _status(start, s.TR_END_DT, today), "개강일": start,
             "API 신청인원": applied, "노션 수집 등록 인원": notion,
             "_HRD 이력 취소": cancelled.get(key, 0) if notion is not None else None,
-            "일치 여부": "미확인" if applied is None or notion is None else ("일치" if applied == notion else "불일치"),
+            "일치 여부": match_verdict(applied, notion, cancelled.get(key, 0)),
             "개강일 출석 인원(API)": day1 if started else None,
             "개강 참석률(API, %)": round(day1 / applied * 100, 1) if started and day1 is not None and applied else None,
             "확정 신고(API)": confirmed,
