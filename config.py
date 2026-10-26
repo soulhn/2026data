@@ -377,6 +377,9 @@ NOTION_KPI_BASE_COHORTS = (                 # 운영TF 구간 5~7 기준 기수 
 )
 NOTION_KPI_COURSES =("AIO", "MLE", "MLO", "SKN")   # 신청자 리스트가 있는 과정 (한화는 모집 종료, 2026-09-21 SKN 추가)
 NOTION_KPI_CONFIRM_DAYS = 7                      # 개강 후 이 일수가 지나야 '확정자 신고율'을 계산 (확정 신고는 개강 1주 뒤)
+NOTION_CONFIRM_OVERRIDES = {                      # 확정 신고(API) 고정값을 담당자 확인으로 바로잡은 기수 {기수: 값}. 운영현황표와 다른 이유가 확인된 특이 사례만
+    "AIO4": 19,   # 고정 스냅샷(10/21 13:39 KST) 20 → 같은 날 17:14 1명이 공문으로 이탈해 확정자 신고에서 빠짐 (2026-10-26 담당자 확인)
+}
 NOTION_FULL_RECORD_SINCE = "2026-10-07"          # 이 날 이후 개강 기수는 완전 기록 관리 대상(취소자도 HRD 신청 일시 기록). API 신청 > 노션 수집이면 health_check가 알림 (2026-09-29)
 NOTION_JOBS_PAGE_ID = "3e2d943bcac2807cbdb0c5c5db17eb0f"       # 「채용 동향」 공고 DB 페이지 (2026-09-21). 우리 소유 — notion_jobs_publish.py가 쓴다
 NOTION_WRITE_INTERVAL = 0.35                     # 초. 노션 API 초당 3건 제한

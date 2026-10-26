@@ -102,6 +102,14 @@ class TestCohorts:
         plain = build_cohort_rows(today="2026-09-16")[0]
         assert reg.OPS_OPEN_COL not in plain and reg.OPS_CONFIRM_COL not in plain and reg.OPS_EARLY_COL not in plain                      # 조회 못 하면 열을 건드리지 않는다
 
+    def test_confirmed_override(self, db, monkeypatch):
+        """담당자 확인으로 바로잡은 기수는 고정값 대신 보정값. 확정 시점 전에는 보정값도 비운다."""
+        _seed(db)
+        monkeypatch.setattr(reg.config, "NOTION_CONFIRM_OVERRIDES", {"AIO3": 2})
+        assert {r["기수"]: r for r in build_cohort_rows(today="2026-09-16")}["AIO3"]["확정 신고(API)"] is None
+        a = {r["기수"]: r for r in build_cohort_rows(today="2026-09-22")}["AIO3"]
+        assert a["확정 신고(API)"] == 2 and a["확정자 신고율(API, %)"] == 40.0 and a["승인 인원(API, 현재)"] == 4
+
     def test_confirmed_frozen_at_due(self, db):
         _seed(db)
         f = reg.load_confirmed_at_due()
