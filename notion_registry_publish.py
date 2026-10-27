@@ -297,6 +297,10 @@ def build_cohort_rows(today=None, ops=None):
     return rows
 
 
+def _roster_key(m):
+    return f"roster:{m.TRPR_ID}:{int(m.TRPR_DEGR)}:{m.TRNEE_ID}"
+
+
 def build_person_rows(cohort_pages, today=None):
     """등록자 행. cohort_pages: 기수 키 → 노션 기수 페이지 ID (관계 연결용)."""
     today = today or datetime.now(KST).strftime("%Y-%m-%d")
@@ -338,6 +342,7 @@ def build_person_rows(cohort_pages, today=None):
             "노션 상태": a.STATUS, "HRD 승인": bool(m is not None and not _s(m.GONE_AT)),
             "원본 링크": _s(a.NOTION_URL),
             "갱신 시각": now_iso,
+            "_ROSTER_KEYS": [_roster_key(x) for x in matches],   # 명부 전용으로 먼저 발행된 행을 이어받을 때 쓴다 (발행·해시엔 안 들어감)
         })
     # 명부에만 있는 사람 — 노션 신청자 리스트에서 못 찾음
     for m in members.itertuples(index=False):
@@ -345,7 +350,7 @@ def build_person_rows(cohort_pages, today=None):
         if key not in cohort_pages or (m.TRPR_ID, int(m.TRPR_DEGR), str(m.TRNEE_ID)) in used:
             continue
         rows.append({
-            "KEY": f"roster:{m.TRPR_ID}:{int(m.TRPR_DEGR)}:{m.TRNEE_ID}", "이름": f"{_s(m.NAME) or m.NAME_MASKED or '?'} · {key}",
+            "KEY": _roster_key(m), "이름": f"{_s(m.NAME) or m.NAME_MASKED or '?'} · {key}",
             "기수": cohort_pages[key],
             "등록일": str(m.FIRST_SEEN_AT)[:10] if tracking_start and str(m.FIRST_SEEN_AT)[:10] > tracking_start else None,
             "개강날 출석": attend_verdict(m.FIRST_ATTEND_DT, m.TR_STA_DT, today, known=(m.TRPR_ID, int(m.TRPR_DEGR)) in known_rounds),
@@ -356,6 +361,27 @@ def build_person_rows(cohort_pages, today=None):
 
 
 _START_CACHE = {}
+
+
+def adopt_roster_pages(conn, rows):
+    """명부 전용으로 먼저 발행한 노션 행을, 그 사람이 노션 신청자와 이어지면 신청자 행으로 이어받는다 (2026-10-27).
+    새 페이지를 만들지 않으니 같은 사람이 두 줄로 남지 않고, 담당자 메모·페이지 링크도 그대로다. 반환: 이어받은 행 수."""
+    cur = conn.cursor()
+    cur.execute(adapt_query("SELECT ROW_KEY FROM TB_NOTION_PUBLISH WHERE DB_KEY = ?"), [PERSON_PUB])
+    known = {r[0] for r in cur.fetchall()}
+    n = 0
+    for row in rows:
+        old = next((k for k in row.get("_ROSTER_KEYS", ()) if k in known), None)
+        if row["KEY"] in known or not old:
+            continue
+        # 해시를 비워 이번 발행이 그 페이지를 신청자 내용으로 덮어쓰게 한다
+        cur.execute(adapt_query("UPDATE TB_NOTION_PUBLISH SET ROW_KEY = ?, CONTENT_HASH = '' WHERE DB_KEY = ? AND ROW_KEY = ?"),
+                    [row["KEY"], PERSON_PUB, old])
+        known.discard(old)
+        known.add(row["KEY"])
+        n += 1
+    conn.commit()
+    return n
 
 
 def _start_of(cohort):
@@ -564,6 +590,7 @@ def main():
         c = publish(token, conn, COHORT_PUB, cohort_db, COHORT_SCHEMA, build_cohort_rows(ops=ops))
         pages = cohort_page_map(conn)
         persons = build_person_rows(pages)
+        adopted = adopt_roster_pages(conn, persons)
         p = publish(token, conn, PERSON_PUB, person_db, {**PERSON_SCHEMA, "기수": {"relation": {}}}, persons)
         b = publish_cohort_bodies(token, conn, pages, persons, person_db)
         stamp = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
@@ -575,7 +602,7 @@ def main():
     finally:
         conn.close()
     logger.info(f"[등록자 발행] 기수 생성 {c[0]} · 갱신 {c[1]} · 건너뜀 {c[2]} | 등록자 생성 {p[0]} · 갱신 {p[1]} · 건너뜀 {p[2]} | "
-                f"기수 명단 표 다시 씀 {b[0]} · 건너뜀 {b[1]} ({time.monotonic() - t0:.1f}s)")
+                f"명부 전용 행 이어받음 {adopted} | 기수 명단 표 다시 씀 {b[0]} · 건너뜀 {b[1]} ({time.monotonic() - t0:.1f}s)")
 
 
 if __name__ == "__main__":

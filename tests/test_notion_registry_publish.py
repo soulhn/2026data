@@ -166,6 +166,35 @@ class TestPersons:
         rows = {r["KEY"]: r for r in build_person_rows({"AIO3": "c"}, today="2026-09-20")}
         assert rows["roster:AIG20260000578396:3:t3"]["HRD 승인"] is False
 
+    def test_roster_only_page_adopted_when_notion_record_appears(self, db, monkeypatch):
+        """명부 전용으로 먼저 발행한 t2의 노션 페이지를, 노션 신청자 기록이 생기면 새로 만들지 않고 이어받는다 (중복 행·메모 유실 방지)."""
+        import config
+        from unittest.mock import MagicMock
+        monkeypatch.setattr(config, "NOTION_WRITE_INTERVAL", 0)
+        _seed(db)
+        ids = iter(f"page-{i}" for i in range(100))
+        session = MagicMock()
+
+        def request(method, url, headers=None, json=None, timeout=None):
+            resp = MagicMock(status_code=200, headers={})
+            resp.json.return_value = {"id": next(ids)} if method == "POST" else {"id": "ok"}
+            return resp
+        session.request.side_effect = request
+        schema = {**reg.PERSON_SCHEMA, "기수": {"relation": {}}}
+        notion_publish.publish("tok", db, reg.PERSON_PUB, "pdb", schema, build_person_rows({"AIO3": "c"}, today="2026-09-16"), session=session)
+        cur = db.cursor()
+        cur.execute("SELECT NOTION_PAGE_ID FROM TB_NOTION_PUBLISH WHERE DB_KEY = ? AND ROW_KEY = ?", [reg.PERSON_PUB, "roster:AIG20260000578396:3:t2"])
+        roster_page = cur.fetchone()[0]
+        cur.execute("INSERT INTO TB_APPLICANT (NOTION_PAGE_ID, NOTION_URL, SOURCE_KEY, NAME_HASH, NAME_MASKED, COHORT, STATUS) "
+                    "VALUES ('p9', 'https://notion.so/p9', 'AI', 'h_only', '홍*동', 'AIO3', 'HRD등록')")   # t2가 신청자 리스트에 생김
+        db.commit()
+        rows = build_person_rows({"AIO3": "c"}, today="2026-09-16")
+        assert reg.adopt_roster_pages(db, rows) == 1 and reg.adopt_roster_pages(db, rows) == 0
+        created, updated, _ = notion_publish.publish("tok", db, reg.PERSON_PUB, "pdb", schema, rows, session=session)
+        assert created == 0 and updated == 1                                                       # 새 페이지 없이 옛 페이지를 덮어씀
+        cur.execute("SELECT ROW_KEY FROM TB_NOTION_PUBLISH WHERE DB_KEY = ? AND NOTION_PAGE_ID = ?", [reg.PERSON_PUB, roster_page])
+        assert [r[0] for r in cur.fetchall()] == ["p9"]
+
     def test_skips_cohorts_without_page(self, db):
         _seed(db)
         assert all(r["기수"] == "c" for r in build_person_rows({"AIO3": "c"}, today="2026-09-16"))
