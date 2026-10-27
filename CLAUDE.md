@@ -246,6 +246,7 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 |---|---|---|---|
 | 노션 수집 등록 인원 · 일치 여부 | 신청자 리스트(AI·SKN) HRD신청·HRD등록 이력 ∪ 신청/등록 일자 | API 신청인원과 같으면 일치. 차이가 담당자 확인으로 설명된 예외(`config.NOTION_MATCH_EXCEPTIONS`, AIO4 공문 이탈 1명)와 정확히 같으면 일치(예외) | — |
 | 개강일 출석 인원(API) · 개강 참석률(API, %) | 출결 API → `FIRST_ATTEND_DT` = 개강일 | 개강일 출석 ÷ API 신청인원 | 개강 다음 날부터. 출결을 못 읽은 회차는 비움 |
+| 예외 인원(담당자 확인) · 보정·예외 메모 | `config.NOTION_MATCH_EXCEPTIONS`·`NOTION_CONFIRM_OVERRIDES` `{기수: (값, 사유)}` | 일치 판정 예외 인원과 사유, 확정 신고 보정(원래 값→보정 값) 표시. 사유는 public 레포라 실명 금지. 차이가 등록값과 달라지면 health_check 2번이 알림 | 등록한 기수만 |
 | 확정 신고(API) · 확정자 신고율(API, %) | `_3.jsp` `totParMks` (= 명부 건수 = 노션 운영표 확정자신고) | 확정 신고 ÷ API 신청인원. 담당자 확인으로 바로잡은 기수는 `config.NOTION_CONFIRM_OVERRIDES` 값 (AIO4 20→19, 확정자 신고 뒤 공문 이탈, 2026-10-26) | 개강 + `config.NOTION_KPI_CONFIRM_DAYS`(7)일부터 |
 
 운영TF 구간 7 측정값은 `python scripts/tf_section7.py`가 출력한다 — 기준 = `config.NOTION_KPI_BASE_COHORTS`(운영TF 20개 기수), 현재 = 그 뒤 개강 기수. 개강 참석률(API 신청인원 분모)·개강 대비 확정 비율·기수당 초기이탈/추가 인원. 구글시트 「7_통합」 황설현 행과 같은 정의(2026-10-02). 출처가 HRD-Net API인 열은 이름에 `(API)`를 붙인다 — 이름 변경은 `notion_publish.rename_properties()`로 제자리에서. 상세는 `docs/GLOSSARY.md` "HRD 등록자 관리".

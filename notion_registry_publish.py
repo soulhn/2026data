@@ -2,7 +2,7 @@
 
 페이지 구조 (2026-09-21, 사용자 설계)
   상단 콜아웃  마지막 갱신 시각 + 읽는 법 세 줄
-  「기수」 표   기수 · 개강일 · API 신청인원 · 노션 수집 등록 인원 · 일치 여부 · 개강일 출석 인원(API) · 개강 참석률(API, %) · 확정 신고(API) · 확정자 신고율(API, %) · 승인 인원(API, 현재) · 갱신 시각
+  「기수」 표   기수 · 개강일 · API 신청인원 · 노션 수집 등록 인원 · 일치 여부 · 예외 인원(담당자 확인) · 보정·예외 메모 · 개강일 출석 인원(API) · 개강 참석률(API, %) · 확정 신고(API) · 확정자 신고율(API, %) · 승인 인원(API, 현재) · 갱신 시각
                 확정 신고(API)는 개강 + 7일 0시(KST) 이후 첫 스냅샷의 totParMks로 고정(2026-09-28), 담당자 확인으로 바로잡은 기수는 config.NOTION_CONFIRM_OVERRIDES 값. 승인 인원(API, 현재)는 지금 명부 인원 — 둘이 다르면 신고 뒤 명부가 바뀐 것
                 + 개강인원(운영현황표, 오프라인) · 초기이탈(노션) · 추가인원(노션) · 확정 신고(노션 기준) = 담당자 운영현황표(회사 노션, 읽기만)의 수기 값을 그대로 옮김 (2026-09-28). 조회 실패 시 그 실행은 두 열을 건드리지 않는다
                 + 개강 대비 확정 비율(%) · 초기이탈률(%) · 추가인원율(%) = 위 수기 값으로 계산한 팀 제안 2안과 하위 2개 (2026-09-29 팀 확정 — 개강 대비 확정 비율이 TF 구간 7 책임 수치). 확정자 신고율(API, %)은 참고용
@@ -65,6 +65,8 @@ COHORT_SCHEMA = {
     "API 신청인원": _num(),
     "노션 수집 등록 인원": _num(),
     "일치 여부": {"select": {"options": [{"name": "일치"}, {"name": "일치(예외)"}, {"name": "불일치"}, {"name": "미확인"}]}},
+    "예외 인원(담당자 확인)": _num(),
+    "보정·예외 메모": {"rich_text": {}},
     "개강일 출석 인원(API)": _num(),
     "개강 참석률(API, %)": _num(),
     "확정 신고(API)": _num(),
@@ -105,11 +107,11 @@ GUIDE_LINES = [
     "API 신청인원 = totTrpCnt. HRD-Net에 남아 있는 수강신청 건수(승인 여부 무관, 미승인 대기 포함). 신청자가 고용24에서 직접 취소하거나 확정자 신고 후 고용노동부가 공문으로 처리하면 빠지고, 우리가 HRD-Net 기관 화면에서 반려·승인취소 처리한 사람은 그대로 남는 것으로 추정(2026-10-06, 10-27 보강. 근거: 본인 취소 2건·기관 처리 4건·고용노동부 처리 1건·초기이탈 기관 처리 2명. 다음 감소 사례에서 재검토). 개강 후 확정자 신고 전 초기이탈도 보통 기관이 처리해 남고, 본인이 취소하면 빠진다. 최신 스냅샷 값",
     "노션 수집 등록 인원 = 신청자 리스트(AI·SKN)에서 최종결과가 HRD신청·HRD등록을 한 번이라도 거쳤거나 HRD 신청/등록 일자가 있는 사람 수. 취소자도 일자가 있으면 포함",
     "일치 여부 = API 신청인원과 노션 수집 등록 인원이 같으면 일치. API가 크면 HRD-Net에는 있는데 노션에 일자 없이 빠진 사람이 있는 것(대부분 수집 전 기수의 취소자). 노션이 크면 HRD 신청 뒤 고용24에서 본인 취소한 사람 수만큼이 정상(노션 수집은 누적, API는 현재 남은 건수). "
-    "일치(예외) = 차이가 담당자 확인으로 설명된 특이 사례와 정확히 같은 기수 (AIO 4기: 확정자 신고 뒤 공문 이탈 1명, 2026-10-26 / SKN 38기: 고용24 본인 취소 2명, 2026-10-27). "
-    "차이가 바뀌면(새 본인 취소, 노션 기록 변경 등) 다시 불일치로 돌아간다",
+    "일치(예외) = 노션 수집 − API 신청인원 차이가 '예외 인원(담당자 확인)'과 정확히 같은 기수. 차이가 바뀌면(새 본인 취소, 노션 기록 변경 등) 다시 불일치로 돌아간다",
+    "예외 인원(담당자 확인) · 보정·예외 메모 = 담당자 확인을 거쳐 일치 판정 예외로 인정한 인원과 그 사유, 확정 신고(API)를 바로잡았으면 그 내용 (2026-10-27). 해당 없는 기수는 빈칸",
     "개강일 출석 인원(API) = HRD-Net 출결 API에서 개강 당일 입실 기록이 있는 명부 인원. 개강 다음 날부터 값이 생김. 개강 참석률(API, %) = 개강일 출석 ÷ API 신청인원 × 100",
     "확정 신고(API) = 개강 + 7일 0시(KST) 이후 첫 스냅샷의 HRD-Net 승인 명부 인원(totParMks). 그 뒤 명부가 바뀌어도 이 값은 고정 (2026-09-28 규칙). "
-    "추적 시작(2026-09-15) 전에 +7일이 지난 기수는 첫 스냅샷 값. 담당자 확인으로 바로잡은 기수는 그 값(AIO 4기 20 → 19: 고정 시점 뒤 같은 날 1명이 공문으로 이탈해 확정자 신고에서 빠짐, 2026-10-26). "
+    "추적 시작(2026-09-15) 전에 +7일이 지난 기수는 첫 스냅샷 값. 담당자 확인으로 바로잡은 기수는 그 값('보정·예외 메모'에 원래 값과 사유). "
     "확정자 신고율(API, %) = 확정 신고(API) ÷ API 신청인원 × 100 — 참고용(2026-09-23~29 TF 책임 수치였음)",
     "승인 인원(API, 현재) = 지금 HRD-Net 승인 명부에 있는 사람 수(totParMks 최신값). 개강 전에도 값이 있고, 확정 신고(API)와 다르면 신고 뒤 승인 취소·추가가 있었다는 뜻",
     "개강인원(운영현황표, 오프라인) · 초기이탈(노션) · 추가인원(노션) · 확정 신고(노션 기준) = 담당자가 「운영현황」 페이지의 운영현황표에 손으로 적은 값을 그대로 옮김(읽기만, 하루 2회). 개강인원은 첫날 강의실에 온 사람 수라 HRD 미등록자도 포함돼 API 개강일 출석보다 크다. 초기이탈·추가인원은 개강~확정자 신고 사이의 이탈·추가. 확정 신고(노션 기준) = 개강인원 − 초기이탈 + 추가인원. "
@@ -233,7 +235,8 @@ def match_verdict(key, applied, notion):
         return "미확인"
     if applied == notion:
         return "일치"
-    return "일치(예외)" if notion - applied == config.NOTION_MATCH_EXCEPTIONS.get(key) else "불일치"
+    exc = config.NOTION_MATCH_EXCEPTIONS.get(key)
+    return "일치(예외)" if exc and notion - applied == exc[0] else "불일치"
 
 
 def build_cohort_rows(today=None, ops=None):
@@ -268,15 +271,21 @@ def build_cohort_rows(today=None, ops=None):
         started = bool(start) and start[:10] < today
         approved_now = _i(s.TOT_PAR_MKS)
         confirm_due = bool(start) and (datetime.fromisoformat(start[:10]) + timedelta(days=config.NOTION_KPI_CONFIRM_DAYS)).strftime("%Y-%m-%d") <= today
-        confirmed = frozen.get((s.TRPR_ID, int(s.TRPR_DEGR)), (None, None))[0] if confirm_due else None
+        frozen_val = frozen.get((s.TRPR_ID, int(s.TRPR_DEGR)), (None, None))[0]
+        confirmed = frozen_val if confirm_due else None
+        exc = config.NOTION_MATCH_EXCEPTIONS.get(key)
+        memo = [f"신청 차이 예외 {exc[0]}명: {exc[1]}"] if exc else []
         if confirm_due and key in config.NOTION_CONFIRM_OVERRIDES:   # 고정 뒤 확정자 신고에서 빠진 특이 사례 (담당자 확인)
-            confirmed = config.NOTION_CONFIRM_OVERRIDES[key]
+            confirmed, why = config.NOTION_CONFIRM_OVERRIDES[key]
+            memo.append(f"확정 신고 {frozen_val}→{confirmed} 보정: {why}" if frozen_val is not None else f"확정 신고 {confirmed}로 보정: {why}")
         rows.append({
             "KEY": key, "기수": key, "과정": config.COURSE_SHORT_NAMES[s.TRPR_ID],
             "상태": _status(start, s.TR_END_DT, today), "개강일": start,
             "API 신청인원": applied, "노션 수집 등록 인원": notion,
             "_HRD 이력 취소": cancelled.get(key, 0) if notion is not None else None,
             "일치 여부": match_verdict(key, applied, notion),
+            "예외 인원(담당자 확인)": exc[0] if exc else None,
+            "보정·예외 메모": " · ".join(memo) or None,
             "개강일 출석 인원(API)": day1 if started else None,
             "개강 참석률(API, %)": round(day1 / applied * 100, 1) if started and day1 is not None and applied else None,
             "확정 신고(API)": confirmed,

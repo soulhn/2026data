@@ -86,6 +86,17 @@ class TestValues:
         rows[0]["노션 수집 등록 인원"] = 5
         assert not any("HRD-Net 신청" in f for f in check_values(rows, "2026-10-08"))        # 같아지면 조용
 
+    def test_registered_exception_gap_changed(self, db, monkeypatch):
+        """일치 예외로 등록한 기수는 노션 − API 차이가 등록 인원과 다르면 알린다 (노션에서만 불일치로 바뀌면 묻히므로)."""
+        _seed(db)
+        monkeypatch.setattr(hc.config, "NOTION_MATCH_EXCEPTIONS", {"AIO3": (2, "본인 취소 2명")})
+        rows = reg.build_cohort_rows(today="2026-09-21")
+        rows[0]["노션 수집 등록 인원"], rows[0]["API 신청인원"], rows[0]["_HRD 이력 취소"] = 7, 5, 3
+        assert not any("등록한 예외" in f for f in check_values(rows, "2026-09-21"))      # 7 − 5 = 2 = 등록값
+        rows[0]["API 신청인원"] = 4                                                          # 본인 취소 1명 더
+        out = [f for f in check_values(rows, "2026-09-21") if "등록한 예외" in f]
+        assert len(out) == 1 and "노션 7 − API 신청인원 4 = 3명인데 등록한 예외는 2명(본인 취소 2명)" in out[0]
+
     def test_no_attendance_warning_before_day_after_start(self, db):
         _seed(db)
         rows = reg.build_cohort_rows(today="2026-09-15")

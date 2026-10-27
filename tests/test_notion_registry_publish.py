@@ -104,7 +104,7 @@ class TestCohorts:
         assert reg.OPS_OPEN_COL not in plain and reg.OPS_CONFIRM_COL not in plain and reg.OPS_EARLY_COL not in plain                      # 조회 못 하면 열을 건드리지 않는다
 
     def test_match_verdict(self, monkeypatch):
-        monkeypatch.setattr(reg.config, "NOTION_MATCH_EXCEPTIONS", {"AIO4": 1})
+        monkeypatch.setattr(reg.config, "NOTION_MATCH_EXCEPTIONS", {"AIO4": (1, "사유")})
         assert match_verdict("AIO4", 21, 21) == "일치"
         assert match_verdict("AIO4", 21, 22) == "일치(예외)"      # 담당자 확인한 차이와 정확히 같을 때만
         assert match_verdict("AIO4", 21, 23) == "불일치"          # 등록한 예외보다 차이가 크면 다시 불일치
@@ -115,10 +115,16 @@ class TestCohorts:
     def test_confirmed_override(self, db, monkeypatch):
         """담당자 확인으로 바로잡은 기수는 고정값 대신 보정값. 확정 시점 전에는 보정값도 비운다."""
         _seed(db)
-        monkeypatch.setattr(reg.config, "NOTION_CONFIRM_OVERRIDES", {"AIO3": 2})
-        assert {r["기수"]: r for r in build_cohort_rows(today="2026-09-16")}["AIO3"]["확정 신고(API)"] is None
+        monkeypatch.setattr(reg.config, "NOTION_CONFIRM_OVERRIDES", {"AIO3": (2, "신고 후 이탈 1명")})
+        monkeypatch.setattr(reg.config, "NOTION_MATCH_EXCEPTIONS", {"AIO3": (1, "본인 취소 1명")})
+        before = {r["기수"]: r for r in build_cohort_rows(today="2026-09-16")}
+        assert before["AIO3"]["확정 신고(API)"] is None
+        assert before["AIO3"]["보정·예외 메모"] == "신청 차이 예외 1명: 본인 취소 1명"              # 확정 전엔 보정 메모 없음
         a = {r["기수"]: r for r in build_cohort_rows(today="2026-09-22")}["AIO3"]
         assert a["확정 신고(API)"] == 2 and a["확정자 신고율(API, %)"] == 40.0 and a["승인 인원(API, 현재)"] == 4
+        assert a["예외 인원(담당자 확인)"] == 1
+        assert a["보정·예외 메모"] == "신청 차이 예외 1명: 본인 취소 1명 · 확정 신고 3→2 보정: 신고 후 이탈 1명"   # 고정값 3 → 보정 2
+        assert before["SKN37"]["예외 인원(담당자 확인)"] is None and before["SKN37"]["보정·예외 메모"] is None
 
     def test_confirmed_frozen_at_due(self, db):
         _seed(db)

@@ -4,7 +4,7 @@
 기수명 오타로 매칭 누락, 담당자 오기입. 그래서 실행마다 아래를 검사하고 걸리는 것만 보낸다. 정상이면 조용하다.
 
   1 신선도   회차 스냅샷·명부·신청자 폴링(AI/SKN)·페이지 발행이 36시간 안에 돌았나, 직전 실행의 원천 오류가 남았나
-  2 값       노션 수집 > API 신청인원, 확정 신고 > API 신청인원, 개강 지났는데 출결 기록 없음,
+  2 값       노션 수집 > API 신청인원, 확정 신고 > API 신청인원, 개강 지났는데 출결 기록 없음, 등록한 일치 예외 기수의 차이가 바뀜,
             완전 기록 관리 기수(config.NOTION_FULL_RECORD_SINCE 이후 개강)에서 API 신청 > 노션 수집 (HRD-Net엔 신청했는데 노션에 HRD신청으로 없는 사람)
   3 매칭     스냅샷에 없는 기수명(오타), 같은 기수 동명이인, 최근 24시간에 새로 생긴 '노션에 없음'
   4 담당자   운영현황표 확정자신고 vs API 확정 신고 (확정 신고 끝난 기수)
@@ -99,6 +99,11 @@ def check_values(cohort_rows, today):
                            f"설명되지 않음. 기수 매핑이나 중복 의심")
         if applied is not None and r["확정 신고(API)"] is not None and r["확정 신고(API)"] > applied:
             out.append(f"{k}: 확정 신고 {r['확정 신고(API)']} > API 신청인원 {applied}")
+        exc = config.NOTION_MATCH_EXCEPTIONS.get(k)
+        if exc and applied is not None and r["노션 수집 등록 인원"] is not None and r["노션 수집 등록 인원"] - applied != exc[0]:
+            # 등록한 예외 기수는 차이가 정확히 같아야 일치(예외). 달라지면 노션에서만 불일치로 바뀌어 조용히 묻히므로 알린다 (2026-10-27)
+            out.append(f"{k}: 노션 {r['노션 수집 등록 인원']} − API 신청인원 {applied} = {r['노션 수집 등록 인원'] - applied}명인데 등록한 예외는 {exc[0]}명({exc[1]}). "
+                       f"새 본인 취소·노션 기록 변경을 확인하고 config.NOTION_MATCH_EXCEPTIONS 갱신")
         start = str(r["개강일"] or "")[:10]
         notion = r["노션 수집 등록 인원"]
         if applied is not None and notion is not None and applied > notion and start >= config.NOTION_FULL_RECORD_SINCE:
