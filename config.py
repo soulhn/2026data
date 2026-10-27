@@ -365,6 +365,7 @@ NOTION_APPLICANT_SOURCES = {
 NOTION_ATTEND_PROP = "개강 참석일"        # 담당자에게 추가 요청한 날짜 속성. 생기면 ETL이 자동으로 읽는다
 NOTION_HRD_APPLY_PROP = "HRD 신청 일시"   # 위와 같음 — HRD 신청 후 취소돼도 신청 사실이 남도록
 NOTION_NOTES_PROP = "특이사항"            # 담당자 자유 서술. "MM.DD HRD취소 ①본인 / ②기관취소(승인취소)" 태그만 읽는다 (2026-10-06 공지). 본문은 저장하지 않음
+NOTION_HRD_CANCEL_SINCE = "2026-10-27"         # 이 날 이후 HRD 이력 뒤 취소된 사람이 「HRD 취소 처리」를 비워 두면 health_check가 알림 (속성 추가일. 지난 기수는 기록용이라 제외)
 NOTION_HRD_CANCEL_PROP = "HRD 취소 처리"   # 담당자가 추가한 선택 속성(2026-10-27, AI·SKN 공통). 맨 앞 ①②③만 보고 판단하고, 값이 있으면 특이사항 태그보다 우선
 NOTION_SYNC_OVERLAP_MIN = 10              # 증분 폴링 시 마지막 동기화 시각에서 이만큼 되감아 조회 (시계 오차·지연 흡수)
 
@@ -384,7 +385,6 @@ NOTION_CONFIRM_OVERRIDES = {                      # 확정 신고(API) 고정값
 }
 NOTION_MATCH_EXCEPTIONS = {                       # 기수 표 일치 여부: 노션 수집 − API 신청인원 차이를 담당자 확인으로 설명한 기수 {기수: (인원, 사유)}. 차이가 정확히 같을 때만 '일치(예외)'
     "AIO4": (1, "확정자 신고 후 고용노동부 공문 이탈 1명"),    # 위 공문 이탈 1명(고용노동부 직접 처리, 10/27 확인)이 HRD-Net 신청인원(22→21)에서도 빠짐, 노션 수집은 누적이라 남음 (2026-10-26)
-    "SKN38": (2, "고용24 본인 취소 2명"),   # 본인 취소 2명(9/29·10/13)이 신청인원에서 빠짐. 기관 처리 2명은 남음. 명부 22명 = 노션 HRD등록 22명 대조 (2026-10-27)
 }
 NOTION_FULL_RECORD_SINCE = "2026-10-07"          # 이 날 이후 개강 기수는 완전 기록 관리 대상(취소자도 HRD 신청 일시 기록). API 신청 > 노션 수집이면 health_check가 알림 (2026-09-29)
 NOTION_JOBS_PAGE_ID = "3e2d943bcac2807cbdb0c5c5db17eb0f"       # 「채용 동향」 공고 DB 페이지 (2026-09-21). 우리 소유 — notion_jobs_publish.py가 쓴다

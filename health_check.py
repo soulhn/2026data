@@ -7,7 +7,8 @@
   2 값       노션 수집 > API 신청인원, 확정 신고 > API 신청인원, 개강 지났는데 출결 기록 없음, 등록한 일치 예외 기수의 차이가 바뀜,
             완전 기록 관리 기수(config.NOTION_FULL_RECORD_SINCE 이후 개강)에서 API 신청 > 노션 수집 (HRD-Net엔 신청했는데 노션에 HRD신청으로 없는 사람)
   3 매칭     스냅샷에 없는 기수명(오타), 같은 기수 동명이인, 최근 24시간에 새로 생긴 '노션에 없음'
-  4 담당자   운영현황표 확정자신고 vs API 확정 신고 (확정 신고 끝난 기수)
+  4 담당자   운영현황표 확정자신고 vs API 확정 신고 (확정 신고 끝난 기수),
+            HRD 이력 뒤 취소됐는데 「HRD 취소 처리」가 빈 사람 (config.NOTION_HRD_CANCEL_SINCE 이후 취소, 24시간 지남)
 
 같은 내용이면 다시 보내지 않고(해시), 그래도 7일마다 한 번은 다시 알린다. 읽기만 한다 — 노션엔 쓰지 않는다.
 사람 이름은 디스코드에만 실명으로 보내고 로그·해시에는 가린 이름을 쓴다 (public 레포라 Actions 로그가 공개, 2026-10-26).
@@ -25,7 +26,7 @@ import config
 from notify import discord_post
 from notion_applicants_etl import get_sync_state, set_sync_state, sync_key
 from notion_ops import NotionFetchError, cohort_number, course_group, fetch_ops_table
-from notion_registry_publish import build_cohort_rows, cohort_key
+from notion_registry_publish import DROP_COL, build_cohort_rows, cohort_key, ever_registered_pages
 from utils import _clean_secret, get_connection, load_data
 
 load_dotenv()
@@ -35,6 +36,7 @@ logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s %(message)s", lev
 STALE_HOURS = 36            # 하루 2회 실행이라 36시간이면 한 번은 걸러진 것
 NEW_WINDOW_HOURS = 24       # '새로 생긴 노션에 없음'을 세는 창
 RESEND_DAYS = 7             # 같은 내용도 이 주기로는 다시 알린다
+CANCEL_FIELD_GRACE_HOURS = 24   # 취소 처리 후 「HRD 취소 처리」를 고를 여유. 최종결과만 먼저 바꾸는 경우가 있어 바로 알리지 않는다
 KST = timezone(timedelta(hours=9))
 
 
@@ -100,8 +102,10 @@ def check_values(cohort_rows, today):
         if applied is not None and r["확정 신고(API)"] is not None and r["확정 신고(API)"] > applied:
             out.append(f"{k}: 확정 신고 {r['확정 신고(API)']} > API 신청인원 {applied}")
         exc = config.NOTION_MATCH_EXCEPTIONS.get(k)
-        if exc and applied is not None and r["노션 수집 등록 인원"] is not None and r["노션 수집 등록 인원"] - applied != exc[0]:
-            # 등록한 예외 기수는 차이가 정확히 같아야 일치(예외). 달라지면 노션에서만 불일치로 바뀌어 조용히 묻히므로 알린다 (2026-10-27)
+        gap = r["노션 수집 등록 인원"] - applied if applied is not None and r["노션 수집 등록 인원"] is not None else None
+        if exc and gap is not None and gap != exc[0] and gap != (r.get(DROP_COL) or 0):
+            # 등록한 예외 기수는 차이가 정확히 같아야 일치(예외). 달라지면 노션에서만 불일치로 바뀌어 조용히 묻히므로 알린다 (2026-10-27).
+            # 「HRD 취소 처리」 ①·③ 인원으로 차이가 설명되면(일치(취소 반영)) 조용
             out.append(f"{k}: 노션 {r['노션 수집 등록 인원']} − API 신청인원 {applied} = {r['노션 수집 등록 인원'] - applied}명인데 등록한 예외는 {exc[0]}명({exc[1]}). "
                        f"새 본인 취소·노션 기록 변경을 확인하고 config.NOTION_MATCH_EXCEPTIONS 갱신")
         start = str(r["개강일"] or "")[:10]
@@ -190,6 +194,28 @@ def check_ops_table(token, cohort_rows, session=None):
     return out
 
 
+def check_cancel_field(now):
+    """HRD 이력 뒤 취소됐는데 「HRD 취소 처리」가 빈 사람. config.NOTION_HRD_CANCEL_SINCE 이후 취소, CANCEL_FIELD_GRACE_HOURS 지난 경우만 (2026-10-27).
+    로그·해시엔 가린 이름, 디스코드엔 실명(Named)."""
+    apps = load_data("SELECT NOTION_PAGE_ID, COHORT, NAME, NAME_MASKED, STATUS FROM TB_APPLICANT WHERE HRD_CANCEL_BY IS NULL AND STATUS IS NOT NULL")
+    apps = apps[apps.STATUS.str.contains("취소") & apps.NOTION_PAGE_ID.isin(ever_registered_pages())]
+    if apps.empty:
+        return []
+    log = load_data("SELECT NOTION_PAGE_ID, NEW_VALUE, MAX(DETECTED_AT) AS LAST_AT FROM TB_APPLICANT_STATUS_LOG WHERE FIELD = 'STATUS' GROUP BY NOTION_PAGE_ID, NEW_VALUE")
+    when = {(r.NOTION_PAGE_ID, r.NEW_VALUE): r.LAST_AT for r in log.itertuples(index=False)}
+    late = []
+    for a in apps.itertuples(index=False):
+        t = _parse(when.get((a.NOTION_PAGE_ID, a.STATUS)))   # 지금 최종결과(취소)로 바뀐 것을 감지한 시각
+        if t and t.astimezone(KST).strftime("%Y-%m-%d") >= config.NOTION_HRD_CANCEL_SINCE and (now - t) >= timedelta(hours=CANCEL_FIELD_GRACE_HOURS):
+            late.append(a)
+    if not late:
+        return []
+    shown = late[:10]
+    head = f"HRD 이력 뒤 취소됐는데 「HRD 취소 처리」가 빈 사람 {len(late)}명 (취소 {CANCEL_FIELD_GRACE_HOURS}시간 지남, ①본인·②기관·③고용노동부 중 선택 요청): "
+    return [Named(head + ", ".join(f"{a.NAME_MASKED or '?'} · {a.COHORT or '-'}" for a in shown),
+                  head + ", ".join(f"{a.NAME or a.NAME_MASKED or '?'} · {a.COHORT or '-'}" for a in shown))]
+
+
 # ── 실행 ─────────────────────────────────────────────────────────────
 
 
@@ -201,7 +227,7 @@ def run_checks(conn, token=None, now=None, session=None):
     sections = [("1 신선도·원천 오류", check_freshness(conn, now)),
                 ("2 값이 이상함", check_values(rows, today)),
                 ("3 매칭 구멍", check_matching(now)),
-                ("4 담당자 기록 대조", check_ops_table(token, rows, session))]
+                ("4 담당자 기록 대조", check_ops_table(token, rows, session) + check_cancel_field(now))]
     return [(t, f) for t, f in sections if f]
 
 

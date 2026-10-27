@@ -97,6 +97,14 @@ class TestValues:
         out = [f for f in check_values(rows, "2026-09-21") if "등록한 예외" in f]
         assert len(out) == 1 and "노션 7 − API 신청인원 4 = 3명인데 등록한 예외는 2명(본인 취소 2명)" in out[0]
 
+    def test_exception_drift_quiet_when_cancel_field_explains(self, db, monkeypatch):
+        """등록 예외와 차이가 달라도 「HRD 취소 처리」 ①·③ 인원으로 설명되면(일치(취소 반영)) 알리지 않는다."""
+        _seed(db)
+        monkeypatch.setattr(hc.config, "NOTION_MATCH_EXCEPTIONS", {"AIO3": (2, "본인 취소 2명")})
+        rows = reg.build_cohort_rows(today="2026-09-21")
+        rows[0]["노션 수집 등록 인원"], rows[0]["API 신청인원"], rows[0]["_HRD 이력 취소"], rows[0][reg.DROP_COL] = 8, 5, 3, 3
+        assert not any("등록한 예외" in f for f in check_values(rows, "2026-09-21"))
+
     def test_no_attendance_warning_before_day_after_start(self, db):
         _seed(db)
         rows = reg.build_cohort_rows(today="2026-09-15")
@@ -134,6 +142,33 @@ class TestMatching:
                     "VALUES ('AIG20260000578396', 3, 't8', 'h_old', '박*희', '2026-09-15', '훈련중', '2026-09-15 08:00:00', '2026-09-21 04:00:00')")
         db.commit()
         assert not [f for f in check_matching(NOW) if "노션 신청자 리스트에 없음" in f]
+
+
+class TestCancelField:
+    def _add(self, db, by=None, detected="2026-10-27 01:00:00"):
+        cur = db.cursor()
+        cur.execute("INSERT INTO TB_APPLICANT (NOTION_PAGE_ID, SOURCE_KEY, NAME_HASH, NAME_MASKED, NAME, COHORT, STATUS, HRD_APPLY_AT, HRD_CANCEL_BY) "
+                    "VALUES ('p9', 'AI', 'h9', '박*희', '박영희', 'AIO5', '합격취소(신청자 요청)', '2026-10-25', ?)", [by])
+        cur.execute("INSERT INTO TB_APPLICANT_STATUS_LOG (NOTION_PAGE_ID, DETECTED_AT, FIELD, OLD_VALUE, NEW_VALUE) "
+                    "VALUES ('p9', ?, 'STATUS', 'HRD등록', '합격취소(신청자 요청)')", [detected])
+        db.commit()
+
+    def test_alerts_after_grace_with_masked_log_and_real_name(self, db):
+        self._add(db)
+        out = hc.check_cancel_field(datetime(2026, 10, 28, 3, tzinfo=timezone.utc))          # 취소 감지 26시간 뒤
+        assert len(out) == 1 and "빈 사람 1명" in out[0] and "박*희 · AIO5" in out[0] and "박영희" not in f"{out[0]}"
+        assert "박영희 · AIO5" in out[0].discord
+
+    def test_quiet_within_grace_when_filled_or_before_since(self, db):
+        self._add(db)
+        assert hc.check_cancel_field(datetime(2026, 10, 27, 12, tzinfo=timezone.utc)) == []    # 11시간: 아직 여유
+        db.cursor().execute("UPDATE TB_APPLICANT SET HRD_CANCEL_BY = '①본인'")
+        db.commit()
+        assert hc.check_cancel_field(datetime(2026, 10, 29, tzinfo=timezone.utc)) == []         # 채웠으면 조용
+        db.cursor().execute("UPDATE TB_APPLICANT SET HRD_CANCEL_BY = NULL")
+        db.cursor().execute("UPDATE TB_APPLICANT_STATUS_LOG SET DETECTED_AT = '2026-10-20 01:00:00'")
+        db.commit()
+        assert hc.check_cancel_field(datetime(2026, 10, 29, tzinfo=timezone.utc)) == []         # 속성 추가 전 취소는 기록용
 
 
 class TestOpsTable:

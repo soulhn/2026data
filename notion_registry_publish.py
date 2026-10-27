@@ -64,9 +64,10 @@ COHORT_SCHEMA = {
     "개강일": {"date": {}},
     "API 신청인원": _num(),
     "노션 수집 등록 인원": _num(),
-    "일치 여부": {"select": {"options": [{"name": "일치"}, {"name": "일치(예외)"}, {"name": "불일치"}, {"name": "미확인"}]}},
+    "일치 여부": {"select": {"options": [{"name": "일치"}, {"name": "일치(취소 반영)"}, {"name": "일치(예외)"}, {"name": "불일치"}, {"name": "미확인"}]}},
     "예외 인원(담당자 확인)": _num(),
     "보정·예외 메모": {"rich_text": {}},
+    "본인·고용노동부 취소(①·③)": _num(),
     "개강일 출석 인원(API)": _num(),
     "개강 참석률(API, %)": _num(),
     "확정 신고(API)": _num(),
@@ -89,6 +90,7 @@ PERSON_SCHEMA = {
     "등록일": {"date": {}},
     "개강날 출석": {"select": {"options": [{"name": "출석"}, {"name": "미출석"}, {"name": "개강 전"}, {"name": "기록 없음"}]}},
     "노션 상태": {"rich_text": {}},
+    "HRD 취소 처리": {"select": {"options": [{"name": "①본인"}, {"name": "②기관취소"}, {"name": "③고용노동부"}]}},
     "HRD 승인": {"checkbox": {}},
     "원본 링크": {"url": {}},   # 신청자 리스트 원본 페이지. 관계 대신 URL — SKN DB는 데이터 소스가 둘이라 2022 API로 관계를 못 건다
     "갱신 시각": {"date": {}},
@@ -107,8 +109,10 @@ GUIDE_LINES = [
     "API 신청인원 = totTrpCnt. HRD-Net에 남아 있는 수강신청 건수(승인 여부 무관, 미승인 대기 포함). 신청자가 고용24에서 직접 취소하거나 확정자 신고 후 고용노동부가 공문으로 처리하면 빠지고, 우리가 HRD-Net 기관 화면에서 반려·승인취소 처리한 사람은 그대로 남는 것으로 추정(2026-10-06, 10-27 보강. 근거: 본인 취소 2건·기관 처리 4건·고용노동부 처리 1건·초기이탈 기관 처리 2명. 다음 감소 사례에서 재검토). 개강 후 확정자 신고 전 초기이탈도 보통 기관이 처리해 남고, 본인이 취소하면 빠진다. 최신 스냅샷 값",
     "노션 수집 등록 인원 = 신청자 리스트(AI·SKN)에서 최종결과가 HRD신청·HRD등록을 한 번이라도 거쳤거나 HRD 신청/등록 일자가 있는 사람 수. 취소자도 일자가 있으면 포함",
     "일치 여부 = API 신청인원과 노션 수집 등록 인원이 같으면 일치. API가 크면 HRD-Net에는 있는데 노션에 일자 없이 빠진 사람이 있는 것(대부분 수집 전 기수의 취소자). 노션이 크면 HRD 신청 뒤 고용24에서 본인 취소한 사람 수만큼이 정상(노션 수집은 누적, API는 현재 남은 건수). "
-    "일치(예외) = 노션 수집 − API 신청인원 차이가 '예외 인원(담당자 확인)'과 정확히 같은 기수. 차이가 바뀌면(새 본인 취소, 노션 기록 변경 등) 다시 불일치로 돌아간다",
+    "일치(취소 반영) = 노션 수집 − API 신청인원 차이가 '본인·고용노동부 취소(①·③)'와 정확히 같은 기수. 신청자 리스트 「HRD 취소 처리」에서 ①본인취소·③고용노동부를 고른 사람은 HRD-Net 신청인원에서 빠지므로 정상 (2026-10-27). "
+    "일치(예외) = 그 밖에 차이가 '예외 인원(담당자 확인)'과 정확히 같은 기수. 둘 다 차이가 바뀌면(새 취소, 노션 기록 변경 등) 다시 불일치로 돌아간다",
     "예외 인원(담당자 확인) · 보정·예외 메모 = 담당자 확인을 거쳐 일치 판정 예외로 인정한 인원과 그 사유, 확정 신고(API)를 바로잡았으면 그 내용 (2026-10-27). 해당 없는 기수는 빈칸",
+    "본인·고용노동부 취소(①·③) = 그 기수 HRD 이력자 중 신청자 리스트 「HRD 취소 처리」가 ①본인취소 또는 ③고용노동부인 사람 수(특이사항 태그도 포함). 0이면 빈칸",
     "개강일 출석 인원(API) = HRD-Net 출결 API에서 개강 당일 입실 기록이 있는 명부 인원. 개강 다음 날부터 값이 생김. 개강 참석률(API, %) = 개강일 출석 ÷ API 신청인원 × 100",
     "확정 신고(API) = 개강 + 7일 0시(KST) 이후 첫 스냅샷의 HRD-Net 승인 명부 인원(totParMks). 그 뒤 명부가 바뀌어도 이 값은 고정 (2026-09-28 규칙). "
     "추적 시작(2026-09-15) 전에 +7일이 지난 기수는 첫 스냅샷 값. 담당자 확인으로 바로잡은 기수는 그 값('보정·예외 메모'에 원래 값과 사유). "
@@ -122,10 +126,13 @@ GUIDE_LINES = [
     "갱신 시각 = 그 행을 마지막으로 다시 쓴 시각. 값이 안 바뀐 행은 건너뛰므로 오래돼 보여도 정상. 전체 실행 시각은 위 '마지막 갱신' 콜아웃",
     "등록자 DB — 이름: 실명 · 기수(2026-10-26 이전에 명부에서 사라져 실명이 없는 사람만 가린 이름) / 등록일: 노션 HRD 신청 일시(없으면 등록 일자, 그것도 없으면 명부에 처음 보인 날) / "
     "개강날 출석: 출석 · 미출석 · 개강 전 · 기록 없음(그 기수 출결을 못 읽음) / 노션 상태: 신청자 리스트 최종결과, '노션에 없음'은 명부에만 있는 사람 / "
+    "HRD 취소 처리: 신청자 리스트의 같은 이름 칸 값(①본인 · ②기관취소 · ③고용노동부, 비어 있으면 특이사항 태그) / "
     "HRD 승인: 지금 HRD-Net 명부에 있음(중도탈락도 명부에 남아 ✓) / 원본 링크: 신청자 리스트 페이지 / 메모: 담당자 열, 파이프라인은 쓰지 않음",
 ]
 
 HRD_STATUSES = ("HRD신청", "HRD등록")
+DROP_COL = "본인·고용노동부 취소(①·③)"
+DROPPED_BY = ("①본인", "③고용노동부")   # 「HRD 취소 처리」에서 이 값이면 HRD-Net 신청인원(totTrpCnt)에서 빠진다 (②기관취소는 남음)
 
 
 # ── 조회 ─────────────────────────────────────────────────────────────
@@ -228,13 +235,17 @@ def attend_verdict(first_attend_dt, start, today, known=True):
     return "미출석" if known else "기록 없음"
 
 
-def match_verdict(key, applied, notion):
-    """API 신청인원 vs 노션 수집 등록 인원. 차이가 담당자 확인으로 등록한 예외(config.NOTION_MATCH_EXCEPTIONS)와 정확히 같으면 '일치(예외)'.
-    일반 규칙으로 넓히지 않는다: 노션 초과를 취소 수로 덮으면 미기록 신청자가 가려진다 (2026-10-26 SKN38)."""
+def match_verdict(key, applied, notion, dropped=0):
+    """API 신청인원 vs 노션 수집 등록 인원.
+    dropped = 담당자가 「HRD 취소 처리」에서 ①본인·③고용노동부를 고른 인원. 노션 − API가 이와 정확히 같으면 '일치(취소 반영)' (2026-10-27).
+    그다음 담당자 확인으로 등록한 예외(config.NOTION_MATCH_EXCEPTIONS)와 정확히 같으면 '일치(예외)'.
+    취소 건수를 상한으로 쓰는 느슨한 규칙은 쓰지 않는다: 노션 초과를 취소 수로 덮으면 미기록 신청자가 가려진다 (2026-10-26 SKN38)."""
     if applied is None or notion is None:
         return "미확인"
     if applied == notion:
         return "일치"
+    if dropped and notion - applied == dropped:
+        return "일치(취소 반영)"
     exc = config.NOTION_MATCH_EXCEPTIONS.get(key)
     return "일치(예외)" if exc and notion - applied == exc[0] else "불일치"
 
@@ -252,12 +263,13 @@ def build_cohort_rows(today=None, ops=None):
     # 출결을 한 번도 못 읽은 회차(추적 시작 전 종료)는 0이 아니라 '모름'
     day1_map = {(r.TRPR_ID, int(r.TRPR_DEGR)): (_i(r.DAY1_CNT) if _i(r.ATT_KNOWN) else None) for r in roster.itertuples(index=False)}
     ever = ever_registered_pages()
-    apps = load_data("SELECT NOTION_PAGE_ID, COHORT, STATUS FROM TB_APPLICANT WHERE COHORT IS NOT NULL")
+    apps = load_data("SELECT NOTION_PAGE_ID, COHORT, STATUS, HRD_CANCEL_BY FROM TB_APPLICANT WHERE COHORT IS NOT NULL")
     collected = apps[apps["NOTION_PAGE_ID"].isin(ever)].groupby("COHORT").size().to_dict()
     # HRD 이력이 있는데 지금은 HRD신청·HRD등록이 아닌 사람(합격취소·되돌림·자부담결제 전환). 본인이 고용24에서 취소하면 totTrpCnt에서 빠지므로
     # 노션 수집 > API 차이가 이 수 이내면 정상 (2026-10-06 확인, docs/DEV_LOG.md). 발행하지 않는 점검용 키(`_` 접두)
     cancelled = apps[apps["NOTION_PAGE_ID"].isin(ever) & ~apps["STATUS"].isin(HRD_STATUSES)].groupby("COHORT").size().to_dict()
     has_source = set(apps["COHORT"])
+    dropped = apps[apps["NOTION_PAGE_ID"].isin(ever) & apps["HRD_CANCEL_BY"].isin(DROPPED_BY)].groupby("COHORT").size().to_dict()
 
     rows = []
     for s in snap.itertuples(index=False):
@@ -283,9 +295,10 @@ def build_cohort_rows(today=None, ops=None):
             "상태": _status(start, s.TR_END_DT, today), "개강일": start,
             "API 신청인원": applied, "노션 수집 등록 인원": notion,
             "_HRD 이력 취소": cancelled.get(key, 0) if notion is not None else None,
-            "일치 여부": match_verdict(key, applied, notion),
+            "일치 여부": match_verdict(key, applied, notion, dropped.get(key, 0)),
             "예외 인원(담당자 확인)": exc[0] if exc else None,
             "보정·예외 메모": " · ".join(memo) or None,
+            DROP_COL: dropped.get(key) or None,
             "개강일 출석 인원(API)": day1 if started else None,
             "개강 참석률(API, %)": round(day1 / applied * 100, 1) if started and day1 is not None and applied else None,
             "확정 신고(API)": confirmed,
@@ -315,7 +328,7 @@ def build_person_rows(cohort_pages, today=None):
     """등록자 행. cohort_pages: 기수 키 → 노션 기수 페이지 ID (관계 연결용)."""
     today = today or datetime.now(KST).strftime("%Y-%m-%d")
     ever = ever_registered_pages()
-    apps = load_data("SELECT NOTION_PAGE_ID, NOTION_URL, SOURCE_KEY, NAME_HASH, NAME_MASKED, NAME, COHORT, STATUS, HRD_APPLY_AT, HRD_REG_AT "
+    apps = load_data("SELECT NOTION_PAGE_ID, NOTION_URL, SOURCE_KEY, NAME_HASH, NAME_MASKED, NAME, COHORT, STATUS, HRD_APPLY_AT, HRD_REG_AT, HRD_CANCEL_BY "
                      "FROM TB_APPLICANT WHERE COHORT IS NOT NULL")
     apps = apps[apps["NOTION_PAGE_ID"].isin(ever)]
     members = load_data("SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, NAME_HASH, NAME_MASKED, NAME, STATUS, FIRST_SEEN_AT, GONE_AT, "
@@ -349,7 +362,7 @@ def build_person_rows(cohort_pages, today=None):
             "개강날 출석": attend_verdict(m.FIRST_ATTEND_DT if m is not None else None,
                                      m.TR_STA_DT if m is not None else _start_of(a.COHORT), today,
                                      known=(m is None) or ((m.TRPR_ID, int(m.TRPR_DEGR)) in known_rounds)),
-            "노션 상태": a.STATUS, "HRD 승인": bool(m is not None and not _s(m.GONE_AT)),
+            "노션 상태": a.STATUS, "HRD 취소 처리": _s(a.HRD_CANCEL_BY), "HRD 승인": bool(m is not None and not _s(m.GONE_AT)),
             "원본 링크": _s(a.NOTION_URL),
             "갱신 시각": now_iso,
             "_ROSTER_KEYS": [_roster_key(x) for x in matches],   # 명부 전용으로 먼저 발행된 행을 이어받을 때 쓴다 (발행·해시엔 안 들어감)
@@ -364,7 +377,7 @@ def build_person_rows(cohort_pages, today=None):
             "기수": cohort_pages[key],
             "등록일": str(m.FIRST_SEEN_AT)[:10] if tracking_start and str(m.FIRST_SEEN_AT)[:10] > tracking_start else None,
             "개강날 출석": attend_verdict(m.FIRST_ATTEND_DT, m.TR_STA_DT, today, known=(m.TRPR_ID, int(m.TRPR_DEGR)) in known_rounds),
-            "노션 상태": "노션에 없음", "HRD 승인": not _s(m.GONE_AT),
+            "노션 상태": "노션에 없음", "HRD 취소 처리": None, "HRD 승인": not _s(m.GONE_AT),
             "원본 링크": None, "갱신 시각": now_iso,
         })
     return rows

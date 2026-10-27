@@ -111,6 +111,23 @@ class TestCohorts:
         assert match_verdict("SKN38", 24, 25) == "불일치"         # 등록 안 한 기수는 노션 초과여도 불일치
         assert match_verdict("AIO3", 17, 15) == "불일치"
         assert match_verdict("AIO4", None, 3) == "미확인" and match_verdict("AIO4", 3, None) == "미확인"
+        assert match_verdict("SKN38", 24, 26, dropped=2) == "일치(취소 반영)"    # ①·③ 인원으로 차이가 정확히 설명됨
+        assert match_verdict("SKN38", 24, 26, dropped=1) == "불일치"             # 1명은 설명 안 됨 (예외 등록도 없음)
+        assert match_verdict("AIO4", 21, 22, dropped=1) == "일치(취소 반영)"     # 담당자 선택값이 config 예외보다 우선
+        assert match_verdict("AIO4", 21, 22, dropped=0) == "일치(예외)"
+
+    def test_hrd_cancel_by_in_cohort_and_person_rows(self, db):
+        """「HRD 취소 처리」 ①·③ 인원은 기수 표에, 사람별 값은 등록자 행에 나간다 (②는 신청인원에 남으므로 세지 않음)."""
+        _seed(db)
+        cur = db.cursor()
+        cur.execute("UPDATE TB_APPLICANT SET HRD_CANCEL_BY = '①본인' WHERE NOTION_PAGE_ID = 'p3'")
+        cur.execute("UPDATE TB_APPLICANT SET HRD_CANCEL_BY = '②기관취소' WHERE NOTION_PAGE_ID = 'p4'")
+        db.commit()
+        rows = {r["기수"]: r for r in build_cohort_rows(today="2026-09-16")}
+        assert rows["AIO3"][reg.DROP_COL] == 1 and rows["SKN37"][reg.DROP_COL] is None
+        people = {r["KEY"]: r for r in build_person_rows({"AIO3": "c"}, today="2026-09-16")}
+        assert people["p3"]["HRD 취소 처리"] == "①본인" and people["p4"]["HRD 취소 처리"] == "②기관취소" and people["p1"]["HRD 취소 처리"] is None
+        assert people["roster:AIG20260000578396:3:t2"]["HRD 취소 처리"] is None
 
     def test_confirmed_override(self, db, monkeypatch):
         """담당자 확인으로 바로잡은 기수는 고정값 대신 보정값. 확정 시점 전에는 보정값도 비운다."""
