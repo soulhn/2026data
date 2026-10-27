@@ -71,6 +71,17 @@ class TestParse:
         assert etl.parse_hrd_cancel("09.29 합격 취소 : 사유") == (None, None)
         assert parse_applicant_page(_page("p2", "홍길동", "HRD등록"))["HRD_CANCEL_BY"] is None   # 속성 없음
 
+    def test_hrd_cancel_select_overrides_tag(self):
+        """「HRD 취소 처리」 선택 칸이 있으면 특이사항 태그보다 우선. 선택지 이름이 바뀌어도 맨 앞 ①②③으로 판단."""
+        tag = {config.NOTION_NOTES_PROP: {"type": "rich_text", "rich_text": [{"plain_text": "10.13 HRD취소 ①본인"}]}}
+        pick = lambda v: {config.NOTION_HRD_CANCEL_PROP: {"type": "select", "select": {"name": v} if v else None}}   # noqa: E731
+        row = parse_applicant_page(_page("p1", "홍길동", "합격취소(신청자 요청)", extra={**tag, **pick("③고용노동부(공문취소)")}))
+        assert row["HRD_CANCEL_BY"] == "③고용노동부" and row["HRD_CANCEL_NOTE"] == "③고용노동부(공문취소)"
+        row = parse_applicant_page(_page("p1", "홍길동", "합격취소(신청자 요청)", extra={**tag, **pick(None)}))
+        assert row["HRD_CANCEL_BY"] == "①본인" and row["HRD_CANCEL_NOTE"] == "10.13 HRD취소 ①본인"          # 비어 있으면 태그
+        assert etl.hrd_cancel_from_select("②기관취소(HRD-Net)") == "②기관취소" and etl.hrd_cancel_from_select("①본인") == "①본인"
+        assert etl.hrd_cancel_from_select("모름") is None and etl.hrd_cancel_from_select(None) is None
+
     def test_name_hash_ignores_spaces(self):
         assert name_hash("홍 길동") == name_hash("홍길동")
         assert name_hash(None) is None

@@ -256,7 +256,7 @@ def init_main_tables():
             OT_ATTEND TEXT,                  -- OT참석 O/X
             ATTEND_DT TEXT,                  -- 개강 참석일 (신규 속성, 없으면 NULL)
             CANCEL_REASON TEXT, TRANSFER_TO TEXT,
-            HRD_CANCEL_BY TEXT,              -- 특이사항 태그: ①본인(고용24 직접 취소) · ②기관취소(HRD-Net 기관 화면 처리). 2026-10-06
+            HRD_CANCEL_BY TEXT,              -- ①본인(고용24 직접 취소) · ②기관취소(HRD-Net 기관 화면 처리) · ③고용노동부(공문). 「HRD 취소 처리」 선택(2026-10-27) 우선, 없으면 특이사항 태그(2026-10-06)
             HRD_CANCEL_NOTE TEXT,            -- 그 태그 원문 한 줄 (날짜·괄호 종류 포함). 특이사항 본문은 저장하지 않음
             NOTION_CREATED_AT TEXT, NOTION_EDITED_AT TEXT,
             SYNCED_AT TIMESTAMP

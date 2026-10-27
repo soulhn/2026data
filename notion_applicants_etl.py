@@ -58,6 +58,8 @@ TRACKED_FIELDS = ["STATUS", "COHORT", "PROCESS_RESULT", "HRD_APPLY_AT", "HRD_REG
 # ② 우리가 HRD-Net 기관 화면에서 처리(남음). totTrpCnt 감소 사례와 대조해 2026-10-06 추정을 재검토하기 위한 것 (docs/DEV_LOG.md)
 _HRD_CANCEL_RE = re.compile(r"(?:(\d{1,2}\.\d{1,2})\s*)?HRD\s*취소\s*([①②12])\s*([^\s()]*)(?:\(([^)]*)\))?")
 _HRD_CANCEL_BY = {"①": "①본인", "1": "①본인", "②": "②기관취소", "2": "②기관취소"}
+# 「HRD 취소 처리」 선택 칸 (2026-10-27). 선택지 이름(①본인취소(고용24) 등)은 담당자가 바꿀 수 있어 맨 앞 기호만 본다. ③은 태그 시절엔 없던 구분
+_HRD_CANCEL_SELECT = {"①": "①본인", "②": "②기관취소", "③": "③고용노동부"}
 
 
 def parse_hrd_cancel(notes):
@@ -67,6 +69,11 @@ def parse_hrd_cancel(notes):
     if not m:
         return None, None
     return _HRD_CANCEL_BY[m.group(2)], " ".join(m.group(0).split())
+
+
+def hrd_cancel_from_select(value):
+    """「HRD 취소 처리」 선택값 → 구분 (①본인 / ②기관취소 / ③고용노동부). 비었거나 모르는 값이면 None."""
+    return _HRD_CANCEL_SELECT.get(str(value or "").strip()[:1])
 
 
 def name_hash(name):
@@ -124,6 +131,9 @@ def parse_applicant_page(page, source=None):
     row["ATTEND_DT"] = _norm(prop_value(props[config.NOTION_ATTEND_PROP])) if config.NOTION_ATTEND_PROP in props else None
     notes = prop_value(props[config.NOTION_NOTES_PROP]) if config.NOTION_NOTES_PROP in props else None
     row["HRD_CANCEL_BY"], row["HRD_CANCEL_NOTE"] = parse_hrd_cancel(str(notes or ""))
+    picked = prop_value(props[config.NOTION_HRD_CANCEL_PROP]) if config.NOTION_HRD_CANCEL_PROP in props else None
+    if hrd_cancel_from_select(picked):   # 선택 칸이 있으면 특이사항 태그보다 우선. 원문 칸엔 선택값 그대로
+        row["HRD_CANCEL_BY"], row["HRD_CANCEL_NOTE"] = hrd_cancel_from_select(picked), str(picked)
     return {c: row.get(c) for c in APPLICANT_COLUMNS}
 
 
