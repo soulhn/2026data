@@ -8,7 +8,7 @@
             완전 기록 관리 기수(config.NOTION_FULL_RECORD_SINCE 이후 개강)에서 API 신청 > 노션 수집 (HRD-Net엔 신청했는데 노션에 HRD신청으로 없는 사람)
   3 매칭     스냅샷에 없는 기수명(오타), 같은 기수 동명이인, 최근 24시간에 새로 생긴 '노션에 없음'
   4 담당자   운영현황표 확정자신고 vs API 확정 신고 (확정 신고 끝난 기수),
-            HRD 이력 뒤 취소됐는데 「HRD 취소 처리」가 빈 사람 (config.NOTION_HRD_CANCEL_SINCE 이후 취소, 24시간 지남)
+            HRD 이력 뒤 확정자 신고 전에 취소됐는데 「HRD 취소 처리」가 빈 사람 (config.NOTION_HRD_CANCEL_SINCE 이후 취소, 24시간 지남)
 
 같은 내용이면 다시 보내지 않고(해시), 그래도 7일마다 한 번은 다시 알린다. 읽기만 한다 — 노션엔 쓰지 않는다.
 사람 이름은 디스코드에만 실명으로 보내고 로그·해시에는 가린 이름을 쓴다 (public 레포라 Actions 로그가 공개, 2026-10-26).
@@ -196,6 +196,8 @@ def check_ops_table(token, cohort_rows, session=None):
 
 def check_cancel_field(now):
     """HRD 이력 뒤 취소됐는데 「HRD 취소 처리」가 빈 사람. config.NOTION_HRD_CANCEL_SINCE 이후 취소, CANCEL_FIELD_GRACE_HOURS 지난 경우만 (2026-10-27).
+    기록 범위가 확정자 신고 전 이탈이라(담당자 공지) 그 기수 개강 + NOTION_KPI_CONFIRM_DAYS일 0시(KST) 전에 감지된 취소만 본다.
+    신고 뒤 중도탈락은 명부에 남아 기록이 필요 없고, 드문 고용노동부 공문 이탈(③)은 담당자 기록에 맡긴다. HRD-Net 회차가 아직 없는 기수는 개강 전이라 포함.
     로그·해시엔 가린 이름, 디스코드엔 실명(Named)."""
     apps = load_data("SELECT NOTION_PAGE_ID, COHORT, NAME, NAME_MASKED, STATUS FROM TB_APPLICANT WHERE HRD_CANCEL_BY IS NULL AND STATUS IS NOT NULL")
     apps = apps[apps.STATUS.str.contains("취소") & apps.NOTION_PAGE_ID.isin(ever_registered_pages())]
@@ -203,15 +205,20 @@ def check_cancel_field(now):
         return []
     log = load_data("SELECT NOTION_PAGE_ID, NEW_VALUE, MAX(DETECTED_AT) AS LAST_AT FROM TB_APPLICANT_STATUS_LOG WHERE FIELD = 'STATUS' GROUP BY NOTION_PAGE_ID, NEW_VALUE")
     when = {(r.NOTION_PAGE_ID, r.NEW_VALUE): r.LAST_AT for r in log.itertuples(index=False)}
+    snap = load_data("SELECT DISTINCT TRPR_ID, TRPR_DEGR, TR_STA_DT FROM TB_COURSE_SNAPSHOT WHERE TR_STA_DT IS NOT NULL")
+    confirm_day = {cohort_key(t, d): (datetime.fromisoformat(str(s)[:10]) + timedelta(days=config.NOTION_KPI_CONFIRM_DAYS)).strftime("%Y-%m-%d")
+                   for t, d, s in zip(snap.TRPR_ID, snap.TRPR_DEGR, snap.TR_STA_DT)}
     late = []
     for a in apps.itertuples(index=False):
         t = _parse(when.get((a.NOTION_PAGE_ID, a.STATUS)))   # 지금 최종결과(취소)로 바뀐 것을 감지한 시각
-        if t and t.astimezone(KST).strftime("%Y-%m-%d") >= config.NOTION_HRD_CANCEL_SINCE and (now - t) >= timedelta(hours=CANCEL_FIELD_GRACE_HOURS):
+        day = t.astimezone(KST).strftime("%Y-%m-%d") if t else None
+        before_confirm = day is not None and day < confirm_day.get(a.COHORT, "9999-12-31")
+        if before_confirm and day >= config.NOTION_HRD_CANCEL_SINCE and (now - t) >= timedelta(hours=CANCEL_FIELD_GRACE_HOURS):
             late.append(a)
     if not late:
         return []
     shown = late[:10]
-    head = f"HRD 이력 뒤 취소됐는데 「HRD 취소 처리」가 빈 사람 {len(late)}명 (취소 {CANCEL_FIELD_GRACE_HOURS}시간 지남, ①본인·②기관·③고용노동부 중 선택 요청): "
+    head = f"HRD 이력 뒤 확정자 신고 전에 취소됐는데 「HRD 취소 처리」가 빈 사람 {len(late)}명 (취소 {CANCEL_FIELD_GRACE_HOURS}시간 지남, ①본인·②기관 중 선택 요청): "
     return [Named(head + ", ".join(f"{a.NAME_MASKED or '?'} · {a.COHORT or '-'}" for a in shown),
                   head + ", ".join(f"{a.NAME or a.NAME_MASKED or '?'} · {a.COHORT or '-'}" for a in shown))]
 

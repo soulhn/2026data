@@ -159,6 +159,14 @@ class TestCancelField:
         assert len(out) == 1 and "빈 사람 1명" in out[0] and "박*희 · AIO5" in out[0] and "박영희" not in f"{out[0]}"
         assert "박영희 · AIO5" in out[0].discord
 
+    def test_only_cancellations_before_confirm_report(self, db):
+        """기록 범위는 확정자 신고 전 이탈. 개강 + 7일 0시 이후 감지된 취소는 알리지 않는다 (HRD-Net 회차가 없는 기수는 개강 전이라 포함)."""
+        _seed(db)                                                                                  # AIO3 개강 9/15 → 확정 신고 9/22
+        self._add(db)                                                                              # AIO5: 스냅샷 없음 → 포함
+        db.cursor().execute("UPDATE TB_APPLICANT SET COHORT = 'AIO3' WHERE NOTION_PAGE_ID = 'p9'")   # 10/27 취소는 AIO3 신고(9/22) 뒤
+        db.commit()
+        assert hc.check_cancel_field(datetime(2026, 10, 28, 3, tzinfo=timezone.utc)) == []
+
     def test_quiet_within_grace_when_filled_or_before_since(self, db):
         self._add(db)
         assert hc.check_cancel_field(datetime(2026, 10, 27, 12, tzinfo=timezone.utc)) == []    # 11시간: 아직 여유
