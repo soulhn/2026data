@@ -386,6 +386,12 @@ NOTION_CONFIRM_OVERRIDES = {                      # 확정 신고(API) 고정값
 NOTION_MATCH_EXCEPTIONS = {                       # 기수 표 일치 여부: 노션 수집 − API 신청인원 차이를 담당자 확인으로 설명한 기수 {기수: (인원, 사유)}. 차이가 정확히 같을 때만 '일치(예외)'
     # 2026-10-27: AIO4(③ 1명)·SKN38(① 2명)은 「HRD 취소 처리」 값으로 자동 설명돼(일치(취소 반영)) 뺐다. 값으로 설명 못 하는 특이 사례만 등록
 }
+NOTION_CLOSED_COHORTS = {                         # 모집하지 않기로 한 기수 {기수: 결정일}. 이 날 전에 생긴 신청자만 점검 3번 'HRD 회차와 안 맞음'에서 제외
+    "MLE3": "2026-10-28",                        # 다시 열면 새 신청자는 평소처럼 점검 (HRD-Net이 다시 3회차로 열면 키가 겹치므로 전체 제외 대신 날짜로)
+}
+NOTION_KNOWN_HOMONYMS = {                         # 실명이 같은 다른 사람으로 확인한 동명이인 {기수: 겹치는 인원(같은 이름 묶음마다 인원 − 1의 합)}
+    "AIO4": 1, "SKN33": 1,                      # 2026-10-08 확인. public 레포라 이름·해시 대신 개수만. 이보다 많아지면 다시 알림
+}
 NOTION_FULL_RECORD_SINCE = "2026-10-07"          # 이 날 이후 개강 기수는 완전 기록 관리 대상(취소자도 HRD 신청 일시 기록). API 신청 > 노션 수집이면 health_check가 알림 (2026-09-29)
 NOTION_JOBS_PAGE_ID = "3e2d943bcac2807cbdb0c5c5db17eb0f"       # 「채용 동향」 공고 DB 페이지 (2026-09-21). 우리 소유 — notion_jobs_publish.py가 쓴다
 NOTION_WRITE_INTERVAL = 0.35                     # 초. 노션 API 초당 3건 제한

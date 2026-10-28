@@ -7,6 +7,7 @@
   2 값       노션 수집 > API 신청인원, 확정 신고 > API 신청인원, 개강 지났는데 출결 기록 없음, 등록한 일치 예외 기수의 차이가 바뀜,
             완전 기록 관리 기수(config.NOTION_FULL_RECORD_SINCE 이후 개강)에서 API 신청 > 노션 수집 (HRD-Net엔 신청했는데 노션에 HRD신청으로 없는 사람)
   3 매칭     스냅샷에 없는 기수명(오타), 같은 기수 동명이인, 최근 24시간에 새로 생긴 '노션에 없음'
+            (모집 안 한 기수의 옛 신청자·확인 끝난 동명이인은 config.NOTION_CLOSED_COHORTS·NOTION_KNOWN_HOMONYMS로 제외)
   4 담당자   운영현황표 확정자신고 vs API 확정 신고 (확정 신고 끝난 기수),
             HRD 이력 뒤 확정자 신고 전에 취소됐는데 「HRD 취소 처리」가 빈 사람 (config.NOTION_HRD_CANCEL_SINCE 이후 취소, 24시간 지남)
 
@@ -132,19 +133,30 @@ class Named(str):
         return s
 
 
+def _unconfirmed_homonyms(sizes):
+    """(기수, 이름 해시)별 인원 → 확인 안 된 동명이인이 있는 기수만 'AIO4 2명' 형태로.
+    겹치는 인원(묶음마다 인원 − 1의 합)이 config.NOTION_KNOWN_HOMONYMS 값보다 많을 때만 (2026-10-28)."""
+    dup = sizes[sizes > 1]
+    return [f"{c} {int(grp.sum())}명" for c, grp in dup.groupby(level=0)
+            if int((grp - 1).sum()) > config.NOTION_KNOWN_HOMONYMS.get(c, 0)]
+
+
 def check_matching(now):
     out = []
     snap = load_data("SELECT DISTINCT TRPR_ID, TRPR_DEGR FROM TB_COURSE_SNAPSHOT")
     known = {cohort_key(t, d) for t, d in zip(snap.TRPR_ID, snap.TRPR_DEGR)} - {None}
-    apps = load_data("SELECT NOTION_PAGE_ID, SOURCE_KEY, COHORT, NAME_HASH, STATUS, HRD_APPLY_AT, HRD_REG_AT FROM TB_APPLICANT WHERE COHORT IS NOT NULL")
-    unknown = apps[~apps.COHORT.isin(known)].groupby(["SOURCE_KEY", "COHORT"]).size()
+    apps = load_data("SELECT NOTION_PAGE_ID, SOURCE_KEY, COHORT, NAME_HASH, STATUS, HRD_APPLY_AT, HRD_REG_AT, NOTION_CREATED_AT "
+                     "FROM TB_APPLICANT WHERE COHORT IS NOT NULL")
+    # 모집하지 않기로 한 기수의 그 전 신청자는 회차가 영영 안 생기므로 제외 (config.NOTION_CLOSED_COHORTS)
+    closed = [c in config.NOTION_CLOSED_COHORTS and str(t or "")[:10] < config.NOTION_CLOSED_COHORTS[c] for c, t in zip(apps.COHORT, apps.NOTION_CREATED_AT)]
+    still = apps[[not x for x in closed]]
+    unknown = still[~still.COHORT.isin(known)].groupby(["SOURCE_KEY", "COHORT"]).size()
     for (src, c), n in unknown.items():
         out.append(f"{src} 신청자 리스트 최종기수 '{c}' {n}명 — HRD 회차와 안 맞음 (오타·미개설)")
     reg = apps[apps.STATUS.isin(["HRD신청", "HRD등록"]) | apps.HRD_APPLY_AT.notna() | apps.HRD_REG_AT.notna()]
-    dup = reg.groupby(["COHORT", "NAME_HASH"]).size()
-    dup = dup[dup > 1]
-    if len(dup):
-        out.append("같은 기수에 같은 이름 등록자: " + ", ".join(f"{c} {n}명" for (c, _), n in dup.items()))
+    dup = _unconfirmed_homonyms(reg.groupby(["COHORT", "NAME_HASH"]).size())
+    if dup:
+        out.append("같은 기수에 같은 이름 등록자: " + ", ".join(dup))
     mem = load_data("SELECT TRPR_ID, TRPR_DEGR, NAME_HASH, NAME_MASKED, NAME, FIRST_SEEN_AT, TR_STA_DT, GONE_AT FROM TB_ROSTER_MEMBER")
     if not mem.empty:
         mem["COHORT"] = [cohort_key(t, d) for t, d in zip(mem.TRPR_ID, mem.TRPR_DEGR)]
@@ -158,10 +170,9 @@ def check_matching(now):
             head = f"명부에 새로 잡혔는데 노션 신청자 리스트에 없음 {len(fresh)}명: "
             out.append(Named(head + ", ".join(f"{m.NAME_MASKED or '?'} · {m.COHORT}" for m in shown),
                              head + ", ".join(f"{m.NAME or m.NAME_MASKED or '?'} · {m.COHORT}" for m in shown)))
-        rdup = mem.groupby(["COHORT", "NAME_HASH"]).size()
-        rdup = rdup[rdup > 1]
-        if len(rdup):
-            out.append("HRD 명부 안 같은 기수 동명이인: " + ", ".join(f"{c} {n}명" for (c, _), n in rdup.items()))
+        rdup = _unconfirmed_homonyms(mem.groupby(["COHORT", "NAME_HASH"]).size())
+        if rdup:
+            out.append("HRD 명부 안 같은 기수 동명이인: " + ", ".join(rdup))
     return out
 
 

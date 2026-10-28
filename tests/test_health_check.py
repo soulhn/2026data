@@ -135,6 +135,25 @@ class TestMatching:
         assert "박*희 · AIO3" in line and "박영희" not in f"{line}"
         assert "박영희 · AIO3" in line.discord
 
+    def test_closed_cohort_and_known_homonyms_are_quiet(self, db, monkeypatch):
+        """모집 안 한 기수의 결정일 전 신청자, 확인 끝난 동명이인은 알리지 않고, 새로 생기면 다시 알린다."""
+        _seed(db)
+        cur = db.cursor()
+        cur.execute("INSERT INTO TB_APPLICANT (NOTION_PAGE_ID, SOURCE_KEY, NAME_HASH, NAME_MASKED, COHORT, STATUS, NOTION_CREATED_AT) "
+                    "VALUES ('m1', 'AI', 'h_m', '이*은', 'MLE3', '합격취소(신청자 요청)', '2026-09-08T01:00:00.000Z')")
+        cur.execute("INSERT INTO TB_APPLICANT (NOTION_PAGE_ID, SOURCE_KEY, NAME_HASH, NAME_MASKED, COHORT, STATUS) VALUES ('p4', 'AI', 'h_kim', '홍*동', 'AIO3', 'HRD등록')")
+        db.commit()
+        monkeypatch.setattr(hc.config, "NOTION_CLOSED_COHORTS", {"MLE3": "2026-10-28"})
+        monkeypatch.setattr(hc.config, "NOTION_KNOWN_HOMONYMS", {"AIO3": 1})
+        assert check_matching(NOW) == []                                                            # 옛 MLE3 신청자·확인된 AIO3 1쌍은 조용
+        cur.execute("INSERT INTO TB_APPLICANT (NOTION_PAGE_ID, SOURCE_KEY, NAME_HASH, NAME_MASKED, COHORT, STATUS, NOTION_CREATED_AT) "
+                    "VALUES ('m2', 'AI', 'h_m2', '박*희', 'MLE3', '인터뷰예약', '2026-11-03T01:00:00.000Z')")   # 다시 열린 뒤 새 신청자
+        cur.execute("INSERT INTO TB_APPLICANT (NOTION_PAGE_ID, SOURCE_KEY, NAME_HASH, NAME_MASKED, COHORT, STATUS) VALUES ('p5', 'AI', 'h_kim', '홍*동', 'AIO3', 'HRD등록')")
+        db.commit()
+        out = check_matching(NOW)
+        assert any("최종기수 'MLE3' 1명" in f for f in out)                                         # 결정일 뒤 신청자만 다시 점검
+        assert any("같은 기수에 같은 이름 등록자: AIO3 3명" in f for f in out)                         # 같은 이름이 3명으로 늘면 다시 알림
+
     def test_old_roster_only_member_is_not_new(self, db):
         _seed(db)
         cur = db.cursor()
