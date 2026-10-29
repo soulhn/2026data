@@ -280,12 +280,13 @@ def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_star
     existing = {}
     if done_rounds:
         cur.execute(adapt_query(
-            "SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, STATUS, GONE_AT, FIRST_ATTEND_DT, DAY1_STATUS, NAME_MASKED, NAME FROM TB_ROSTER_MEMBER"))
+            "SELECT TRPR_ID, TRPR_DEGR, TRNEE_ID, STATUS, GONE_AT, FIRST_ATTEND_DT, DAY1_STATUS, NAME_MASKED, NAME, TR_STA_DT "
+            "FROM TB_ROSTER_MEMBER"))
         for row in cur.fetchall():
             if (row[0], int(row[1])) in done_rounds:
                 existing[(row[0], int(row[1]), str(row[2]))] = {"STATUS": row[3], "GONE_AT": row[4],
                                                                  "FIRST_ATTEND_DT": row[5], "DAY1_STATUS": row[6], "NAME_MASKED": row[7],
-                                                                 "NAME": row[8]}
+                                                                 "NAME": row[8], "TR_STA_DT": row[9]}
 
     seen = set()
     rows = roster_df.to_dict("records") if roster_df is not None and not roster_df.empty else []
@@ -319,6 +320,12 @@ def upsert_roster_members(conn, roster_df, first_att_df, done_rounds, round_star
         if _s(r.get("TRNEE_NM")) and _s(r.get("TRNEE_NM")) != _s(prev["NAME"]):   # 실명 열 추가(2026-10-26) 전 행 채움
             sets += ["NAME = ?"]
             params += [_s(r.get("TRNEE_NM"))]
+        # HRD가 개강일을 옮기면 그 전에 승인된 사람 행에 옛 개강일이 남아 개강일 출석에서 빠진다
+        # (2026-10-29 SKN 38기: 10/15 → 10/22, 6명 누락). 개강일 비교는 이 열을 쓰므로 현재 회차 값으로 맞춘다
+        start = _s(round_start.get((key[0], key[1])))
+        if start and start != _s(prev["TR_STA_DT"]):
+            sets += ["TR_STA_DT = ?"]
+            params += [start]
         if _s(prev["STATUS"]) != status:
             cur.execute(log, [key[0], key[1], key[2], now, "STATUS", _s(prev["STATUS"]), status])
             sets += ["STATUS = ?", "STATUS_CHANGED_AT = ?"]

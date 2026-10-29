@@ -209,6 +209,20 @@ class TestUpsert:
         upsert_roster_members(db, _roster(("t1", "홍길동", "훈련중")), pd.DataFrame(), {("A", 3)}, rs, now=datetime(2026, 9, 15, 2))
         assert self._rows(db, "SELECT GONE_AT FROM TB_ROSTER_MEMBER WHERE TRNEE_ID='t1'")[0][0] is None
 
+    def test_start_date_follows_round_change(self, db):
+        """개강일이 옮겨지면 그 전에 승인된 사람 행도 새 개강일로 맞춘다 (2026-10-29 SKN 38기 10/15 → 10/22)."""
+        upsert_roster_members(db, _roster(("t1", "홍길동", "훈련중")), pd.DataFrame(), {("A", 3)}, {("A", 3): "2026-10-15"},
+                              now=datetime(2026, 10, 1, 0))
+        upsert_roster_members(db, _roster(("t1", "홍길동", "훈련중"), ("t2", "김철수", "훈련중")),
+                              first_attendance(_att([("t1", "20261022", "08:50", "출석"), ("t2", "20261022", "08:55", "출석")])),
+                              {("A", 3)}, {("A", 3): "2026-10-22"}, now=datetime(2026, 10, 22, 9))
+        rows = self._rows(db, "SELECT TRNEE_ID, TR_STA_DT, FIRST_ATTEND_DT FROM TB_ROSTER_MEMBER ORDER BY TRNEE_ID")
+        assert rows == [("t1", "2026-10-22", "20261022"), ("t2", "2026-10-22", "20261022")]
+        # 개강일을 모르는 실행(스냅샷 누락)은 저장된 값을 비우지 않는다
+        upsert_roster_members(db, _roster(("t1", "홍길동", "훈련중"), ("t2", "김철수", "훈련중")), pd.DataFrame(), {("A", 3)}, {},
+                              now=datetime(2026, 10, 23, 9))
+        assert self._rows(db, "SELECT TR_STA_DT FROM TB_ROSTER_MEMBER WHERE TRNEE_ID='t1'")[0][0] == "2026-10-22"
+
     def test_first_attend_never_overwritten(self, db):
         rs = {("A", 3): "2026-09-15"}
         upsert_roster_members(db, _roster(("t1", "홍길동", "훈련중")),
