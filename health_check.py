@@ -9,6 +9,7 @@
   3 매칭     스냅샷에 없는 기수명(오타), 같은 기수 동명이인, 최근 24시간에 새로 생긴 '노션에 없음'
             (모집 안 한 기수의 옛 신청자·확인 끝난 동명이인은 config.NOTION_CLOSED_COHORTS·NOTION_KNOWN_HOMONYMS로 제외)
   4 담당자   운영현황표 확정자신고 vs API 확정 신고 (확정 신고 끝난 기수),
+            KPI 기준·확정 끝난 기수의 운영현황표 행 없음·개강인원/확정자신고 빈칸, 운영현황표 개강일 ≠ HRD 개강일,
             HRD 이력 뒤 확정자 신고 전에 취소됐는데 「HRD 취소 처리」가 빈 사람 (config.NOTION_HRD_CANCEL_SINCE 이후 취소, 24시간 지남)
 
 같은 내용이면 다시 보내지 않고(해시), 그래도 7일마다 한 번은 다시 알린다. 읽기만 한다 — 노션엔 쓰지 않는다.
@@ -179,8 +180,19 @@ def check_matching(now):
 # ── 4 담당자 기록 대조 ────────────────────────────────────────────────
 
 
+def _ops_num(v):
+    """운영현황표 숫자 칸 → int, 빈칸은 None."""
+    return None if v is None or str(v) in ("", "nan", "None") else int(float(v))
+
+
 def check_ops_table(token, cohort_rows, session=None):
-    """운영현황표(담당자 수기) 확정자신고 vs API 확정 신고 — 확정 신고가 끝난 기수만."""
+    """운영현황표(담당자 수기) 대조.
+
+    - 확정자신고 vs API 확정 신고 (확정 신고가 끝난 기수)
+    - KPI 기준 기수·확정 신고가 끝난 기수인데 행이 없거나 개강인원·확정자신고가 빔: KPI 기준값이 조용히 바뀐다
+      (2026-11-03 SKN35 행 제목이 39기로 바뀌고 다음 날 지워져 기준이 90.8% → 91.5%로 틀어졌는데 알림이 없었음)
+    - 같은 기수인데 운영현황표 개강일이 HRD 개강일과 다름: 다른 기수 행을 고쳐 쓴 신호 (위 사례의 39기 행 = 7/7 개강)
+    """
     if not token:
         return ["운영현황표 대조 건너뜀: NOTION_TOKEN 없음"]
     try:
@@ -188,20 +200,27 @@ def check_ops_table(token, cohort_rows, session=None):
     except NotionFetchError as e:
         return [f"운영현황표 조회 실패: {e}"]
     by_key = {}
-    for r in ops.itertuples(index=False):
-        g, n = course_group(r.과정명), cohort_number(r.과정명)
+    for r in ops.to_dict("records"):
+        g, n = course_group(r.get("과정명")), cohort_number(r.get("과정명"))
         if g and n:
-            by_key[f"{g}{n}"] = r.확정자신고
+            by_key[f"{g}{n}"] = r
     out = []
     for r in cohort_rows:
-        api = r["확정 신고(API)"]
-        if api is None or r["기수"] not in by_key:
+        k, api = r["기수"], r["확정 신고(API)"]
+        required = k in config.NOTION_KPI_BASE_COHORTS or api is not None
+        o = by_key.get(k)
+        if o is None:
+            if required:
+                out.append(f"{k}: 운영현황표에 행 없음. 행 제목이 바뀌었거나 지워졌는지 담당자 확인 (KPI 개강인원·확정자신고가 빠짐)")
             continue
-        notion = by_key[r["기수"]]
-        if notion is None or str(notion) in ("", "nan"):
-            continue
-        if int(float(notion)) != int(api):
-            out.append(f"{r['기수']}: 운영현황표 확정자신고 {int(float(notion))} vs API 확정 {int(api)} — 담당자 확인")
+        hrd_start, ops_start = str(r.get("개강일") or "")[:10], str(o.get("개강일") or "")[:10]
+        if hrd_start and ops_start[:2] == "20" and ops_start != hrd_start:
+            out.append(f"{k}: 운영현황표 개강일 {ops_start} vs HRD {hrd_start}. 다른 기수 행을 고쳐 쓴 것인지 담당자 확인")
+        opened, notion = _ops_num(o.get("개강인원")), _ops_num(o.get("확정자신고"))
+        if required and (opened is None or notion is None):
+            out.append(f"{k}: 운영현황표 개강인원·확정자신고 빈칸 (KPI 값이 빠짐). 담당자 입력 요청")
+        if api is not None and notion is not None and notion != int(api):
+            out.append(f"{k}: 운영현황표 확정자신고 {notion} vs API 확정 {int(api)} — 담당자 확인")
     return out
 
 

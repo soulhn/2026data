@@ -200,12 +200,31 @@ class TestCancelField:
 
 class TestOpsTable:
     def test_mismatch_only_for_confirmed_cohorts(self, monkeypatch):
-        ops = pd.DataFrame([{"과정명": "멀티에이전트 AI 오케스트레이션 캠프 3기", "확정자신고": 15},
-                            {"과정명": "SK네트웍스 Family AI 캠프 37기", "확정자신고": 22}])
+        ops = pd.DataFrame([{"과정명": "멀티에이전트 AI 오케스트레이션 캠프 3기", "개강일": "2026-09-15", "개강인원": 14, "확정자신고": 15},
+                            {"과정명": "SK네트웍스 Family AI 캠프 37기", "개강일": "2026-09-04", "개강인원": 21, "확정자신고": 22}])
         monkeypatch.setattr(hc, "fetch_ops_table", lambda token, session=None: ops)
-        rows = [{"기수": "AIO3", "확정 신고(API)": 14}, {"기수": "SKN37", "확정 신고(API)": 22}, {"기수": "AIO4", "확정 신고(API)": None}]
+        rows = [{"기수": "AIO3", "개강일": "2026-09-15", "확정 신고(API)": 14}, {"기수": "SKN37", "개강일": "2026-09-04", "확정 신고(API)": 22},
+                {"기수": "AIO4", "개강일": "2026-10-14", "확정 신고(API)": None}]
         out = check_ops_table("tok", rows)
         assert out == ["AIO3: 운영현황표 확정자신고 15 vs API 확정 14 — 담당자 확인"]
+
+    def test_renamed_row_drops_base_cohort(self, monkeypatch):
+        """2026-11-03 사례: 기준 기수 SKN35 행 제목이 39기로 바뀜 → 35기 행 없음 + 39기 개강일 불일치 둘 다 알림."""
+        ops = pd.DataFrame([{"과정명": "SK네트웍스 Family AI 캠프 39기", "개강일": "2026-07-07", "개강인원": 30, "확정자신고": 24}])
+        monkeypatch.setattr(hc, "fetch_ops_table", lambda token, session=None: ops)
+        rows = [{"기수": "SKN35", "개강일": "2026-07-07", "확정 신고(API)": 24}, {"기수": "SKN39", "개강일": "2026-11-24", "확정 신고(API)": None}]
+        out = check_ops_table("tok", rows)
+        assert out == ["SKN35: 운영현황표에 행 없음. 행 제목이 바뀌었거나 지워졌는지 담당자 확인 (KPI 개강인원·확정자신고가 빠짐)",
+                       "SKN39: 운영현황표 개강일 2026-07-07 vs HRD 2026-11-24. 다른 기수 행을 고쳐 쓴 것인지 담당자 확인"]
+
+    def test_blank_counts_only_for_required_cohorts(self, monkeypatch):
+        """기준·확정 끝난 기수는 개강인원·확정자신고 빈칸을 알리고, 개강 전 기수 행이 없거나 비어 있는 건 조용."""
+        ops = pd.DataFrame([{"과정명": "SK네트웍스 Family AI 캠프 35기", "개강일": "2026-07-07", "개강인원": None, "확정자신고": 24},
+                            {"과정명": "멀티에이전트 AI 오케스트레이션 캠프 5기", "개강일": "2026-11-20", "개강인원": None, "확정자신고": None}])
+        monkeypatch.setattr(hc, "fetch_ops_table", lambda token, session=None: ops)
+        rows = [{"기수": "SKN35", "개강일": "2026-07-07", "확정 신고(API)": 24}, {"기수": "AIO5", "개강일": "2026-11-20", "확정 신고(API)": None},
+                {"기수": "SKN39", "개강일": "2026-11-24", "확정 신고(API)": None}]
+        assert check_ops_table("tok", rows) == ["SKN35: 운영현황표 개강인원·확정자신고 빈칸 (KPI 값이 빠짐). 담당자 입력 요청"]
 
     def test_no_token(self):
         assert check_ops_table(None, []) == ["운영현황표 대조 건너뜀: NOTION_TOKEN 없음"]
