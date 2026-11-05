@@ -1,8 +1,10 @@
 """운영TF 구간 7 측정값 출력 — 구글시트 「7_통합」 황설현 행(25~29)과 노션 「일별 액션 측정」에 넣을 분모·분자.
 
-2026-10-02 시트 확정 정의. 기준 = `config.NOTION_KPI_BASE_COHORTS`(운영TF 20개 기수), 현재 = 그 뒤에 개강한 기수.
+2026-10-02 시트 확정 정의. 기준 = `config.NOTION_KPI_BASE_COHORTS`(운영TF 20개 기수),
+현재 = `config.NOTION_KPI_CURRENT_SINCE`(신규 기획 첫 기수 MLO3 개강일) 이후 개강한 기수. 기준과 그 사이에 개강한 기수(AIO3)는
+「사이」로 표만 보이고 합산하지 않는다 (2026-11-05 결정).
   · 기수당 확정자 신고 인원      운영현황표 확정자신고 합 ÷ 기수 수
-  · HRD 등록 대비 개강 참석률   분모 HRD-Net 수강신청(totTrpCnt, 취소자 포함) / 분자 HRD-Net 출결 개강일 입실 (기수 표 「개강 참석률(API, %)」과 같은 값)
+  · HRD 등록 대비 개강 참석률   분모 HRD-Net 수강신청(totTrpCnt, 지금 남아 있는 신청 건수) / 분자 HRD-Net 출결 개강일 입실 (기수 표 「개강 참석률(API, %)」과 같은 값)
   · 개강 대비 확정 비율(책임 수치)  분모 운영현황표 개강인원(오프라인) / 분자 운영현황표 확정자신고(= 개강인원 − 초기이탈 + 추가인원). 100% 초과 가능
       액션 지표: 기수당 초기이탈 인원(낮을수록 좋음) · 기수당 추가인원. 운영현황표는 notion_registry_publish.load_ops_counts로 읽기만
   · 개강 참석 기록 채움률(참고)   분모 노션 최종결과 HRD등록·합격자등록 / 분자 그중 개강일 출결 행이 있는 사람. 자동 수집 이후 측정 종료(프로세스 도입)
@@ -27,10 +29,13 @@ DAY1_COL = "개강일 출석 인원(API)"
 
 
 def group_of(row, today):
-    """기준(운영TF 기준 기수) / 현재(기준 이후 개강) / 예정(아직 개강 전)."""
+    """기준(운영TF 기준 기수) / 사이(기준 뒤, 신규 기획 전 개강, 합산 안 함) / 현재(신규 기획 이후 개강) / 예정(아직 개강 전)."""
     if row["기수"] in config.NOTION_KPI_BASE_COHORTS:
         return "기준"
-    return "현재" if str(row["개강일"])[:10] < today else "예정"
+    start = str(row["개강일"])[:10]
+    if start >= today:
+        return "예정"
+    return "현재" if start >= config.NOTION_KPI_CURRENT_SINCE else "사이"
 
 
 def summarize(rows):
@@ -92,7 +97,7 @@ def main():
     rows = sorted(build_cohort_rows(today=today, ops=ops), key=lambda r: str(r["개강일"]))
 
     print(f'{"구분":4} {"기수":6} {"개강":10} {"API신청":>6} {"개강일출석":>6} {"참석률":>6} | {"개강인원":>4} {"이탈":>3} {"추가":>3} {"확정":>4} {"대비확정":>6}')
-    groups = {"기준": [], "현재": [], "예정": []}
+    groups = {"기준": [], "사이": [], "현재": [], "예정": []}
     for r in rows:
         g = group_of(r, today)
         groups[g].append(r)
@@ -102,9 +107,12 @@ def main():
               f"{show(opened):>6} {show(r.get(OPS_EARLY_COL)):>4} {show(r.get(OPS_ADDED_COL)):>4} {show(conf):>5} {_pct(conf, opened) if conf is not None else '-':>7}")
 
     print(f"\n측정일 {today}")
+    if groups["사이"]:
+        print(f"합산 제외 (기준 뒤, 신규 기획 {config.NOTION_KPI_CURRENT_SINCE} 전 개강): " + ", ".join(r["기수"] for r in groups["사이"]))
     for name in ("기준", "현재"):
         g = groups[name]
-        title = f"{name} · {len(g)}개 기수" + (" (운영TF 기준 기수)" if name == "기준" else " (기준 이후 개강: " + ", ".join(r["기수"] for r in g) + ")")
+        title = f"{name} · {len(g)}개 기수" + (" (운영TF 기준 기수)" if name == "기준" else
+                                               f" (신규 기획 {config.NOTION_KPI_CURRENT_SINCE} 이후 개강: " + ", ".join(r["기수"] for r in g) + ")")
         _print_summary(title, summarize(g), fill_counts([r["기수"] for r in g]))
 
 

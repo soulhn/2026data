@@ -377,6 +377,7 @@ NOTION_KPI_BASE_COHORTS = (                 # 운영TF 구간 5~7 기준 기수 
     "SKN22", "SKN25", "SKN26", "SKN27", "SKN28", "SKN29", "SKN30", "SKN31", "SKN32", "SKN33", "SKN34", "SKN35", "SKN36", "SKN37",
     "AIO1", "AIO2", "MLE1", "MLE2", "MLO1", "MLO2",
 )
+NOTION_KPI_CURRENT_SINCE = "2026-10-07"   # 구간 7 「현재」 시작일 = 신규 기획 첫 기수 MLO3 개강일 (2026-11-05 결정). 기준 기수와 이 날 사이에 개강한 AIO3는 현재에서 뺀다
 NOTION_KPI_COURSES =("AIO", "MLE", "MLO", "SKN")   # 신청자 리스트가 있는 과정 (한화는 모집 종료, 2026-09-21 SKN 추가)
 NOTION_KPI_CONFIRM_DAYS = 7                      # 개강 후 이 일수가 지나야 '확정자 신고율'을 계산 (확정 신고는 개강 1주 뒤)
 # 아래 두 목록의 사유는 노션 기수 표 '보정·예외 메모' 열에 그대로 나간다. public 레포라 실명 금지 (가린 이름이나 인원으로)

@@ -250,7 +250,7 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 | 본인·고용노동부 취소(①·③) | 신청자 리스트 「HRD 취소 처리」 → `TB_APPLICANT.HRD_CANCEL_BY` | HRD 이력자 중 ①·③ 인원 (HRD-Net 신청인원에서 빠지는 사람) | 값을 고른 기수만 |
 | 확정 신고(API) · 확정자 신고율(API, %) | `_3.jsp` `totParMks` (= 명부 건수 = 노션 운영표 확정자신고) | 확정 신고 ÷ API 신청인원. 담당자 확인으로 바로잡은 기수는 `config.NOTION_CONFIRM_OVERRIDES` 값 (AIO4 20→19, 확정자 신고 뒤 공문 이탈, 2026-10-26) | 개강 + `config.NOTION_KPI_CONFIRM_DAYS`(7)일부터 |
 
-운영TF 구간 7 측정값은 `python scripts/tf_section7.py`가 출력한다 — 기준 = `config.NOTION_KPI_BASE_COHORTS`(운영TF 20개 기수), 현재 = 그 뒤 개강 기수. 개강 참석률(API 신청인원 분모)·개강 대비 확정 비율·기수당 초기이탈/추가 인원. 구글시트 「7_통합」 황설현 행과 같은 정의(2026-10-02). 출처가 HRD-Net API인 열은 이름에 `(API)`를 붙인다 — 이름 변경은 `notion_publish.rename_properties()`로 제자리에서. 상세는 `docs/GLOSSARY.md` "HRD 등록자 관리".
+운영TF 구간 7 측정값은 `python scripts/tf_section7.py`가 출력한다 — 기준 = `config.NOTION_KPI_BASE_COHORTS`(운영TF 20개 기수), 현재 = `config.NOTION_KPI_CURRENT_SINCE`(신규 기획 첫 기수 MLO3 개강일 2026-10-07) 이후 개강 기수(그 사이에 개강한 AIO3는 합산 제외, 2026-11-05). 개강 참석률(API 신청인원 분모)·개강 대비 확정 비율·기수당 초기이탈/추가 인원. 구글시트 「7_통합」 황설현 행과 같은 정의(2026-10-02). 출처가 HRD-Net API인 열은 이름에 `(API)`를 붙인다 — 이름 변경은 `notion_publish.rename_properties()`로 제자리에서. 상세는 `docs/GLOSSARY.md` "HRD 등록자 관리".
 
 > **API 한계**: 명부(`_4.jsp`)에는 승인자만 내려오므로 신청만 하고 미승인인 개인은 식별 불가 — 인원 차이로만 잡힌다.
 > 시점 정보도 없어(스냅샷) 승인 반영일은 알 수 없다 → `kpi_etl.py`가 TB_COURSE_SNAPSHOT·TB_ROSTER_MEMBER에 변화 이력을 남긴다.

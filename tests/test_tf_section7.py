@@ -21,8 +21,16 @@ def test_base_cohorts_are_the_tf_twenty():
 
 def test_group_of():
     assert tf.group_of(_row("SKN37", "2026-09-04", 23, 18), "2026-10-02") == "기준"
-    assert tf.group_of(_row("AIO3", "2026-09-15", 17, 13), "2026-10-02") == "현재"      # 기준 기수 밖, 개강함
     assert tf.group_of(_row("MLO3", "2026-10-07", 20, None), "2026-10-02") == "예정"
+
+
+def test_current_starts_at_new_plan():
+    """2026-11-05 결정: 「현재」는 신규 기획 첫 기수 MLO3(10/7)부터. 기준 뒤에 먼저 개강한 AIO3는 「사이」로 합산 제외."""
+    assert config.NOTION_KPI_CURRENT_SINCE == "2026-10-07"
+    today = "2026-11-05"
+    assert tf.group_of(_row("AIO3", "2026-09-15", 17, 13), today) == "사이"
+    assert [tf.group_of(_row(k, s, 20, 15), today) for k, s in [("MLO3", "2026-10-07"), ("AIO4", "2026-10-14"), ("SKN38", "2026-10-22")]] == ["현재"] * 3
+    assert tf.group_of(_row("AIO5", "2026-11-20", 3, None), today) == "예정"
 
 
 def test_summarize_skips_missing_values_per_metric():
@@ -30,7 +38,7 @@ def test_summarize_skips_missing_values_per_metric():
             _row("AIO3", "2026-09-15", 17, 13, opened=14, early=1, added=1, conf=14, api_conf=14),
             _row("MLO3", "2026-10-07", 20, None)]                                        # 개강 전 — 어느 지표에도 안 들어간다
     t = tf.summarize(rows)
-    assert (t["trp"], t["day1"]) == (40, 31)                                             # 참석률 분모는 수강신청(취소자 포함)
+    assert (t["trp"], t["day1"]) == (40, 31)                                             # 참석률 분모는 수강신청(지금 남은 건수)
     assert (t["open"], t["early"], t["add"], t["conf"], t["n_ops"]) == (35, 2, 3, 36, 2)  # 개강 − 이탈 + 추가 = 확정
     assert t["open"] - t["early"] + t["add"] == t["conf"]
     assert (t["api_trp"], t["api_conf"]) == (40, 36)
