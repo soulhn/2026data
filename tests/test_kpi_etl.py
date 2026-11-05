@@ -98,7 +98,7 @@ class TestFetch:
 
         assert err is None and list(df.columns) == SNAPSHOT_COLUMNS
         assert df["TRPR_DEGR"].tolist() == [3, 4]                       # 회차 0 제외
-        mock_roster.assert_called_once_with([("k", "A")], [("A", 3)])   # 승인 인원 0인 4회차는 명부 호출 안 함
+        mock_roster.assert_called_once_with([("k", "A")], [("A", 3)], **kpi_etl.ETL_FETCH)   # 승인 인원 0인 4회차는 명부 호출 안 함
         r3 = df[df["TRPR_DEGR"] == 3].iloc[0]
         assert r3["ROSTER_CNT"] == 9 and r3["ACTIVE_CNT"] == 9 and r3["TOT_PAR_MKS"] == 9
         assert pd.isna(df[df["TRPR_DEGR"] == 4].iloc[0]["ROSTER_CNT"])
@@ -116,7 +116,7 @@ class TestFetch:
         ]), None)
         mock_roster.return_value = (pd.DataFrame(columns=["TRPR_ID", "TRPR_DEGR", "TRNEE_ID", "TRNEE_NM", "TRNEE_STATUS"]), None, {("A", 3)})
         fetch_round_snapshots([("k", "A")], active_only=True, today="2026-09-20")
-        mock_roster.assert_called_once_with([("k", "A")], [("A", 3)])
+        mock_roster.assert_called_once_with([("k", "A")], [("A", 3)], **kpi_etl.ETL_FETCH)
         fetch_round_snapshots([("k", "A")], active_only=False, today="2026-09-20")
         assert mock_roster.call_args.args[1] == [("A", 2), ("A", 3)]
 

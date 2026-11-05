@@ -476,7 +476,7 @@ def get_active_data_with_fallback():
 # ── 모집 퍼널 (전 회차 이력) ───────────────────────────────────────────
 
 
-def fetch_all_course_history(pairs, deadline=None):
+def fetch_all_course_history(pairs, deadline=None, retries=2, backoff=0.5):
     """기관별 (인증키, 과정ID) 쌍의 전 회차 집계를 병렬 조회하여 병합.
 
     운영 현황(`fetch_all_institutions`)과 같은 부분 실패 정책 — 한 과정이 실패해도
@@ -493,7 +493,7 @@ def fetch_all_course_history(pairs, deadline=None):
     if not pairs:
         return pd.DataFrame(columns=COURSE_HISTORY_COLUMNS), None
 
-    session = get_retry_session(retries=2, backoff_factor=0.5)
+    session = get_retry_session(retries=retries, backoff_factor=backoff)
     frames, failures, reasons = [], [], {}
 
     executor = ThreadPoolExecutor(max_workers=min(len(pairs), config.API_MAX_WORKERS))
@@ -600,7 +600,7 @@ def summarize_roster_status(trainees_df):
     return out[ROSTER_COUNT_COLUMNS]
 
 
-def _fetch_rounds_parallel(fetch_fn, pairs, targets, columns, label, deadline=None):
+def _fetch_rounds_parallel(fetch_fn, pairs, targets, columns, label, deadline=None, retries=2, backoff=0.5):
     """(과정ID, 회차[, 추가 인자…]) 목록을 기관 키로 **병렬** 조회해 DataFrame으로 합침.
 
     Returns:
@@ -614,7 +614,7 @@ def _fetch_rounds_parallel(fetch_fn, pairs, targets, columns, label, deadline=No
     if not targets:
         return pd.DataFrame(columns=columns), None, set()
 
-    session = get_retry_session(retries=2, backoff_factor=0.5)
+    session = get_retry_session(retries=retries, backoff_factor=backoff)
     frames, reasons, done = [], {}, set()
     executor = ThreadPoolExecutor(max_workers=config.API_MAX_WORKERS)
     try:
@@ -648,16 +648,16 @@ def _fetch_rounds_parallel(fetch_fn, pairs, targets, columns, label, deadline=No
     return df, error_detail, done
 
 
-def fetch_all_rosters(pairs, rounds, deadline=None):
+def fetch_all_rosters(pairs, rounds, deadline=None, retries=2, backoff=0.5):
     """회차 목록의 명부(개인 행)를 병렬 조회. 반환: (roster_df, error_detail, 성공한 회차 집합)."""
     targets = [(cid, int(degr)) for cid, degr in rounds]
-    return _fetch_rounds_parallel(fetch_trainee_roster, pairs, targets, ROSTER_COLUMNS, "명부", deadline)
+    return _fetch_rounds_parallel(fetch_trainee_roster, pairs, targets, ROSTER_COLUMNS, "명부", deadline, retries, backoff)
 
 
-def fetch_all_attendance(pairs, round_months, deadline=None):
+def fetch_all_attendance(pairs, round_months, deadline=None, retries=2, backoff=0.5):
     """(과정ID, 회차, YYYYMM) 목록의 월별 출결을 병렬 조회. 반환: (attend_df, error_detail, 성공 집합)."""
     targets = [(cid, int(degr), str(ym)) for cid, degr, ym in round_months]
-    return _fetch_rounds_parallel(fetch_attendance_month, pairs, targets, ATTEND_COLUMNS, "출결", deadline)
+    return _fetch_rounds_parallel(fetch_attendance_month, pairs, targets, ATTEND_COLUMNS, "출결", deadline, retries, backoff)
 
 
 def fetch_all_roster_counts(pairs, rounds, deadline=None):

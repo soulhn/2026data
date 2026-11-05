@@ -23,6 +23,8 @@ CACHE_TTL_SARAMIN = 86400        # 채용 동향 (24시간 — ETL 주기와 동
 API_MAX_WORKERS = 8              # ThreadPoolExecutor 워커 수
 API_TIMEOUT = (15, 30)           # (connect, read) 초 — Streamlit Cloud→한국 정부 서버 핸드셰이크 여유 확보
 API_TOTAL_DEADLINE = 120         # 실시간 조회 전체 상한(초). 초과 시 미완료 기관을 버리고 DB 폴백
+ETL_API_RETRIES = 4              # 자동 수집(kpi_etl) 재시도. 화면 실시간 조회는 2회 그대로 — 2026-11-05 첫 ConnectTimeout 실패(MLE1 출결) 뒤 상향
+ETL_API_DEADLINE = 300           # 자동 수집 병렬 조회 전체 상한(초). 요청 하나의 재시도 전체(시도 5번 × 45초)를 덮어야 재시도가 상한에 잘리지 않는다
                                  # 한 기관은 과정목록 → (명부·출결) 2단계 순차이고 각 단계가
                                  # API_TIMEOUT 상 최대 45초라, 상한이 90초보다 짧으면 느리지만
                                  # 정상인 경로까지 잘린다. 기관 간에는 병렬이라 기관 수와 무관.

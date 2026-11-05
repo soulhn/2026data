@@ -38,6 +38,9 @@ from utils import adapt_query, get_connection, mask_name
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# 자동 수집은 화면 응답 상한에 묶이지 않으므로 재시도·상한을 넉넉히 (화면 실시간 조회는 hrd_api 기본값 그대로)
+ETL_FETCH = {"deadline": config.ETL_API_DEADLINE, "retries": config.ETL_API_RETRIES, "backoff": 1}
 logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s %(message)s", level=logging.INFO)
 
 VALUE_COLUMNS = ["TOT_FXNUM", "TOT_TRP_CNT", "TOT_PAR_MKS", "FINI_CNT",
@@ -76,7 +79,7 @@ def fetch_round_snapshots(pairs=None, active_only=False, today=None):
     if pairs is None:
         pairs = get_funnel_institutions()
     today = today or datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
-    history, hist_err = fetch_all_course_history(pairs)
+    history, hist_err = fetch_all_course_history(pairs, **ETL_FETCH)
     df = history.copy()
     df["TRPR_DEGR"] = pd.to_numeric(df["TRPR_DEGR"], errors="coerce").fillna(0).astype(int)
     df = df[df["TRPR_DEGR"] > 0].copy()
@@ -88,7 +91,7 @@ def fetch_round_snapshots(pairs=None, active_only=False, today=None):
     if active_only:
         target = target[target["TR_END_DT"].astype(str).str[:10] >= today]
     rounds = [(r.TRPR_ID, int(r.TRPR_DEGR)) for r in target[["TRPR_ID", "TRPR_DEGR"]].itertuples(index=False)]
-    roster, roster_err, done = fetch_all_rosters(pairs, rounds)
+    roster, roster_err, done = fetch_all_rosters(pairs, rounds, **ETL_FETCH)
     counts = summarize_roster_status(roster)
     if counts.empty:
         counts = pd.DataFrame(columns=ROSTER_COUNT_COLUMNS)
@@ -216,7 +219,7 @@ def fetch_first_attendance(pairs, snapshots_df, today=None):
     ]
     targets = [(r.TRPR_ID, int(r.TRPR_DEGR), ym)
                for r in active.itertuples(index=False) for ym in attendance_months(r.TR_STA_DT, today)]
-    attend, err, _ = fetch_all_attendance(pairs, targets)
+    attend, err, _ = fetch_all_attendance(pairs, targets, **ETL_FETCH)
     round_start = {(r.TRPR_ID, int(r.TRPR_DEGR)): str(r.TR_STA_DT) for r in active.itertuples(index=False)}
     return first_attendance(attend, round_start), err
 
@@ -240,7 +243,7 @@ def backfill_day1(conn, pairs, today=None):
     if not rounds:
         return 0, 0
     targets = [(cid, degr, start.replace("-", "")[:6]) for cid, degr, start in rounds]
-    attend, err, _ = fetch_all_attendance(pairs, targets)
+    attend, err, _ = fetch_all_attendance(pairs, targets, **ETL_FETCH)
     if err:
         logger.warning(f"[KPI 명부] 소급 출결 일부 실패: {err}")
     first = first_attendance(attend, {(cid, degr): start for cid, degr, start in rounds})

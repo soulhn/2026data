@@ -395,6 +395,27 @@ class TestRealtimeDeadline:
         )
 
 
+class TestEtlRetry:
+    """자동 수집(kpi_etl)만 재시도를 늘린다 (2026-11-05 첫 ConnectTimeout 실패). 화면 실시간 조회는 응답 상한 때문에 2회 그대로."""
+
+    def test_etl_deadline_covers_full_retry_chain(self):
+        import config
+        attempts = config.ETL_API_RETRIES + 1
+        assert config.ETL_API_RETRIES > 2
+        assert config.ETL_API_DEADLINE >= attempts * sum(config.API_TIMEOUT), (
+            f"상한 {config.ETL_API_DEADLINE}초 < 시도 {attempts}번 × {sum(config.API_TIMEOUT)}초 — 재시도가 상한에 먼저 잘림"
+        )
+
+    @patch("hrd_api.fetch_attendance_month", return_value=pd.DataFrame())
+    @patch("hrd_api.get_retry_session")
+    def test_retries_passed_through_and_default_unchanged(self, mock_session, _fetch):
+        import hrd_api
+        hrd_api.fetch_all_attendance([("k", "A")], [("A", 1, "202611")])
+        mock_session.assert_called_with(retries=2, backoff_factor=0.5)        # 화면 경로 기본값
+        hrd_api.fetch_all_attendance([("k", "A")], [("A", 1, "202611")], retries=4, backoff=1)
+        mock_session.assert_called_with(retries=4, backoff_factor=1)          # kpi_etl 경로
+
+
 class TestRealtimeFailureReason:
     """폴백은 정상 동작이라 예외가 화면까지 안 간다. 이유를 남기지 않으면
     '느려서 잘림'과 'API 거부'를 구분할 수 없어 원인 추적이 막힌다."""

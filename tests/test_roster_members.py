@@ -51,7 +51,7 @@ class TestBackfill:
                               now=datetime(2026, 9, 15, 0))
         asked = []
 
-        def fake_attend(pairs, targets, deadline=None):
+        def fake_attend(pairs, targets, **kw):
             asked.extend(targets)
             return _att([("t1", "20260312", "09:01", "출석"), ("t2", "20260312", None, "결석")], cid="A", degr=2), None, {("A", 2)}
         monkeypatch.setattr(kpi_etl, "fetch_all_attendance", fake_attend)

@@ -61,6 +61,7 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 ### 실시간 조회 (`hrd_api.py`, 운영 현황 전용)
 - 기관 (인증키, 과정ID) 쌍을 **병렬** 조회. 순차로 두면 요청 최악 46초(재시도 2회 포함)가
   기관 수만큼 누적돼 화면이 수 분간 멈춤 — `config.API_TOTAL_DEADLINE`(120초) 전체 상한 필수
+- **자동 수집(`kpi_etl.py`)은 재시도·상한을 따로 넘긴다**: `config.ETL_API_RETRIES`(4회)·`ETL_API_DEADLINE`(300초)를 `fetch_all_course_history`·`fetch_all_rosters`·`fetch_all_attendance`에 `retries`·`deadline`으로 전달. 함수 기본값(2회·120초)은 화면 실시간 조회용이라 그대로 둔다. ETL 상한은 (재시도+1) × `sum(API_TIMEOUT)` 이상이어야 재시도가 상한에 잘리지 않는다 (`tests/test_hrd_api.py`가 강제, 2026-11-05)
 - **상한은 `sum(API_TIMEOUT) * 2` 이상이어야 함** — 한 기관이 과정목록 → (명부·출결) 2단계
   순차라 그보다 짧으면 느리지만 정상인 조회가 잘림 (`tests/test_hrd_api.py`가 강제)
 - 폴백은 정상 동작이라 예외가 화면까지 안 감 → `get_last_realtime_error()`로 사유를 남기고
