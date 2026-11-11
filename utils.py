@@ -426,6 +426,45 @@ def calc_recruit_rate(reg_col, fxnum_col):
     return result.fillna(0).clip(upper=100)
 
 
+def build_market_export(df, today):
+    """시장 분석 「필터 결과 내려받기」 CSV 표: TB_MARKET_TREND 행 → 한글 머리글 표.
+
+    df: `config.MARKET_EXPORT_COLUMNS`의 원본 열을 담은 행. today: 'YYYY-MM-DD'.
+    상태는 개강 현황 탭(`SCHEDULE_STATUS`)과 같은 기준이고 앞 조건이 우선한다:
+    개강 예정 = 개강일 > 오늘, 진행 중 = 개강일 ≤ 오늘 ≤ 종강일, 종료 = 종강일 < 오늘.
+    만족도는 화면과 같은 100점 환산(0은 미집계라 빈칸), 주말/주중은 코드 대신 이름.
+    """
+    from config import MARKET_EXPORT_COLUMNS, MARKET_WKEND_LABELS
+
+    out = df[list(MARKET_EXPORT_COLUMNS)].copy()
+    score = pd.to_numeric(out['STDG_SCOR'], errors='coerce')
+    out['STDG_SCOR'] = score.where(score > 0) / 100
+    for col in ('TOT_TRCO', 'COURSE_MAN', 'EI_EMPL_CNT_3'):
+        out[col] = pd.to_numeric(out[col], errors='coerce').round().astype('Int64')
+    for col in ('EI_EMPL_RATE_3', 'EI_EMPL_RATE_6'):
+        out[col] = pd.to_numeric(out[col], errors='coerce')
+    out['WKEND_SE'] = out['WKEND_SE'].map(
+        lambda c: MARKET_WKEND_LABELS.get(str(c), c) if pd.notna(c) else c)
+
+    sta = df['TR_STA_DT'].astype('string')
+    end = df['TR_END_DT'].astype('string')
+    status = pd.Series('', index=df.index, dtype='object')
+    # 뒤 조건부터 덮어써서 앞 조건이 이기게 한다 (탭 목록과 같은 우선순위)
+    for cond, label in [
+        (end < today, '종료'),
+        ((sta <= today) & (end >= today), '진행 중'),
+        (sta > today, '개강 예정'),
+    ]:
+        status = status.mask(cond.fillna(False).astype(bool), label)
+
+    rate = calc_recruit_rate(pd.to_numeric(df['REG_COURSE_MAN'], errors='coerce'),
+                             pd.to_numeric(df['TOT_FXNUM'], errors='coerce')).round(1)
+    out = out.rename(columns=MARKET_EXPORT_COLUMNS)
+    out.insert(0, '상태', status)
+    out.insert(out.columns.get_loc('신청인원') + 1, '모집률(%)', rate)
+    return out.reset_index(drop=True)
+
+
 def is_completed(status):
     """수료 판정: '수료' 또는 '조기취업' 포함 여부 (정확일치 금지)"""
     return status.str.contains('수료|조기취업', na=False)

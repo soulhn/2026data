@@ -19,7 +19,9 @@ from utils import (
     get_billing_periods,
     mask_name,
     mask_name_columns,
+    build_market_export,
 )
+from config import MARKET_EXPORT_COLUMNS
 
 
 class TestAdaptQuery:
@@ -442,3 +444,74 @@ class TestMaskNameColumns:
         assert mask_name_columns(None) is None
         empty = pd.DataFrame()
         assert mask_name_columns(empty) is empty
+
+
+class TestBuildMarketExport:
+    """시장 분석 「필터 결과 내려받기」 CSV 표"""
+    TODAY = '2026-11-11'
+
+    @staticmethod
+    def _rows(*overrides):
+        base = {
+            'TRPR_NM': '과정', 'TRPR_DEGR': 1, 'TRAINST_NM': '기관', 'REGION': '서울',
+            'TRAIN_TARGET': 'K-디지털 트레이닝', 'TR_STA_DT': '2026-10-01', 'TR_END_DT': '2027-03-01',
+            'TOT_FXNUM': 20, 'REG_COURSE_MAN': 15, 'TOT_TRCO': 19166400.0, 'COURSE_MAN': 19166400.0,
+            'STDG_SCOR': 8250.0, 'WKEND_SE': '3', 'NCS_CD': '20010202', 'CERTIFICATE': '',
+            'EI_EMPL_RATE_3': None, 'EI_EMPL_RATE_6': None, 'EI_EMPL_CNT_3': None,
+            'ADDRESS': '서울 강남구', 'TEL_NO': '02-000-0000', 'YEAR_MONTH': '2026-10',
+            'TRPR_ID': 'AIG000', 'INST_INO': '500', 'TRAINST_CST_ID': '600',
+            'TRNG_AREA_CD': '11', 'TRAIN_TARGET_CD': 'C0104',
+        }
+        return pd.DataFrame([{**base, **o} for o in overrides])
+
+    def test_status_matches_schedule_tab_boundaries(self):
+        df = self._rows(
+            {'TR_STA_DT': '2026-11-12', 'TR_END_DT': '2027-04-01'},   # 내일 개강
+            {'TR_STA_DT': '2026-11-11', 'TR_END_DT': '2027-04-01'},   # 오늘 개강 → 진행 중
+            {'TR_STA_DT': '2026-06-01', 'TR_END_DT': '2026-11-11'},   # 오늘 종강 → 진행 중
+            {'TR_STA_DT': '2026-06-01', 'TR_END_DT': '2026-11-10'},   # 어제 종강
+            {'TR_STA_DT': '2026-06-01', 'TR_END_DT': None},           # 종강일 없음 → 어느 탭에도 없음
+        )
+        out = build_market_export(df, self.TODAY)
+        assert out['상태'].tolist() == ['개강 예정', '진행 중', '진행 중', '종료', '']
+
+    def test_columns_order_and_excluded(self):
+        out = build_market_export(self._rows({}), self.TODAY)
+        cols = out.columns.tolist()
+        assert cols[0] == '상태'
+        assert cols[cols.index('신청인원') + 1] == '모집률(%)'
+        assert len(cols) == len(MARKET_EXPORT_COLUMNS) + 2
+        assert not {'CONTENTS', 'GRADE', 'EI_EMPL_CNT_3_GT10', 'COLLECTED_AT'} & set(MARKET_EXPORT_COLUMNS)
+
+    def test_value_conversions(self):
+        df = self._rows(
+            {'WKEND_SE': '3', 'STDG_SCOR': 8250.0, 'REG_COURSE_MAN': 15, 'TOT_FXNUM': 20,
+             'EI_EMPL_RATE_3': '20.000', 'EI_EMPL_CNT_3': 4.0},
+            {'WKEND_SE': '1', 'STDG_SCOR': 0.0, 'REG_COURSE_MAN': 40, 'TOT_FXNUM': 30,
+             'EI_EMPL_RATE_3': 'A'},
+            {'WKEND_SE': '9', 'REG_COURSE_MAN': 5, 'TOT_FXNUM': 0},
+            {'WKEND_SE': '7'},
+        )
+        out = build_market_export(df, self.TODAY)
+        assert out['주말/주중'].tolist() == ['주중', '주말', '해당없음', '7']   # 모르는 코드는 그대로
+        assert out.loc[0, '만족도(점)'] == 82.5
+        assert pd.isna(out.loc[1, '만족도(점)'])                              # 0 = 미집계
+        assert out['모집률(%)'].tolist()[:3] == [75.0, 100.0, 0.0]           # 상한 100, 정원 0
+        assert out.loc[0, '훈련비(원)'] == 19166400 and str(out['훈련비(원)'].dtype) == 'Int64'
+        assert out.loc[0, '고용보험 취업률 (3개월)'] == 20.0
+        assert pd.isna(out.loc[1, '고용보험 취업률 (3개월)'])                 # 특수코드는 빈칸
+        assert out.loc[0, '고용보험 취업 인원 (3개월)'] == 4
+
+    def test_csv_round_trip_and_empty(self):
+        out = build_market_export(self._rows({}), self.TODAY)
+        data = out.to_csv(index=False).encode('utf-8-sig')
+        assert data.startswith(b'\xef\xbb\xbf')                             # 엑셀 한글 깨짐 방지 BOM
+        empty = build_market_export(self._rows({}).iloc[0:0], self.TODAY)
+        assert empty.empty and empty.columns.tolist() == out.columns.tolist()
+
+    def test_export_columns_exist_in_schema(self, mock_db_connection):
+        import init_db
+        init_db.init_market_tables()
+        cur = mock_db_connection.cursor()
+        cur.execute(f"SELECT {', '.join(MARKET_EXPORT_COLUMNS)} FROM TB_MARKET_TREND")   # 없는 열이면 OperationalError
+        assert [d[0] for d in cur.description] == list(MARKET_EXPORT_COLUMNS)

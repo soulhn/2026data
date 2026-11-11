@@ -59,6 +59,41 @@ RECENT_TREND_DAYS = 10
 # 그전 시장 분석 페이지는 1 주중·2 주말·3 주중+주말로 거꾸로 읽었다 (사이드바 필터·차트 모두)
 MARKET_WKEND_LABELS = {'1': '주말', '2': '주중+주말', '3': '주중', '9': '해당없음'}
 
+# 시장 분석 사이드바 「필터 결과 내려받기」(CSV). 필터를 다 풀면 50만 건이라 상한을 넘으면 만들지 않는다.
+# 3만 건 실측(2026-11-11): 조회 8.5초, CSV 9.4MB, pandas 42MB
+MARKET_EXPORT_LIMIT = 30_000
+
+# 내려받기 열: 원본 열 → 한글 머리글 (파일 열 순서). 상태·모집률(%)은 utils.build_market_export가 계산해 끼워 넣는다.
+# 50만 행 전체에 값이 한 번도 없는 CONTENTS·GRADE·EI_EMPL_CNT_3_GT10과 ETL 내부 열 COLLECTED_AT은 뺐다 (2026-11-11)
+MARKET_EXPORT_COLUMNS = {
+    'TRPR_NM': '과정명',
+    'TRPR_DEGR': '회차',
+    'TRAINST_NM': '기관명',
+    'REGION': '지역',
+    'TRAIN_TARGET': '훈련 유형',
+    'TR_STA_DT': '개강일',
+    'TR_END_DT': '종강일',
+    'TOT_FXNUM': '정원',
+    'REG_COURSE_MAN': '신청인원',
+    'TOT_TRCO': '훈련비(원)',
+    'COURSE_MAN': '수강비(원)',
+    'STDG_SCOR': '만족도(점)',
+    'WKEND_SE': '주말/주중',
+    'NCS_CD': 'NCS 코드',
+    'CERTIFICATE': '연계 자격증',
+    'EI_EMPL_RATE_3': '고용보험 취업률 (3개월)',
+    'EI_EMPL_RATE_6': '고용보험 취업률 (6개월)',
+    'EI_EMPL_CNT_3': '고용보험 취업 인원 (3개월)',
+    'ADDRESS': '주소',
+    'TEL_NO': '전화번호',
+    'YEAR_MONTH': '개설 연월',
+    'TRPR_ID': '과정 ID',
+    'INST_INO': '기관 코드',
+    'TRAINST_CST_ID': '기관 ID',
+    'TRNG_AREA_CD': '지역 코드',
+    'TRAIN_TARGET_CD': '훈련 유형 코드',
+}
+
 # ── 사람인 채용공고 ETL ──
 SARAMIN_PAGE_SIZE = 110
 SARAMIN_API_CALL_LIMIT = 480

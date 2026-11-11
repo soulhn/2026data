@@ -9,8 +9,8 @@ import os
 
 # 🚀 상위 폴더의 utils.py를 가져오기 위한 경로 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import check_password, get_connection, load_data as _load_data, adapt_query, calc_recruit_rate, page_error_boundary, MARKET_DB
-from config import CACHE_TTL_MARKET, NCS_MIN_COURSES, CacheKey, MARKET_WKEND_LABELS
+from utils import check_password, get_connection, load_data as _load_data, adapt_query, calc_recruit_rate, page_error_boundary, MARKET_DB, build_market_export
+from config import CACHE_TTL_MARKET, NCS_MIN_COURSES, CacheKey, MARKET_WKEND_LABELS, MARKET_EXPORT_LIMIT, MARKET_EXPORT_COLUMNS
 
 # ==========================================
 # 0. 헬퍼 함수
@@ -406,6 +406,65 @@ def load_schedule_courses(where, params, status, today, limit):
 
 
 # ==========================================
+# 0-D. 필터 결과 내려받기 (사이드바)
+# ==========================================
+
+def load_market_export(where, params, limit):
+    """내려받기용 원본 행. 캐시하지 않는다: 필터 조합마다 수만 행이 24시간 메모리에 남지 않게."""
+    return _sql_query(f"""
+        SELECT {", ".join(MARKET_EXPORT_COLUMNS)}
+        FROM TB_MARKET_TREND {where}
+        ORDER BY TR_STA_DT DESC, TRPR_ID, TRPR_DEGR
+        LIMIT ?
+    """, params=list(params) + [limit])
+
+
+def render_export_sidebar(where, params, total_count, today):
+    """지금 조회 조건의 과정 전체(상태 무관)를 CSV 한 파일로.
+
+    st.download_button은 화면을 그릴 때마다 파일을 미리 만들어 두므로 「CSV 만들기」를 눌렀을 때만
+    조회·변환하고 결과는 세션에 둔다. 조회 조건이나 날짜가 바뀌면 버린다.
+    상한을 넘으면 만들지 않는다 (필터를 다 풀면 50만 건, Streamlit Cloud 메모리 보호).
+    """
+    st.sidebar.divider()
+    st.sidebar.markdown("**📥 필터 결과 내려받기**")
+    if total_count == 0:
+        st.sidebar.caption("내려받을 과정이 없습니다.")
+        return
+    if total_count > MARKET_EXPORT_LIMIT:
+        st.sidebar.caption(f"{total_count:,}건은 내려받기 상한({MARKET_EXPORT_LIMIT:,}건)을 넘습니다. "
+                           "훈련 유형이나 조회 기간으로 범위를 좁힌 뒤 조회해주세요.")
+        return
+
+    key = (where, tuple(params), today)
+    ready = st.session_state.get('mkt_export')
+    if ready is not None and ready['key'] != key:
+        del st.session_state['mkt_export']
+        ready = None
+
+    slot = st.sidebar.empty()   # 「CSV 만들기」 자리에 「CSV 내려받기」가 들어선다
+    if ready is None:
+        if not slot.button(f"CSV 만들기 ({total_count:,}건)", key='mkt_export_build', width='stretch'):
+            st.sidebar.caption("지금 조회 조건의 과정 전체(개강 예정·진행 중·종료)를 한 파일로 받습니다.")
+            return
+        with st.sidebar, st.spinner("CSV를 만드는 중입니다..."):
+            raw = load_market_export(where, params, MARKET_EXPORT_LIMIT + 1)
+            if len(raw) > MARKET_EXPORT_LIMIT:   # 건수 집계(24시간 캐시) 뒤에 데이터가 늘어난 경우
+                slot.warning(f"지금은 {MARKET_EXPORT_LIMIT:,}건을 넘습니다. 범위를 좁힌 뒤 다시 조회해주세요.")
+                return
+            out = build_market_export(raw, today)
+            ready = {'key': key, 'rows': len(out), 'data': out.to_csv(index=False).encode('utf-8-sig')}
+        st.session_state['mkt_export'] = ready
+
+    slot.download_button(
+        f"CSV 내려받기 ({ready['rows']:,}건)", ready['data'],
+        file_name=f"시장_과정목록_{today.replace('-', '')}.csv", mime="text/csv",
+        key='mkt_export_download', on_click='ignore', type='primary', width='stretch',
+    )
+    st.sidebar.caption("개강 예정·진행 중·종료를 모두 담았습니다. 「상태」 열로 나눠 보세요.")
+
+
+# ==========================================
 # 1. 설정 및 데이터 로드
 # ==========================================
 st.set_page_config(page_title="시장 분석 & 기회 발굴", page_icon="📈", layout="wide")
@@ -484,6 +543,8 @@ with page_error_boundary():
     with st.spinner("시장 데이터 불러오는 중..."):
         kpi_df = load_kpi_data(where, params)
     total_count = int(kpi_df['CNT'].iloc[0]) if not kpi_df.empty else 0
+    _today_d = datetime.now().strftime('%Y-%m-%d')   # 개강 현황 탭 상태·내려받기 「상태」 열 공통 기준일
+    render_export_sidebar(where, params, total_count, _today_d)
 
     st.title(f"📈 IT 훈련 시장 상세 분석 ({total_count:,}건)")
     st.markdown("---")
@@ -857,7 +918,6 @@ with page_error_boundary():
         st.subheader("📅 타 기관 과정 개강 현황")
         st.caption("사이드바 필터가 동일하게 적용됩니다. 조회 기간을 좁히면 해당 기간 개강 과정만 표시됩니다.")
 
-        _today_d = datetime.now().strftime('%Y-%m-%d')
         sched_kpi = load_schedule_kpi(where, params, _today_d, _this_month)
 
         up_cnt = 0
@@ -928,7 +988,7 @@ with page_error_boundary():
                     })
             _cap = f"{_order_label[sel_status]} 정렬 · {len(show_sched):,}건 표시"
             if len(show_sched) >= SCHEDULE_LIST_LIMIT:
-                _cap += f" (최대 {SCHEDULE_LIST_LIMIT:,}건 — 사이드바 필터로 범위를 좁혀보세요)"
+                _cap += f" (최대 {SCHEDULE_LIST_LIMIT:,}건까지 표시. 전체 목록은 사이드바 「필터 결과 내려받기」로 받을 수 있습니다)"
             st.caption(_cap)
         else:
             st.info(f"'{sel_status}' 상태의 과정이 없습니다.")
