@@ -44,7 +44,7 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 ### DB 연결 (PostgreSQL, 2026-07 폴백 제거 · 2026-09 시장 DB 분리)
 - 런타임은 PostgreSQL (Supabase) 전용. `DATABASE_URL`이 없으면 `utils.get_connection()`이
   `DatabaseNotConfiguredError`로 즉시 실패 — 빈 SQLite 파일을 만들던 조용한 폴백은 제거됨
-- **DB는 둘**: 메인(`DATABASE_URL`)과 시장(`DATABASE_URL_MARKET`). `TB_MARKET_TREND`(46만 행, 무료 한도의 90%)만
+- **DB는 둘**: 메인(`DATABASE_URL`)과 시장(`DATABASE_URL_MARKET`). `TB_MARKET_TREND`(50만 행, 무료 한도의 90%)만
   두 번째 Supabase 프로젝트에 산다. `TB_MARKET_CACHE`는 ETL 3종이 공유하므로 메인에 남김 (`utils.MARKET_TABLES`)
   - `get_connection(db=)`·`load_data(db=)`·`_get_pg_pool(db=)`. `load_data`는 db 생략 시 쿼리 본문에
     시장 테이블이 있으면 자동으로 시장 DB — **시장 테이블과 다른 테이블의 JOIN·서브쿼리는 불가** (build_home_snapshot 참고)
