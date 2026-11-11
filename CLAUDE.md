@@ -44,7 +44,7 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 ### DB 연결 (PostgreSQL, 2026-07 폴백 제거 · 2026-09 시장 DB 분리)
 - 런타임은 PostgreSQL (Supabase) 전용. `DATABASE_URL`이 없으면 `utils.get_connection()`이
   `DatabaseNotConfiguredError`로 즉시 실패 — 빈 SQLite 파일을 만들던 조용한 폴백은 제거됨
-- **DB는 둘**: 메인(`DATABASE_URL`)과 시장(`DATABASE_URL_MARKET`). `TB_MARKET_TREND`(50만 행, 무료 한도의 90%)만
+- **DB는 둘**: 메인(`DATABASE_URL`)과 시장(`DATABASE_URL_MARKET`). `TB_MARKET_TREND`(50만 행, 분리 당시 메인 DB 용량의 90%)만
   두 번째 Supabase 프로젝트에 산다. `TB_MARKET_CACHE`는 ETL 3종이 공유하므로 메인에 남김 (`utils.MARKET_TABLES`)
   - `get_connection(db=)`·`load_data(db=)`·`_get_pg_pool(db=)`. `load_data`는 db 생략 시 쿼리 본문에
     시장 테이블이 있으면 자동으로 시장 DB — **시장 테이블과 다른 테이블의 JOIN·서브쿼리는 불가** (build_home_snapshot 참고)
@@ -128,6 +128,7 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 - **취업률 미제공 유형**: `no_empl_data` 플래그로 판별 → `"미제공"` 표시. `st.stop()`은 탭 내부 사용 금지(이후 탭 렌더링 중단) → `if/else` 패턴 사용
 - **UI 텍스트**: `st.subheader`, `st.metric`, 탭 레이블 등 화면 노출 텍스트는 한글만 사용 — 한자 혼용 금지
 - **UI 용어 표기**: 지표 표시명은 `docs/GLOSSARY.md` 기준 준수. 수식어+지표 사이 공백 필수
+- **배포 후 ImportError → 앱 재부팅**: Streamlit Cloud는 utils.py·config.py를 프로세스가 뜰 때 한 번 읽고, 푸시가 반영될 때 접속 세션이 없으면 다시 읽지 않는다(페이지 파일만 매번 새로 읽음). utils·config에 새 이름을 추가하고 페이지에서 import하는 커밋 뒤 "cannot import name" 에러가 나면 「Manage app → ⋮ → Reboot app」 (2026-11-11 시장 분석 배포 때 발생)
 
 ## 핵심 지표 정의 (비즈니스 기준)
 
@@ -171,7 +172,7 @@ saramin_etl.py (매일 04:43)→                    ←    운영 현황: hrd_ap
 
 **기준 컬럼**: `TB_COURSE_MASTER` — HRD-Net API 수집값 (수료자 기준 %)
 
-> **⚠️ 시장 취업률 데이터 한계**: `TB_MARKET_TREND`에도 `EI_EMPL_RATE_3/6` 컬럼이 있으나 전체 중 ~7.5%만 유효값 보유 (2026.07 기준, 대부분 NULL). 수료 후 3~6개월 경과해야 집계되는 API 특성상 최근 과정은 거의 비어있음. **시장 벤치마크 비교 시 취업률은 활용 불가** — 모집률·만족도만 비교 가능. 내부 과정 취업률은 `TB_COURSE_MASTER` 컬럼 그대로 활용 (위 표 참조).
+> **⚠️ 시장 취업률 데이터 한계**: `TB_MARKET_TREND`의 `EI_EMPL_RATE_3/6`·`EI_EMPL_CNT_3`은 목록 API(`_1.jsp`)가 **K-디지털 기초역량훈련·실업자원격훈련에만** 값을 준다(전체 500,643행 중 7.7%, 2026-11-11 실측). K-디지털 트레이닝 등 나머지 유형은 기간과 무관하게 항상 비어 있다(종강 6개월 지난 KDT 4,261회차도 0). 따라서 **KDT 시장 벤치마크에 취업률은 활용 불가**: 모집률·만족도만 비교 가능. KDT 취업률은 상세 API(`_3.jsp`)에는 있으나 수집하지 않는다. 내부 과정 취업률은 `TB_COURSE_MASTER` 컬럼 그대로 활용 (위 표 참조).
 
 | 지표 | 컬럼 | 설명 |
 |---|---|---|
