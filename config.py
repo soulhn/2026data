@@ -54,6 +54,11 @@ CERT_EMPL_MIN_COURSES = 10
 TOP_CERTS_LIMIT = 20
 RECENT_TREND_DAYS = 10
 
+# 주말/주중 구분(wkendSe) 코드 → 표시명. docs/api/hrd_net.md 기준 (1 주말, 2 혼합, 3 주중, 9 해당없음).
+# 2026-11-11 데이터 대조: 코드 1 과정명에 '주말' 208건·'평일/주중' 0건, 플레이데이터·엔코아 과정 109건이 코드 3.
+# 그전 시장 분석 페이지는 1 주중·2 주말·3 주중+주말로 거꾸로 읽었다 (사이드바 필터·차트 모두)
+MARKET_WKEND_LABELS = {'1': '주말', '2': '주중+주말', '3': '주중', '9': '해당없음'}
+
 # ── 사람인 채용공고 ETL ──
 SARAMIN_PAGE_SIZE = 110
 SARAMIN_API_CALL_LIMIT = 480

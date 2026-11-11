@@ -10,7 +10,7 @@ import os
 # 🚀 상위 폴더의 utils.py를 가져오기 위한 경로 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import check_password, get_connection, load_data as _load_data, adapt_query, calc_recruit_rate, page_error_boundary, MARKET_DB
-from config import CACHE_TTL_MARKET, NCS_MIN_COURSES, CacheKey
+from config import CACHE_TTL_MARKET, NCS_MIN_COURSES, CacheKey, MARKET_WKEND_LABELS
 
 # ==========================================
 # 0. 헬퍼 함수
@@ -91,8 +91,8 @@ def build_where_clause(start_dt, end_dt, region, ncs, types, wkends, grades, key
         clauses.append(f"TRAIN_TARGET IN ({','.join('?' * len(types))})")
         params.extend(types)
     if wkends:
-        wk_reverse = {'주중': '1', '주말': '2', '주중+주말': '3'}
-        codes = [wk_reverse.get(w, w) for w in wkends]
+        wk_reverse = {label: code for code, label in MARKET_WKEND_LABELS.items()}
+        codes = [wk_reverse.get(w, w) for w in wkends]   # 모르는 코드는 사이드바에 코드 그대로 나오므로 그대로 넘긴다
         clauses.append(f"WKEND_SE IN ({','.join('?' * len(codes))})")
         params.extend(codes)
     if grades:
@@ -414,7 +414,7 @@ check_password()
 
 with page_error_boundary():
 
-    WK_MAP = {'1': '주중', '2': '주말', '3': '주중+주말'}
+    WK_MAP = MARKET_WKEND_LABELS
 
     # 필터 옵션 로드 (경량)
     with st.spinner('필터 옵션을 로드 중입니다...'):
@@ -438,7 +438,7 @@ with page_error_boundary():
     _kdt = "K-디지털 트레이닝"
     kdt_default = [_kdt] if _kdt in type_opts else []
     wk_codes = filter_opts['WKEND_SE'].dropna().unique().tolist()
-    wk_opts = sorted(set(WK_MAP.get(str(c), '기타') for c in wk_codes))
+    wk_opts = sorted(set(WK_MAP.get(str(c), str(c)) for c in wk_codes))
     grade_opts = sorted([g for g in filter_opts['GRADE'].dropna().unique().tolist() if g and str(g).strip()])
     ncs_opts = ['전체'] + sorted(filter_opts['NCS_CD'].dropna().unique().tolist())
 

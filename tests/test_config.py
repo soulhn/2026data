@@ -8,6 +8,7 @@ from config import (
     ETL_MAX_WORKERS, ETL_BATCH_SIZE, ETL_BATCH_PAGE_SIZE,
     COST_BINS, COST_BIN_LABELS,
     SCATTER_SAMPLE_LIMIT, REGRESSION_SAMPLE_LIMIT,
+    MARKET_WKEND_LABELS,
 )
 
 
@@ -46,3 +47,10 @@ def test_cost_bins_and_labels_match():
 def test_sample_limits_positive():
     assert SCATTER_SAMPLE_LIMIT > 0
     assert REGRESSION_SAMPLE_LIMIT > 0
+
+
+def test_market_wkend_labels_follow_api_doc():
+    # docs/api/hrd_net.md: 1 주말, 2 혼합, 3 주중, 9 해당없음 (2026-11-11 데이터 대조로 확인)
+    assert MARKET_WKEND_LABELS['1'] == '주말' and MARKET_WKEND_LABELS['3'] == '주중'
+    assert MARKET_WKEND_LABELS['9'] == '해당없음'
+    assert len(set(MARKET_WKEND_LABELS.values())) == len(MARKET_WKEND_LABELS)   # 사이드바 필터 역변환이 1:1
